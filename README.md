@@ -1,5 +1,7 @@
 # dicechess-training
 
+[![CI](https://github.com/fortemate/dicechess-training/actions/workflows/ci.yml/badge.svg)](https://github.com/fortemate/dicechess-training/actions/workflows/ci.yml)
+
 Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label factory** that manufactures deep exact-search labels, and two small networks trained on them, designed to scale from a single workstation to an HPC cluster.
 
 > **Status: scaffold under active extraction.** This repository is being built ahead of the
@@ -9,9 +11,28 @@ Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label
 >
 > - [ ] Star2 chance-node pruning (depth 3) + transposition table in the open engine, gated
 >       by a depth-3 vs depth-2 arena experiment — mid-September 2026
-> - [ ] First PyTorch → ONNX training stack, validated end-to-end at toy scale — mid-September 2026
+> - [x] First PyTorch → ONNX training stack, validated end-to-end at toy scale
+>       ([#3](https://github.com/fortemate/dicechess-training/issues/3))
+> - [x] Training data schema v0: provenance-first Parquet shards, rawboard-768 + dice encoding
+>       ([#2](https://github.com/fortemate/dicechess-training/issues/2))
 > - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot — end of September 2026
-> - [ ] CPU label-factory v0, data schema, and a seed dataset — before the event
+> - [ ] Public bot-vs-bot sample dataset from our own platform, CPU label-factory v0 — before the event
+>       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
+
+## Getting started
+
+Requires [mise](https://mise.jdx.dev/) (or plain [uv](https://docs.astral.sh/uv/)); everything
+runs on CPU in well under a minute.
+
+```bash
+mise run setup   # install dependencies (uv sync)
+mise run demo    # end-to-end: toy data → train → holdout metrics → ONNX export → parity check
+mise run check   # lint + format + tests, mirrors CI
+```
+
+The demo currently runs on clearly-labeled synthetic data; the real sample — bot-vs-bot games
+between our own house bots on our own platform — is tracked in
+[#4](https://github.com/fortemate/dicechess-training/issues/4).
 
 ## Why
 

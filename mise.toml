@@ -1,0 +1,23 @@
+[tools]
+python = "3.12"
+uv = "latest"
+
+[tasks.setup]
+description = "Install dependencies into .venv"
+run = "uv sync"
+
+[tasks.check]
+description = "Lint, format check, and tests — mirrors CI"
+run = ["uv run ruff check .", "uv run ruff format --check .", "uv run pytest"]
+
+[tasks.test]
+description = "Run the test suite"
+run = "uv run pytest"
+
+[tasks.format]
+description = "Format and autofix"
+run = ["uv run ruff format .", "uv run ruff check --fix ."]
+
+[tasks.demo]
+description = "End-to-end toy demo: data -> train -> metrics -> ONNX -> parity"
+run = "uv run python -m dicechess_training.demo"
