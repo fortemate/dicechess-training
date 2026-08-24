@@ -1,5 +1,7 @@
 # dicechess-training
 
+[![CI](https://github.com/fortemate/dicechess-training/actions/workflows/ci.yml/badge.svg)](https://github.com/fortemate/dicechess-training/actions/workflows/ci.yml)
+
 Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label factory** that manufactures deep exact-search labels, and two small networks trained on them, designed to scale from a single workstation to an HPC cluster.
 
 > **Status: scaffold under active extraction.** This repository is being built ahead of the
@@ -7,11 +9,30 @@ Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label
 > (EuroHPC / Open Hackathons, October 6–29, 2026). September roadmap, prepared entirely
 > without cluster access:
 >
-> - [ ] Star2 chance-node pruning (depth 3) + transposition table in the open engine, gated
->       by a depth-3 vs depth-2 arena experiment — mid-September 2026
-> - [ ] First PyTorch → ONNX training stack, validated end-to-end at toy scale — mid-September 2026
+> - [ ] Transposition table + enabling depth-3 search on the engine's already-landed
+>       Star1/Star2 pruning, gated by a depth-3 vs depth-2 arena experiment — mid-September 2026
+> - [x] First PyTorch → ONNX training stack, validated end-to-end at toy scale
+>       ([#3](https://github.com/fortemate/dicechess-training/issues/3))
+> - [x] Training data schema v0: provenance-first Parquet shards, rawboard-768 + dice encoding
+>       ([#2](https://github.com/fortemate/dicechess-training/issues/2))
 > - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot — end of September 2026
-> - [ ] CPU label-factory v0, data schema, and a seed dataset — before the event
+> - [ ] Public bot-vs-bot sample dataset from our own platform, CPU label-factory v0 — before the event
+>       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
+
+## Getting started
+
+Requires [mise](https://mise.jdx.dev/) (or plain [uv](https://docs.astral.sh/uv/)); everything
+runs on CPU in well under a minute.
+
+```bash
+mise run setup   # install dependencies (uv sync)
+mise run demo    # end-to-end: toy data → train → holdout metrics → ONNX export → parity check
+mise run check   # lint + format + tests, mirrors CI
+```
+
+The demo currently runs on clearly-labeled synthetic data; the real sample — bot-vs-bot games
+between our own house bots on our own platform — is tracked in
+[#4](https://github.com/fortemate/dicechess-training/issues/4).
 
 ## Why
 
@@ -22,10 +43,16 @@ building the engine, the platform, and the bots:
 
 - **Search beats features.** Richer evaluation features gained +20 percentage points at
   1-ply search and nothing at 2-ply. Playing strength lives in depth.
-- **Depth is capped at 2 plies** by the chance-node explosion. Star1/Star2 pruning is
-  designed but not yet implemented in the engine.
+- **Depth is capped at 2 plies** by the chance-node explosion. Star1/Star2 pruning has
+  already landed in the engine and cut per-candidate roll work by ~68% at 2 plies; depth 3
+  is the next step (transposition table first), and its price is what the label factory
+  amortizes.
 - **More data of the same quality no longer helps:** ≤1 pp per doubling of supervised
-  training data from archived games. Better labels are needed, not more labels.
+  training data from archived games, and LightGBM distillation gained nothing on 20M rows.
+  Better labels are needed, not more labels.
+- **A plain raw-board MLP is not enough.** Served as a 2-ply evaluator it measured −25 Elo
+  against the feature-based model — so the value net's architecture sweep targets
+  NNUE-style, king-relative representations rather than a bigger plain MLP.
 - **Our strongest bot is not the ML one.** A hand-crafted evaluation with an exact 216-roll
   rescoring phase beats our best model-based bot 66.4% head-to-head — and under real-time
   budgets it only manages to exactly rescore 1–2 candidate moves. A learned move pre-ranker

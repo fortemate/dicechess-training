@@ -37,3 +37,4 @@ runs/
 .vscode/
 .mise.local.toml
 ~$*
+out/
