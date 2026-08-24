@@ -15,6 +15,17 @@ dependencies = [
   "onnxscript>=0.7.1",
 ]
 
+# Linux resolves torch from the CPU-only index: dev boxes and CI have no CUDA,
+# and the PyPI build drags in gigabytes of accelerator packages. The hackathon
+# cluster gets its own accelerator build (CUDA or ROCm) in October.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
 [dependency-groups]
 dev = [
   "pytest>=8.0",

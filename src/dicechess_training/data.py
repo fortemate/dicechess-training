@@ -72,10 +72,14 @@ def split_by_game(
     position-level split leaks between train and validation and inflates
     validation metrics (measured on the private pipeline).
     """
+    if not 0.0 < val_fraction < 1.0:
+        raise ValueError(f"val_fraction must be strictly between 0 and 1, got {val_fraction}")
     games = np.asarray(df["game_id"].unique(), dtype=object)
+    if len(games) < 2:
+        raise ValueError(f"need at least 2 games to split without emptying train, got {len(games)}")
     rng = np.random.default_rng(seed)
     rng.shuffle(games)
-    n_val = max(1, int(len(games) * val_fraction))
+    n_val = min(len(games) - 1, max(1, int(len(games) * val_fraction)))
     val_games = set(games[:n_val])
     val_mask = df["game_id"].isin(val_games)
     return df[~val_mask].reset_index(drop=True), df[val_mask].reset_index(drop=True)

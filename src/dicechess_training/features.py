@@ -26,8 +26,10 @@ def parse_fen_placement(fen: str) -> np.ndarray:
     Planes 0-5: white P N B R Q K; planes 6-11: black. Square index is
     rank * 8 + file with rank 0 = rank '1' (White's back rank).
     """
-    placement = fen.split()[0]
-    ranks = placement.split("/")
+    fields = fen.split()
+    if not fields:
+        raise ValueError(f"FEN is empty: {fen!r}")
+    ranks = fields[0].split("/")
     if len(ranks) != 8:
         raise ValueError(f"FEN placement must have 8 ranks: {fen!r}")
     planes = np.zeros((12, 64), dtype=np.float32)

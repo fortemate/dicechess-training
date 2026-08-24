@@ -43,3 +43,34 @@ def test_frame_validation_rejects_missing_column():
     df = data.generate_toy_games(2, seed=4).drop(columns=["dice"])
     with pytest.raises(ValueError, match="dice"):
         schema.validate_frame(pd.DataFrame(df))
+
+
+def test_frame_validation_rejects_nulls_and_empty_fen():
+    df = data.generate_toy_games(2, seed=11)
+    with_null = df.copy()
+    with_null.loc[0, "fen"] = None
+    with pytest.raises(ValueError, match="nulls"):
+        schema.validate_frame(with_null)
+    with_empty = df.copy()
+    with_empty.loc[0, "fen"] = "  "
+    with pytest.raises(ValueError, match="empty"):
+        schema.validate_frame(with_empty)
+    with_negative = df.copy()
+    with_negative.loc[0, "ply"] = -1
+    with pytest.raises(ValueError, match="negative"):
+        schema.validate_frame(with_negative)
+
+
+def test_read_rejects_wrong_column_type(tmp_path):
+    df = data.generate_toy_games(2, seed=12)
+    path = str(tmp_path / "shard.parquet")
+    schema.write_shard(df, path)
+    table = pq.read_table(path)
+    retyped = table.set_column(
+        table.schema.get_field_index("ply"),
+        "ply",
+        table.column("ply").cast("int64"),
+    ).replace_schema_metadata({schema.SCHEMA_METADATA_KEY: schema.SCHEMA_VERSION.encode()})
+    pq.write_table(retyped, path)
+    with pytest.raises(ValueError, match="ply"):
+        schema.read_shard(path)

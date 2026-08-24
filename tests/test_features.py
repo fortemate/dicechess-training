@@ -42,3 +42,6 @@ def test_invalid_fen_rejected():
         features.parse_fen_placement("4k3/8/8")
     with pytest.raises(ValueError):
         features.parse_fen_placement("4k4/8/8/8/8/8/8/4K3")
+    for empty in ("", "   "):
+        with pytest.raises(ValueError, match="empty"):
+            features.parse_fen_placement(empty)

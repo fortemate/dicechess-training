@@ -51,6 +51,13 @@ def validate_frame(df: pd.DataFrame) -> None:
     missing = [c for c in COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"missing columns: {missing}")
+    for column in COLUMNS:
+        if df[column].isna().any():
+            raise ValueError(f"column {column!r} contains nulls")
+    if (df["fen"].astype(str).str.strip() == "").any():
+        raise ValueError("column 'fen' contains empty strings")
+    if (df["ply"] < 0).any():
+        raise ValueError("column 'ply' contains negative values")
     bad_side = set(df["side"].unique()) - set(SIDES)
     if bad_side:
         raise ValueError(f"side must be one of {SIDES}, got {sorted(bad_side)}")
@@ -84,6 +91,12 @@ def read_shard(path: str) -> pd.DataFrame:
         raise ValueError(
             f"{path}: shard schema version {version!r} != supported {SCHEMA_VERSION!r}"
         )
+    for name, expected in COLUMNS.items():
+        if table.schema.get_field_index(name) < 0:
+            raise ValueError(f"{path}: missing column {name!r}")
+        actual = table.schema.field(name).type
+        if actual != expected:
+            raise ValueError(f"{path}: column {name!r} has type {actual}, expected {expected}")
     df = table.to_pandas()
     validate_frame(df)
     return df
