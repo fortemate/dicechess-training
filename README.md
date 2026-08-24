@@ -27,7 +27,7 @@ building the engine, the platform, and the bots:
 - **More data of the same quality no longer helps:** ≤1 pp per doubling of supervised
   training data from archived games. Better labels are needed, not more labels.
 - **Our strongest bot is not the ML one.** A hand-crafted evaluation with an exact 216-roll
-  rescoring phase beats our best model-based bot 66.4% head-to-head — and under real time
+  rescoring phase beats our best model-based bot 66.4% head-to-head — and under real-time
   budgets it only manages to exactly rescore 1–2 candidate moves. A learned move pre-ranker
   already measured **+4.8 pp** from improving which candidates get rescored.
 
@@ -76,8 +76,10 @@ profiled with the mentors.
 **Post-event** — retrain the production evaluation model on the manufactured dataset and
 validate with rated games on the public ladder.
 
-Everything produced at the hackathon is public: the pipeline code, the labeled dataset, and
-the benchmark and scaling results land in this repository.
+The hackathon's public artifacts land in this repository: the pipeline code, the labeled
+dataset, and the benchmark and scaling results. The production bots' tournament-tuned
+weights, opening books, and configurations are outside its scope — the same open-core
+boundary described below.
 
 ## Workload shape
 

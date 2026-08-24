@@ -2,17 +2,20 @@
 
 ## Architecture Overview
 
-- **Domain**: Open self-play data generation and model training pipeline for Dice Chess, built to scale from a single GPU to an HPC cluster. Public counterpart of the private `dicechess-ev` pipeline (open-core split: the framework is open; trained weights, opening books, and proprietary bot configurations stay private).
-- **Planned stack**: Python >= 3.12 with `uv` (PyTorch, LightGBM, ONNX) for training; the JVM `dicechess-engine` for headless self-play workers; `mise` as the task runner.
+- **Domain**: Open training pipeline for Dice Chess: a GPU **label factory** (Star2-pruned depth-3 tree expansion on CPU, batched leaf evaluation and exact 216-roll rescoring on GPU) and two small networks trained on its labels, designed to scale from a single workstation to an HPC cluster. Public counterpart of the private `dicechess-ev` pipeline (open-core split: the framework is open; production-tuned weights, opening books, and tournament bot configurations stay private).
+- **Planned stack**: Python >= 3.12 with `uv` (PyTorch, ONNX; LightGBM where useful) for training; the JVM `dicechess-engine` (Scala 3) for tree expansion and self-play workers; `mise` as the task runner.
 - **Planned workflow**:
-  1. Self-play generation: parallel engine-vs-engine workers emitting outcome-labeled training rows.
-  2. Training: PyTorch win-probability / EV network on self-play and archive data.
-  3. Distillation: knowledge distillation to LightGBM and ONNX export for low-latency serving.
-  4. Evaluation: log-loss / calibration on held-out games plus rated games against the public bot ladder.
+  1. Position sampling: archived games plus self-play from headless engine workers, deduplicated and phase-stratified.
+  2. Label factory: CPU workers expand Star2-pruned depth-3 search trees; GPUs batch leaf evaluations and exact 216-roll candidate rescores, emitting depth-3 value labels and per-candidate rescore distributions.
+  3. Training: a chance-collapse afterstate value net and a listwise move pre-ranker (PyTorch; DDP for sweeps).
+  4. Export: INT8 ONNX for the engine's chance-node hook and phase-1 pre-ranker slot.
+  5. Evaluation: holdout agreement with the depth-3 teacher (MSE, rank correlation, log-loss/calibration), fixed-time arena A/B matches, and rated games on the public bot ladder.
+
+The authoritative program description lives in `README.md`; keep this overview in sync with it.
 
 ## Status
 
-**Scaffold — no code yet.** The pipeline is being extracted from the private `dicechess-ev` repository ahead of the European AI Hackathon (October 2026). Until `mise.toml` and `pyproject.toml` land, there are no build, test, or lint tasks to run. Once tooling lands, this section is replaced by the standard Fortemate developer workflow (`mise run setup` / `check` / `test` / `format`).
+**Scaffold — no code yet.** The pipeline is being built ahead of the European AI Hackathon (October 2026); the training and distillation parts are extracted from the private `dicechess-ev` repository, the label factory is new code on top of the open engine. Until `mise.toml` and `pyproject.toml` land, there are no build, test, or lint tasks to run. Once tooling lands, this section is replaced by the standard Fortemate developer workflow (`mise run setup` / `check` / `test` / `format`).
 
 ## Branch & Issue Guidelines
 
