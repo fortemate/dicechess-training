@@ -12,10 +12,12 @@ target/
 .metals/
 .bloop/
 
-# Data and model artifacts — never committed
+# Data and model artifacts — never committed, except the small committed sample
+# under sample/ (see sample/README.md)
 *.csv
 *.csv.gz
 *.parquet
+!sample/**/*.parquet
 *.pkl
 *.joblib
 *.onnx
