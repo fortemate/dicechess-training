@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.python-version.local
+
+# JVM (self-play workers)
+target/
+.bsp/
+.metals/
+.bloop/
+
+# Data and model artifacts — never committed
+*.csv
+*.csv.gz
+*.parquet
+*.pkl
+*.joblib
+*.onnx
+*.pt
+*.ckpt
+data/
+models/
+books/
+runs/
+
+# Profiling output
+*.nsys-rep
+*.sqlite
+*.qdrep
+
+# Tooling and OS
+.DS_Store
+.idea/
+.vscode/
+.mise.local.toml
+~$*
