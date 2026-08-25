@@ -44,6 +44,17 @@ def train_value_model(
     return model
 
 
+def no_information_log_loss(y: np.ndarray) -> float:
+    """Log-loss of always predicting the holdout's own base rate.
+
+    The bar every model must clear: a model scoring worse than this knows less
+    than "the average game outcome". For a balanced set it is ln 2 = 0.6931.
+    """
+    base_rate = float(np.clip(y.astype(np.float64).mean(), 1e-7, 1 - 1e-7))
+    labels = y.astype(np.float64)
+    return float(-(labels * np.log(base_rate) + (1 - labels) * np.log(1 - base_rate)).mean())
+
+
 def evaluate(model: ValueMLP, val_x: np.ndarray, val_y: np.ndarray, bins: int = 10) -> dict:
     """Holdout metrics: log-loss, Brier score, and a calibration table."""
     with torch.no_grad():

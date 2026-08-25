@@ -16,6 +16,8 @@ against the real analytics export before the public sample lands (issue #4).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -80,6 +82,14 @@ def write_shard(df: pd.DataFrame, path: str) -> None:
     )
     table = table.replace_schema_metadata({SCHEMA_METADATA_KEY: SCHEMA_VERSION.encode()})
     pq.write_table(table, path)
+
+
+def read_shards(directory: str) -> pd.DataFrame:
+    """Read every `*.parquet` shard in a directory into one DataFrame."""
+    paths = sorted(Path(directory).glob("*.parquet"))
+    if not paths:
+        raise ValueError(f"no Parquet shards found in {directory!r}")
+    return pd.concat([read_shard(str(p)) for p in paths], ignore_index=True)
 
 
 def read_shard(path: str) -> pd.DataFrame:

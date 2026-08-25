@@ -16,8 +16,9 @@ Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label
 > - [x] Training data schema v0: provenance-first Parquet shards, rawboard-768 + dice encoding
 >       ([#2](https://github.com/fortemate/dicechess-training/issues/2))
 > - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot — end of September 2026
-> - [ ] Public bot-vs-bot sample dataset from our own platform, CPU label-factory v0 — before the event
+> - [x] Public bot-vs-bot sample dataset from our own platform
 >       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
+> - [ ] CPU label-factory v0 — before the event
 
 ## Getting started
 
@@ -30,9 +31,10 @@ mise run demo    # end-to-end: toy data → train → holdout metrics → ONNX e
 mise run check   # lint + format + tests, mirrors CI
 ```
 
-The demo currently runs on clearly-labeled synthetic data; the real sample — bot-vs-bot games
-between our own house bots on our own platform — is tracked in
-[#4](https://github.com/fortemate/dicechess-training/issues/4).
+The demo trains on [`sample/playsite-bots-v0`](sample/README.md) — 49,000 positions from 2,999
+bot-vs-bot games played by our own house bots on our own platform — and reports holdout
+log-loss against a no-information baseline, plus a calibration table. Pass `--synthetic` to
+run the same pipeline on random placements instead.
 
 ## Why
 
