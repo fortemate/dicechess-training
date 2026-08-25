@@ -58,3 +58,31 @@ def test_shards_never_split_a_game(tmp_path):
     assert len(paths) == 2  # one per game, despite shard_size=1
     for path in paths:
         assert schema.read_shard(path)["game_id"].nunique() == 1
+
+
+def test_rejects_non_positive_shard_size(tmp_path):
+    csv = tmp_path / "export.csv"
+    EXPORT.to_csv(csv, index=False)
+    for bad in (0, -1):
+        with pytest.raises(ValueError, match="shard_size"):
+            ingest.convert_export_file(str(csv), str(tmp_path / "shards"), shard_size=bad)
+
+
+def test_interleaved_games_are_never_split(tmp_path):
+    """An export that interleaves games must still yield whole games per shard."""
+    interleaved = EXPORT.iloc[[0, 2, 1, 3]].reset_index(drop=True)
+    assert list(interleaved["game_id"]) == ["g1", "g2", "g1", "g2"]
+    csv = tmp_path / "interleaved.csv"
+    interleaved.to_csv(csv, index=False)
+
+    paths = ingest.convert_export_file(str(csv), str(tmp_path / "shards"), shard_size=1)
+
+    seen = set()
+    for path in paths:
+        shard = schema.read_shard(path)
+        assert shard["game_id"].nunique() == 1
+        game = shard["game_id"].iloc[0]
+        assert game not in seen, f"game {game} was split across shards"
+        seen.add(game)
+        assert list(shard["ply"]) == sorted(shard["ply"])
+    assert seen == {"g1", "g2"}

@@ -48,13 +48,29 @@ def convert_export(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _group_by_game(df: pd.DataFrame) -> pd.DataFrame:
+    """Make each game's rows contiguous without reordering the games themselves."""
+    first_appearance = df.groupby("game_id", sort=False).ngroup()
+    return (
+        df.assign(_game_order=first_appearance)
+        .sort_values(["_game_order", "ply"], kind="stable")
+        .drop(columns="_game_order")
+        .reset_index(drop=True)
+    )
+
+
 def convert_export_file(csv_path: str, out_dir: str, shard_size: int = 25_000) -> list[str]:
     """Convert an export CSV (optionally gzipped) into schema-v0 shards.
 
     Shards are split on game boundaries so a single game never straddles two
-    files — game-level splitting stays possible shard by shard.
+    files — game-level splitting stays possible shard by shard. Rows of one game
+    are grouped first, so an export that interleaves games still yields whole
+    games per shard; games keep their first-appearance order and turns are
+    ordered within each game.
     """
-    df = convert_export(pd.read_csv(csv_path))
+    if shard_size <= 0:
+        raise ValueError(f"shard_size must be positive, got {shard_size}")
+    df = _group_by_game(convert_export(pd.read_csv(csv_path)))
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     prefix = Path(csv_path).name.split(".")[0]
