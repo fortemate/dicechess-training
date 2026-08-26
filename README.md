@@ -2,7 +2,15 @@
 
 [![CI](https://github.com/fortemate/dicechess-training/actions/workflows/ci.yml/badge.svg)](https://github.com/fortemate/dicechess-training/actions/workflows/ci.yml)
 
-Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label factory** that manufactures deep exact-search labels, and two small networks trained on them, designed to scale from a single workstation to an HPC cluster.
+Open training pipeline for the [Fortemate](https://fortemate.com) Dice Chess project — a GPU
+**label factory** that manufactures deep exact-search labels, and two small networks trained on
+them, designed to scale from a single workstation to an HPC cluster.
+
+> [!NOTE]
+> Fortemate is an independent project and is not affiliated with or endorsed by
+> [dicechess.com](https://dicechess.com). We use a compatible Dice Chess ruleset and observe
+> publicly visible games for research; links to that service are references, not claims of
+> ownership or partnership.
 
 > **Status: scaffold under active extraction.** This repository is being built ahead of the
 > [European AI Hackathon](https://www.openhackathons.org/s/siteevent/a0CUP00003yKxcX2AS/se000475)
@@ -16,7 +24,8 @@ Open training pipeline for [Dice Chess](https://dicechess.com) — a GPU **label
 > - [x] Training data schema v0: provenance-first Parquet shards, rawboard-768 + dice encoding
 >       ([#2](https://github.com/fortemate/dicechess-training/issues/2))
 > - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot — end of September 2026
-> - [x] Public bot-vs-bot sample dataset from our own platform
+> - [x] Public bot-vs-bot sample dataset collected from publicly observable games on an
+>       independent platform
 >       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
 > - [ ] CPU label-factory v0 — before the event
 
@@ -32,9 +41,10 @@ mise run check   # lint + format + tests, mirrors CI
 ```
 
 The demo trains on [`sample/playsite-bots-v0`](sample/README.md) — 49,000 positions from 2,999
-bot-vs-bot games played by our own house bots on our own platform — and reports holdout
-log-loss against a no-information baseline, plus a calibration table. Pass `--synthetic` to
-run the same pipeline on random placements instead.
+publicly observable bot-vs-bot games recorded by Fortemate from an independent Dice Chess
+service — and reports holdout log-loss against a no-information baseline, plus a calibration
+table. Fortemate does not operate or represent the source service. Pass `--synthetic` to run
+the same pipeline on random placements instead.
 
 ## Why
 
@@ -67,7 +77,8 @@ edge.
 ## The plan: a label factory and two nets
 
 **Label factory** (the cluster-bound workload): CPU workers expand Star2-pruned depth-3
-search trees over positions sampled from ~2M archived games and self-play; GPUs evaluate
+search trees over Fortemate-generated self-play positions and, where provenance and reuse
+terms permit, positions from the research archive of publicly observable games. GPUs evaluate
 leaves and exact 216-roll candidate rescores in large batches. One pass emits two training
 signals — depth-3 value labels and exact per-candidate rescore distributions. Target: a
 **100M+ position dataset** representing years of CPU search, computed in days.
@@ -103,7 +114,8 @@ profiled with the mentors.
   loader (NVIDIA Nsight Systems on the GPU side, async-profiler on the JVM side).
 
 **Post-event** — retrain the production evaluation model on the manufactured dataset and
-validate with rated games on the public ladder.
+validate it in controlled arenas and, where service rules permit, on independent public play
+services.
 
 The hackathon's public artifacts land in this repository: the pipeline code, the labeled
 dataset, and the benchmark and scaling results. The production bots' tournament-tuned
@@ -124,7 +136,7 @@ boundary described below.
 | Repository | Role |
 | --- | --- |
 | [dicechess-engine](https://github.com/fortemate/dicechess-engine) | Open engine: move generation and AI search (JVM / JS / Wasm) |
-| [dicechess-play](https://github.com/fortemate/dicechess-play) / [dicechess-play-api](https://github.com/fortemate/dicechess-play-api) | Public play platform and real-time server with an open Bot API |
+| [dicechess-play](https://github.com/fortemate/dicechess-play) / [dicechess-play-api](https://github.com/fortemate/dicechess-play-api) | Fortemate web application and API, published through [fortemate.com](https://fortemate.com) |
 | **dicechess-training** (this repo) | Open training pipeline: label factory, training, distillation, evaluation |
 
 Trained weights, opening books, and tournament-tuned bot configurations remain private,
