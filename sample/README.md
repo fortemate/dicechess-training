@@ -12,9 +12,9 @@ included. Fortemate does not operate, represent, or claim affiliation with the s
 
 Selection: games in Fortemate's research archive with a recorded outcome and both players of
 type `bot`, sampled deterministically (by hash of the game id) rather than by recency, so the
-sample is not skewed toward whichever bots happened to play last. Positions follow the same
-turn-level guards the analytics export uses — no-op self-loops and abandoned partial turns
-dropped, legal passes and terminal king-captures kept.
+sample is not skewed toward whichever bots happened to play last. The converter preserves the
+rows supplied by the upstream export: it normalizes fields, validates the schema, groups turns
+by game, and does not claim to enforce game-semantic filtering.
 
 The larger research archive stays private; this sample is a deliberate, self-contained slice
 used to exercise the open training pipeline.

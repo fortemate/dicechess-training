@@ -144,4 +144,4 @@ following an open-core model: the framework is open; the competitive artifacts a
 
 ## License
 
-[AGPL-3.0](LICENSE), consistent with the engine and the platform.
+[AGPL-3.0-or-later](LICENSE), consistent with the engine and the platform.
