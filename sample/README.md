@@ -5,19 +5,27 @@ Committed so that `mise run demo` trains on real Dice Chess positions out of the
 
 ## Provenance
 
-Every game here was played **bot against bot on Fortemate's own platform** — both sides are
-Fortemate house bots (engine experiments, ladder anchors, and evaluation-model bots), and the
-games were recorded by our own server. No human games are included, and no third-party data:
-the corpus is entirely ours to publish.
+Every game here was played **bot against bot on an independent Dice Chess service** and was
+recorded by Fortemate from the publicly observable live game stream. Both sides were Fortemate
+house bots (engine experiments, ladder anchors, and evaluation-model bots). No human games are
+included. Fortemate does not operate, represent, or claim affiliation with the source service.
 
-Selection: games from the platform's own game source with a recorded outcome and both players
-of type `bot`, sampled deterministically (by hash of the game id) rather than by recency, so
-the sample is not skewed toward whichever bots happened to play last. Positions follow the
-same turn-level guards the analytics export uses — no-op self-loops and abandoned partial
-turns dropped, legal passes and terminal king-captures kept.
+Selection: games in Fortemate's research archive with a recorded outcome and both players of
+type `bot`, sampled deterministically (by hash of the game id) rather than by recency, so the
+sample is not skewed toward whichever bots happened to play last. The converter preserves the
+rows supplied by the upstream export: it normalizes fields, validates the schema, groups turns
+by game, and does not claim to enforce game-semantic filtering.
 
-The full archive (millions of games, including human play) stays private; this sample is a
-deliberate, self-contained slice for the open pipeline.
+The larger research archive stays private; this sample is a deliberate, self-contained slice
+used to exercise the open training pipeline.
+
+## Data terms
+
+The repository's AGPL-3.0-or-later license covers the software and does not automatically grant
+rights to third-party source material represented in the sample. The sample is not an official
+export from, or an artifact endorsed by, the independent source service. New cluster-scale
+training corpora will be generated primarily from Fortemate self-play. Any separately published
+dataset will include its own explicit provenance and license after review.
 
 ## What one row means
 
