@@ -227,9 +227,10 @@ Accepted, with the constraints below.
   benchmark in #13 must therefore compare against the no-information predictor and report
   calibration rather than accuracy, and the promotion gate is relative, not absolute.
 - Already created: [engine #215](https://github.com/fortemate/dicechess-engine/issues/215)
-  (versioned S1/S2 extractors) and [#17](https://github.com/fortemate/dicechess-training/issues/17)
-  (the ablation, which also delivers engine-computed enrichment of schema-v0 shards with
-  provenance). Created after the ablation selects the schema: reproducible training and export of
+  (versioned S1/S2 extractors), [analytics #40](https://github.com/fortemate/dicechess-analytics/issues/40)
+  (the private enrichment application learns both schemas) and
+  [#17](https://github.com/fortemate/dicechess-training/issues/17) (the ablation, which also
+  delivers engine-computed enrichment of schema-v0 shards with provenance). Created after the ablation selects the schema: reproducible training and export of
   the candidate with manifest and digests; qualification against #13 (offline report, parity,
   latency, playground probe); the evaluator golden-parity fixture, plus the evaluator schema
   Issue if S1 or S2 wins.
