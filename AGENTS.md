@@ -11,11 +11,13 @@
   4. Export: INT8 ONNX for the engine's chance-node hook and phase-1 pre-ranker slot.
   5. Evaluation: holdout agreement with the depth-3 teacher (MSE, rank correlation, log-loss/calibration), fixed-time arena A/B matches, and rated games on the public bot ladder.
 
+- **Serving contracts** (`src/dicechess_training/contracts/`): fail-closed Python mirrors of the contracts the private evaluation service enforces. `kcp13.py` pins the `standard-kcp` / `kcp-13` layout, tensor names, manifest rules and side-to-move perspective; feature values are never reimplemented — the JVM engine writes them into `tests/fixtures/kcp13/` via `tools/kcp13-golden` (sbt, `mise run golden:kcp13`). Decisions live in `docs/decisions/` as numbered ADRs.
+
 The authoritative program description lives in `README.md`; keep this overview in sync with it.
 
 ## Status
 
-**Scaffold — no code yet.** The pipeline is being built ahead of the European AI Hackathon (October 2026); the training and distillation parts are extracted from the private `dicechess-ev` repository, the label factory is new code on top of the open engine. Until `mise.toml` and `pyproject.toml` land, there are no build, test, or lint tasks to run. Once tooling lands, this section is replaced by the standard Fortemate developer workflow (`mise run setup` / `check` / `test` / `format`).
+**Toy-scale stack, real sample, contracts pinned.** `mise run setup` / `check` / `test` / `format` / `demo` are the developer workflow (`check` mirrors CI: ruff lint + format, pytest, demo smoke). `mise run golden:kcp13` regenerates the engine golden corpus and needs a JDK and sbt; it is not part of `check` because the fixture is committed. The label factory, the two networks and the first playground model are tracked in Issues #7–#9 and #12.
 
 ## Branch & Issue Guidelines
 

@@ -26,3 +26,14 @@ run = ["uv run ruff format .", "uv run ruff check --fix ."]
 [tasks.demo]
 description = "End-to-end toy demo: data -> train -> metrics -> ONNX -> parity"
 run = "uv run python -m dicechess_training.demo"
+
+[tasks."golden:kcp13"]
+description = "Regenerate the kcp-13 golden corpus from the released engine (needs JDK 21+ and sbt; not part of check)"
+dir = "tools/kcp13-golden"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+version="${ENGINE_VERSION:-0.9.2}"
+out="${1:-../../tests/fixtures/kcp13/golden-engine-${version}.json}"
+sbt -batch "-Dengine.version=${version}" "run ../../tests/fixtures/kcp13/probes.tsv ${out}"
+"""
