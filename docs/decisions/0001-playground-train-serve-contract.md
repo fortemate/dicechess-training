@@ -1,6 +1,6 @@
 # ADR 0001: Train/serve contract for the first real playground evaluation model
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-11
 - Decision owner: repository maintainer
 - Tracking: [Issue #14](https://github.com/fortemate/dicechess-training/issues/14)
@@ -240,7 +240,7 @@ Accepted, with the constraints below.
 
 ## Approval
 
-Pending: the maintainer's decision comment on Issue #14 and the merge of the pull request that
-introduces this record. Cross-repository review by the evaluator owner and confirmation by the
-benchmark owner (#13) that the frozen task definition uses exactly the perspective in Decision 1
-are part of that approval.
+The authorized maintainer approved this decision on 2026-09-11 in the
+[Issue #14 decision comment](https://github.com/fortemate/dicechess-training/issues/14#issuecomment-5639730674). The evaluator, engine and analytics repositories share the
+same maintainer, so cross-repository review is covered by that comment; the benchmark (#13) must
+adopt exactly the perspective in Decision 1, and its gate decides the ablation in #17.
