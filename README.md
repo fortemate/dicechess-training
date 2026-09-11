@@ -28,9 +28,9 @@ them, designed to scale from a single workstation to an HPC cluster.
 >       independent platform
 >       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
 > - [ ] CPU label-factory v0 — before the event
-> - [ ] First real playground evaluation model on the `kcp-13` serving contract
->       ([#12](https://github.com/fortemate/dicechess-training/issues/12); train/serve contract decided in
->       [ADR 0001](docs/decisions/0001-playground-train-serve-contract.md))
+> - [ ] First real playground evaluation model ([#12](https://github.com/fortemate/dicechess-training/issues/12)):
+>       contract mechanics in [ADR 0001](docs/decisions/0001-playground-train-serve-contract.md), feature schema
+>       chosen by the predeclared ablation in [#17](https://github.com/fortemate/dicechess-training/issues/17)
 
 ## Getting started
 
@@ -54,7 +54,7 @@ the same pipeline on random placements instead.
 The private evaluation service behind the [protected playground](https://github.com/fortemate/dicechess-evaluation-playground)
 serves one contract today: `standard-kcp` over the engine's 13-feature `kcp-13` schema — mover-perspective,
 dice-free, output `P(side to move wins)`. [ADR 0001](docs/decisions/0001-playground-train-serve-contract.md)
-records the inventory and the decision to train the first real playground model on that unchanged contract.
+records the inventory, keeps `kcp-13` as the reference baseline, and defers the first candidate's feature schema to a predeclared ablation.
 `dicechess_training.contracts.kcp13` pins its layout, tensor names, manifest rules and perspective on the
 Python side and fails closed on any mismatch; the feature values themselves are never reimplemented here —
 `tests/fixtures/kcp13/` holds the golden vectors written by the engine through

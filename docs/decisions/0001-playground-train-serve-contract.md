@@ -101,6 +101,39 @@ from a CSV enriched by the analytics `EnrichTrainingDataApp`, which calls the ve
 make any existing artifact deployable: none of them was exported against the manifest contract,
 and their datasets and configs are not bound to them immutably.
 
+## Feature-schema ablation
+
+Choosing the schema is a measured decision, not a default. The owner's evidence says features,
+not data volume, bound quality (a 17 % larger corpus moved AUC by −0.002; the four
+capture-probability columns added +2.2 pp AUC on 17 M rows), and the owner's strategy research
+(September 2026) names position properties that no served schema exposes: **expected wasted
+rolls** (a die face whose piece type has no move), **pawn blockage**, **tempo** as separate
+own/opponent mobility, and **passed pawns** whose value depends on rolling the right die. All of
+them derive from pseudo-legal move counts *per piece type, per side*, which `RichFeatures`
+already computes and collapses into one `mobility_diff`, so their marginal extraction cost is
+small next to the 216-outcome capture-probability search. The engine exposes them as versioned
+extractors in [engine #215](https://github.com/fortemate/dicechess-engine/issues/215);
+[Issue #17](https://github.com/fortemate/dicechess-training/issues/17) runs the ablation.
+
+| Schema | Columns | Contents |
+| --- | ---: | --- |
+| **S0** `kcp-13` | 13 | the served baseline |
+| **S1** `kcp-mobility-27-v1` | 27 | S0, then pseudo-legal move counts per piece type for the side to move and for the opponent (6 + 6), then own and opponent PDI (`PieceDiversity.count / 5`) |
+| **S2** `kcp-mobility-pawns-31-v1` | 31 | S1, then passed-pawn count and most advanced passed-pawn rank for both sides |
+
+Rules of the ablation: the protocol (model family, seeds, splits, metrics, slices, probe suite,
+decision rule) is committed before the first result; every schema's result is reported,
+including losers; the decision is relative to S0 under the #13 gate; a schema enters the serving
+contract only through that gate and only as an engine-implemented extractor (train == serve).
+The golden corpus gains engine-generated vectors for S1 and S2 with the same invariants as
+`kcp-13` plus prefix identity and `sum(own_moves) − sum(opp_moves) == mobility_diff`. The
+representation question raised during review (signed differences versus separate own/opponent
+counts) is answered by S1's design: new blocks are own/opponent, and the ablation measures it.
+
+Rejected for this ablation: a safety block (hanging material weighted by capture probability)
+cured the queen-hang blind spot in the private `safe_1m` retrain but tripled extraction time and
+has no public engine extractor; it remains a documented later candidate, not a schema here.
+
 ## Alternatives considered
 
 ### Reuse the existing 13-wide GBDT artifact
@@ -130,10 +163,15 @@ Accepted, with the constraints below.
 
 ## Decision
 
-1. **Role and contract.** The first real playground model is a *position evaluation* model on
-   the existing `standard-kcp` / `kcp-13` contract. Its output is **P(the side to move wins)**,
-   dice-free. The evaluator is not changed for it. Every report, model card and manifest states
-   this perspective explicitly.
+1. **Role and contract.** The first real playground model is a *position evaluation* model:
+   its output is **P(the side to move wins)**, dice-free, on the evaluator's existing tensor and
+   manifest contract. `kcp-13` is the **reference baseline** and the only schema the evaluator
+   serves today. The first candidate's **feature schema is selected by the predeclared ablation**
+   in [Issue #17](https://github.com/fortemate/dicechess-training/issues/17) (see *Feature-schema
+   ablation* below): if a wider schema clears the #13 gate against `kcp-13`, it enters the
+   evaluator as one additive, versioned schema through one separately reviewed
+   `dicechess-evaluation` Issue; otherwise `kcp-13` ships unchanged. Every report, model card and
+   manifest states the perspective explicitly.
 2. **Single feature source.** Training features are produced by the engine's
    `KcpFeatures.extract(state, state.activeColor)` at a pinned released engine version — the same
    code the evaluator runs. Python never reimplements the positional or capture-probability
@@ -174,10 +212,11 @@ Accepted, with the constraints below.
 7. **Serving envelope.** No evaluator configuration changes for the candidate; qualification
    verifies latency, memory, concurrency and probability bounds inside the existing Aurora limits
    (feature extraction remains the dominant cost, see the inventory).
-8. **Revisit.** A successor schema is opened as one separately reviewed `dicechess-evaluation`
-   Issue when both hold: the depth-3 label factory (#7) delivers teacher labels, and a dice-free
-   candidate on a richer schema beats the accepted `kcp-13` baseline on the frozen #13 benchmark by
-   its predeclared gate. Until then the position role stays on `kcp-13`.
+8. **Revisit.** Two different doors, two different keys. An *additive* schema that keeps the
+   `kcp-13` prefix (the ablation candidates below) needs only the #13 gate. A *replacement*
+   representation (dice-free raw board, NNUE) is opened as a separate `dicechess-evaluation`
+   Issue only when both hold: the depth-3 label factory (#7) delivers teacher labels, and such a
+   candidate beats the accepted baseline on the frozen #13 benchmark by its predeclared gate.
 
 ## Consequences
 
@@ -187,10 +226,13 @@ Accepted, with the constraints below.
 - The quality ceiling is bounded by 13 hand-crafted features and by game-outcome labels; the
   benchmark in #13 must therefore compare against the no-information predictor and report
   calibration rather than accuracy, and the promotion gate is relative, not absolute.
-- Follow-up child Issues are created only after this record is accepted: (1) engine-side
-  `kcp-13` enrichment of schema-v0 shards with provenance; (2) reproducible training and export of
-  the candidate with manifest and digests; (3) qualification against #13 (offline report, parity,
-  latency, playground probe); (4) evaluator golden-parity fixture.
+- Already created: [engine #215](https://github.com/fortemate/dicechess-engine/issues/215)
+  (versioned S1/S2 extractors) and [#17](https://github.com/fortemate/dicechess-training/issues/17)
+  (the ablation, which also delivers engine-computed enrichment of schema-v0 shards with
+  provenance). Created after the ablation selects the schema: reproducible training and export of
+  the candidate with manifest and digests; qualification against #13 (offline report, parity,
+  latency, playground probe); the evaluator golden-parity fixture, plus the evaluator schema
+  Issue if S1 or S2 wins.
 - Recorded blockers: the historical 13-wide artifact has no immutable lineage and is not a
   promotion reference; the private enrichment path lives in the analytics repository and is not
   reproducible from a public checkout, which is why (1) exists.
