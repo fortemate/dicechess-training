@@ -1,0 +1,24 @@
+id	fen	tags	note
+start-w	rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -	opening symmetric	Initial position, White to move: only total_material is non-zero.
+start-w-6field	rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1	canonicalization	Same as start-w with the two clock fields present; must be identical.
+start-b	rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -	opening symmetric perspective	Initial position, Black to move; mover-canonical vector must equal start-w.
+kings-only-w	4k3/8/8/8/8/8/8/4K3 w - -	endgame material	Bare kings: every feature zero including total_material.
+knight-up-w	r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -	material	Black is missing a knight; White to move sees n_diff +1, material_diff +3.
+knight-down-b	r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -	material perspective	Same placement, Black to move: signs of the *_diff block flip.
+rook-king-danger-w	4k3/8/8/8/8/8/4r3/4K3 w - -	king-capture perspective	Black rook e2 bears on the White king e1: king_capture_danger > 0 for the mover.
+rook-queen-attack-w	k7/8/8/4q3/8/8/8/K3R3 w - -	piece-safety	White rook e1 bears on the Black queen e5: queen_capture_attack > 0.
+queen-en-prise-w	4k3/8/8/4p3/3Q4/8/8/4K3 w - -	piece-safety	White queen d4 is attacked by the pawn e5: queen_capture_danger > 0 for White.
+rook-king-attack-w	4k3/8/8/8/8/8/4R3/K7 w - -	king-capture forced-loss	White rook e2 bears on the Black king e8: king_capture_attack >= P(any R or Q die) = 152/216.
+kp-vs-k-w	8/8/8/4k3/8/8/4P3/4K3 w - -	endgame material	King and pawn versus king, White to move: p_diff +1, material_diff +1.
+kp-vs-k-b	8/8/8/4k3/8/8/4P3/4K3 b - -	endgame material perspective	Same placement, Black to move: p_diff -1.
+ep-e6-w	rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6	canonicalization	After 1.e4 e5 with an en-passant target no pawn can use; must equal ep-none-w.
+ep-none-w	rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -	canonicalization	ep-e6-w with the unusable en-passant target dropped (X-FEN normalisation).
+sample-mid-b	r1bk4/ppp3pp/8/1BP5/2P5/8/R2K2QP/4R3 b - -	middlegame sample	Public sample playsite-bots-v0, game 0030b6cf-7074-5886-8ad0-39af6dcad9f7 ply 20.
+sample-mid-w	1r1k4/ppp3pp/8/2P5/2P4P/8/R2K2Q1/4R3 w - -	middlegame sample	Public sample playsite-bots-v0, same game, ply 23.
+knight-up-w-twin	rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R1BQKBNR b KQkq -	twin perspective	Colour-swapped rank-mirror of knight-up-w: the mover-canonical vector must be identical.
+rook-king-danger-w-twin	4k3/4R3/8/8/8/8/8/4K3 b - -	twin perspective	Colour-swapped rank-mirror of rook-king-danger-w: the mover-canonical vector must be identical.
+rook-queen-attack-w-twin	k3r3/8/8/8/4Q3/8/8/K7 b - -	twin perspective	Colour-swapped rank-mirror of rook-queen-attack-w: the mover-canonical vector must be identical.
+queen-en-prise-w-twin	4k3/8/8/3q4/4P3/8/8/4K3 b - -	twin perspective	Colour-swapped rank-mirror of queen-en-prise-w: the mover-canonical vector must be identical.
+rook-king-attack-w-twin	k7/4r3/8/8/8/8/8/4K3 b - -	twin perspective	Colour-swapped rank-mirror of rook-king-attack-w: the mover-canonical vector must be identical.
+sample-mid-b-twin	4r3/r2k2qp/8/2p5/1bp5/8/PPP3PP/R1BK4 w - -	twin perspective	Colour-swapped rank-mirror of sample-mid-b: the mover-canonical vector must be identical.
+sample-mid-w-twin	4r3/r2k2q1/8/2p4p/2p5/8/PPP3PP/1R1K4 b - -	twin perspective	Colour-swapped rank-mirror of sample-mid-w: the mover-canonical vector must be identical.
