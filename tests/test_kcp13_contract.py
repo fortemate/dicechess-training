@@ -204,22 +204,26 @@ def _linear_model(
     dynamic_batch: bool = True,
     extra_output: bool = False,
     dtype=TensorProto.FLOAT,
+    opset: int = 13,
+    broken_graph: bool = False,
 ):
     """13 -> 1 Gemm + Sigmoid with a dynamic batch axis: the smallest contract-conforming graph."""
     batch = "batch" if dynamic_batch else 1
     x = helper.make_tensor_value_info(input_name, dtype, [batch, width])
     y = helper.make_tensor_value_info(output_name, dtype, [batch, 1])
-    weights = numpy_helper.from_array(np.full((width, 1), 0.05, dtype=np.float32), "W")
-    bias = numpy_helper.from_array(np.zeros((1,), dtype=np.float32), "b")
+    np_dtype = np.float64 if dtype == TensorProto.DOUBLE else np.float32
+    weights = numpy_helper.from_array(np.full((width, 1), 0.05, dtype=np_dtype), "W")
+    bias = numpy_helper.from_array(np.zeros((1,), dtype=np_dtype), "b")
     nodes = [
         helper.make_node("Gemm", [input_name, "W", "b"], ["logit"]),
-        helper.make_node("Sigmoid", ["logit"], [output_name]),
+        # A broken graph references a tensor nobody produces: metadata looks fine, checker fails.
+        helper.make_node("Sigmoid", ["missing" if broken_graph else "logit"], [output_name]),
     ]
     outputs = [y]
     if extra_output:
         outputs.append(helper.make_tensor_value_info("logit", dtype, [batch, 1]))
     graph = helper.make_graph(nodes, "test", [x], outputs, initializer=[weights, bias])
-    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", opset)])
     model.ir_version = 8
     onnx.save(model, str(path))
     return path
@@ -227,6 +231,7 @@ def _linear_model(
 
 def test_validate_onnx_contract_accepts_a_conforming_graph(tmp_path):
     kcp13.validate_onnx_contract(_linear_model(tmp_path / "ok.onnx"))
+    kcp13.validate_onnx_contract(_linear_model(tmp_path / "ok18.onnx", opset=kcp13.MAX_OPSET))
 
 
 @pytest.mark.parametrize(
@@ -238,6 +243,8 @@ def test_validate_onnx_contract_accepts_a_conforming_graph(tmp_path):
         ({"dynamic_batch": False}, "dynamic batch"),
         ({"extra_output": True}, "exactly one output"),
         ({"dtype": TensorProto.DOUBLE}, "FLOAT dtype"),
+        ({"opset": 19}, "opset 19 exceeds"),
+        ({"broken_graph": True}, "not a valid graph"),
     ],
 )
 def test_validate_onnx_contract_fails_closed(tmp_path, kwargs, message):

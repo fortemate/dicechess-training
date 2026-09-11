@@ -40,9 +40,10 @@ object Kcp13Golden:
 
   private def jsonString(value: String): String =
     "\"" + value.flatMap {
-      case '"'  => "\\\""
-      case '\\' => "\\\\"
-      case c    => c.toString
+      case '"'         => "\\\""
+      case '\\'        => "\\\\"
+      case c if c < ' ' => f"\\u${c.toInt}%04x" // control characters are never legal raw JSON
+      case c           => c.toString
     } + "\""
 
   private def jsonStrings(values: Seq[String]): String = values.map(jsonString).mkString("[", ", ", "]")

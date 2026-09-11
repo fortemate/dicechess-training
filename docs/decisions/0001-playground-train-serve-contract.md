@@ -25,12 +25,14 @@ maintainer; the benchmark and promotion gate are decided separately in
 
 ## Inventory: the contract the evaluator serves today
 
-Read from the private `dicechess-evaluation` main branch and the public engine on 2026-09-11.
+Read from the private `dicechess-evaluation` main branch and the public engine on 2026-09-11. Only the
+public train/serve contract is recorded here; the service's operational configuration (limits,
+caching, deployment) stays in its private documentation.
 
 | Item | Value |
 | --- | --- |
 | Evaluation profile | `standard-kcp` (the only supported id; unknown ids are rejected) |
-| Algorithm | `kcp-1ply-onnx`, search parameters `ply=1`, `deduplicate=transpositions`, `sorting=winProbabilityDesc,pathLengthAsc,uciAsc` |
+| Algorithm | `kcp-1ply-onnx`: one-ply candidate analysis, transposition-deduplicated, scored by the ONNX model |
 | Feature schema | `kcp-13`, exactly 13 FLOAT features |
 | Feature source | engine `KcpFeatures.extract(state, state.activeColor)` — `RichFeatures` (7 material + `mobility_diff` + `king_safety_diff`) followed by `king_capture_attack`, `king_capture_danger`, `queen_capture_attack`, `queen_capture_danger` |
 | Column order | pinned in `dicechess_training.contracts.kcp13.COLUMN_NAMES` and in the golden corpus |
@@ -41,10 +43,9 @@ Read from the private `dicechess-evaluation` main branch and the public engine o
 | Output handling | one finite value per row, clamped to `[0, 1]`; `NaN`, infinities and row-count mismatches fail the inference |
 | Output meaning | `POST /api/v1/evaluate/position`: P(the side to move wins). `POST /api/v1/evaluate/turn`: each candidate afterstate is scored from its *new* side to move and reported as `1 − p` for the mover; an immediate king capture is reported as `1.0` without a model call |
 | Manifest | `manifestVersion` `1.0.0`; `modelId` non-blank; `modelSha256` = 64 hex of the ONNX bytes; `featureSchema` `kcp-13`; `featureCount` 13; `evaluationProfile` `standard-kcp`; `engineCompatibility` = space-separated `MAJOR.MINOR.PATCH` comparators (`=`, `>`, `>=`, `<`, `<=`, AND semantics, bare version = equality) that must include the serving engine version; optional `calibration` and free-form `provenance` |
-| Cache namespace | ruleset `standard-dicechess-v1`, engine version, model id, model digest, feature schema, profile, algorithm, sorted search parameters, seed — a new model or schema never shares cache entries with the old one |
-| Serving engine | `com.fortemate:dicechess-engine_3:0.9.2`, generated into the service's `BuildInfo` |
-| ONNX Runtime | 1.29.0 (JVM) |
-| Fail-closed points | startup: manifest validation, model digest, ONNX graph contract; per request: feature width, output shape and finiteness |
+| Serving engine | the public `com.fortemate:dicechess-engine_3` artifact, version 0.9.2 at the time of writing; the version is part of every response's provenance |
+| Runtime | ONNX Runtime on the JVM; the qualification step verifies that the exported opset loads there |
+| Fail-closed points | before serving: manifest validation, model digest, ONNX graph contract; per request: feature width, output shape and finiteness |
 
 ### Feature cost and serving envelope
 
@@ -56,8 +57,8 @@ middlegame ≈ 3.6–3.8 ms, the position after `1.e4 e5` ≈ 4.4 ms. That agree
 own documentation (≈ 5 ms per candidate on the production host) and dominates a turn analysis,
 where the opening position with dice `PPN` already expands 2 540 paths into 1 028 distinct
 candidate positions. Any model on this contract therefore has to add only negligible batched
-inference time (well under 0.1 ms per row); the envelope is set by feature extraction and the
-service's admission limits, both already in place.
+inference time (well under 0.1 ms per row); the envelope is set by feature extraction, which is
+already in place and unchanged by this decision.
 
 ### Feature semantics across engine releases
 
@@ -151,8 +152,9 @@ Accepted, with the constraints below.
    editing it by hand is not allowed.
 4. **Tensor contract of the export.** The candidate is exported with input `input` `[batch, 13]`
    FLOAT and output `output` `[batch, 1]` FLOAT, dynamic batch axis, sigmoid inside the graph,
-   any input standardisation folded into the graph as constants, ONNX opset ≤ 18 so that ONNX
-   Runtime 1.29 loads it. A small PyTorch MLP is the default family because it meets the contract
+   any input standardisation folded into the graph as constants, default-domain ONNX opset ≤ 18
+   (the ceiling `kcp13.validate_onnx_contract` enforces; the evaluator's runtime loads it). A
+   small PyTorch MLP is the default family because it meets the contract
    natively and its Torch↔ONNX parity is exact to float32; a GBDT is admissible only if its export
    meets the same contract and parity, and is then a comparison, not the default.
 5. **Manifest.** Built with `kcp13.build_manifest` from the exact ONNX bytes; `engineCompatibility`

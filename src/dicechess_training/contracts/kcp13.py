@@ -38,6 +38,7 @@ ALGORITHM = "kcp-1ply-onnx"
 MANIFEST_VERSION = "1.0.0"
 INPUT_NAME = "input"
 OUTPUT_NAME = "output"
+MAX_OPSET = 18  # highest default-domain opset the evaluator's ONNX Runtime is verified to load
 PERSPECTIVE = "side-to-move"
 RULESET_VERSION = "standard-dicechess-v1"
 
@@ -269,10 +270,24 @@ def _dims(tensor) -> list[int | None]:
 
 
 def validate_onnx_contract(model_path: str | Path) -> None:
-    """Mirror of the evaluator's ``OnnxModelContract.validate`` on the serialized graph."""
+    """Mirror of the evaluator's ``OnnxModelContract.validate`` on the serialized graph, plus the
+    ONNX checker (``onnx.load`` only deserializes) and the opset ceiling from ADR 0001."""
     import onnx
 
     model = onnx.load(str(model_path))
+    try:
+        onnx.checker.check_model(model, full_check=True)
+    except Exception as err:  # onnx raises ValidationError or a shape-inference error
+        raise ContractError(f"ONNX model is not a valid graph: {err}") from err
+    default_opsets = [
+        entry.version for entry in model.opset_import if entry.domain in ("", "ai.onnx")
+    ]
+    if not default_opsets:
+        raise ContractError("ONNX model declares no default-domain opset")
+    if max(default_opsets) > MAX_OPSET:
+        raise ContractError(
+            f"ONNX default-domain opset {max(default_opsets)} exceeds the maximum {MAX_OPSET}"
+        )
     initializers = {init.name for init in model.graph.initializer}
     inputs = [tensor for tensor in model.graph.input if tensor.name not in initializers]
     outputs = list(model.graph.output)
