@@ -21,7 +21,7 @@ used to exercise the open training pipeline.
 
 ## Data terms
 
-The repository's AGPL-3.0-or-later license covers the software and does not automatically grant
+The repository's AGPL-3.0-only license covers the software and does not automatically grant
 rights to third-party source material represented in the sample. The sample is not an official
 export from, or an artifact endorsed by, the independent source service. New cluster-scale
 training corpora will be generated primarily from Fortemate self-play. Any separately published
