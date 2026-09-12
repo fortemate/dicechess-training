@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Open training pipeline for Dice Chess: label factory, chance-collapse value net, move pre-ranker"
 readme = "README.md"
 requires-python = ">=3.12"
-license = "AGPL-3.0-or-later"
+license = "AGPL-3.0-only"
 dependencies = [
   "numpy>=2.0",
   "pandas>=2.2",
