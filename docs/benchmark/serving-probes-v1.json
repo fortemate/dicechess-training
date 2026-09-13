@@ -1,0 +1,28 @@
+{
+  "schema": "playground-serving-probes-v1",
+  "probes": [
+    {
+      "id": "immediate-king-capture",
+      "golden_probe": "rook-king-attack-w",
+      "fen": "4k3/8/8/8/8/8/4R3/K7 w - -",
+      "dice": "RRR",
+      "played_moves": ["e2e8"],
+      "expected_mover_probability": 1.0,
+      "expected_model_calls_for_terminal_candidate": 0
+    },
+    {
+      "id": "captured-side-terminal-loss",
+      "derive_from": "immediate-king-capture",
+      "expected_winner": "w",
+      "expected_loser": "b",
+      "expected_loser_outcome": 0.0,
+      "scope": "engine terminal result and adapter perspective; do not feed a missing-king board into the leaf model"
+    },
+    {
+      "id": "piece-safety",
+      "golden_probes": ["rook-queen-attack-w", "queen-en-prise-w"],
+      "expected": "queen attack/danger columns match the engine golden vectors; colour twins have identical probabilities",
+      "scope": "matched legal turn alternatives require additional owner-reviewed raw evidence; cross-position probability order is not a theorem"
+    }
+  ]
+}

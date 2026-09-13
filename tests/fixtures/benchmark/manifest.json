@@ -1,0 +1,29 @@
+{
+  "schema": "playground-rows-v1",
+  "version": "1.0.0",
+  "perspective": "side-to-move",
+  "target": "decisive-game-outcome",
+  "kind": "synthetic",
+  "license": "AGPL-3.0-only",
+  "license_evidence_sha256": "82d8f904da0eae878a35defb7a972558bf88bfcede842f7e701339cd798c0a88",
+  "rows_sha256": "14e6316e136700c6bbd14884c24e169fb2af9b3097973a7bcef8d7404dc89b40",
+  "source_sha256": "676e2fb05df4109c31bbe6d9b9716340b024260e7a81d9627753dc6de2056761",
+  "golden_sha256": "aee780e602ec9412abee80f46e5ee23801194ecb5f6d26a23ad15b981cbb26f6",
+  "feature_schema": "kcp-13",
+  "engine_version": "0.9.2",
+  "columns": [
+    "p_diff",
+    "n_diff",
+    "b_diff",
+    "r_diff",
+    "q_diff",
+    "material_diff",
+    "total_material",
+    "mobility_diff",
+    "king_safety_diff",
+    "king_capture_attack",
+    "king_capture_danger",
+    "queen_capture_attack",
+    "queen_capture_danger"
+  ]
+}

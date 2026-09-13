@@ -1,0 +1,32 @@
+{
+  "version": "playground-benchmark-v1",
+  "dataset_schema": "playground-rows-v1",
+  "report_schema": "playground-report-v1",
+  "perspective": "side-to-move",
+  "target": "binary-win-conditioned-on-decisive-game",
+  "feature_schema": "kcp-13",
+  "split": "sha256(playground-v1:<group_id>) mod 10000: 8000/1000/1000",
+  "accepted_references": [],
+  "ineligible_references": ["historical-artifacts-without-immutable-lineage", "synthetic-serving-fixture"],
+  "gate": {
+    "min_groups": 30,
+    "min_slice_groups": 10,
+    "min_relative_log_loss_gain": 0.01,
+    "max_brier_regression": 0.0,
+    "max_ece_regression": 0.01,
+    "max_slice_log_loss_regression": 0.01,
+    "max_slice_brier_regression": 0.01,
+    "require_negative_paired_log_loss_ci_upper": true,
+    "require_unseen_positions": true,
+    "require_serving_evidence": true
+  },
+  "uncertainty": {"method": "group-bootstrap-percentile-95", "repeats": 1000, "seed": 13},
+  "probes": {"equal_tolerance": 0.00001, "opening_distance_from_half": 0.1},
+  "slice_policy": {
+    "phase": "opening: ply<=10; otherwise endgame: total_material<=20; else middlegame",
+    "side": ["w", "b"],
+    "material": "behind: material_diff<-1; balanced: abs(material_diff)<=1; ahead: material_diff>1",
+    "target": "decisive: binary observed outcome; uncertain: unsupported without teacher probabilities",
+    "tactical": "king_attack, king_danger, queen_attack, queen_danger: corresponding kcp column > 0"
+  }
+}

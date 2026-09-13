@@ -1,0 +1,4 @@
+Authored synthetic test fixture by Fortemate.
+AGPL-3.0-only; see repository LICENSE.
+Positions use only authored non-sample kcp-13 golden probes.
+Alternating labels are artificial test inputs, not game or teacher outcomes.
