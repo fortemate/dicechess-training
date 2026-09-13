@@ -1,0 +1,574 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "playground-report-v1"
+    },
+    "benchmark_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "perspective": {
+      "const": "side-to-move"
+    },
+    "target": {
+      "const": "binary-win-conditioned-on-decisive-game"
+    },
+    "mode": {
+      "enum": [
+        "development",
+        "final"
+      ]
+    },
+    "dataset": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "const": "playground-rows-v1"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "kind": {
+          "enum": [
+            "synthetic",
+            "public-licensed",
+            "owner-controlled"
+          ]
+        }
+      },
+      "required": [
+        "schema",
+        "version",
+        "sha256",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "candidate_manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "seal_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "serving_evidence_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "excluded_draws": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "splits": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "evaluated_groups": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "input",
+        "excluded_draws",
+        "splits",
+        "evaluated_groups"
+      ],
+      "additionalProperties": false
+    },
+    "leakage": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "aggregate": {
+      "$ref": "#/$defs/summary"
+    },
+    "exact_unseen": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/summary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "slices": {
+      "type": "object",
+      "properties": {
+        "phase:opening": {
+          "$ref": "#/$defs/slice"
+        },
+        "phase:middlegame": {
+          "$ref": "#/$defs/slice"
+        },
+        "phase:endgame": {
+          "$ref": "#/$defs/slice"
+        },
+        "side:w": {
+          "$ref": "#/$defs/slice"
+        },
+        "side:b": {
+          "$ref": "#/$defs/slice"
+        },
+        "material:behind": {
+          "$ref": "#/$defs/slice"
+        },
+        "material:balanced": {
+          "$ref": "#/$defs/slice"
+        },
+        "material:ahead": {
+          "$ref": "#/$defs/slice"
+        },
+        "target:decisive": {
+          "$ref": "#/$defs/slice"
+        },
+        "target:uncertain": {
+          "$ref": "#/$defs/slice"
+        },
+        "tactical:king_attack": {
+          "$ref": "#/$defs/slice"
+        },
+        "tactical:king_danger": {
+          "$ref": "#/$defs/slice"
+        },
+        "tactical:queen_attack": {
+          "$ref": "#/$defs/slice"
+        },
+        "tactical:queen_danger": {
+          "$ref": "#/$defs/slice"
+        }
+      },
+      "required": [
+        "phase:opening",
+        "phase:middlegame",
+        "phase:endgame",
+        "side:w",
+        "side:b",
+        "material:behind",
+        "material:balanced",
+        "material:ahead",
+        "target:decisive",
+        "target:uncertain",
+        "tactical:king_attack",
+        "tactical:king_danger",
+        "tactical:queen_attack",
+        "tactical:queen_danger"
+      ],
+      "additionalProperties": false
+    },
+    "probes": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "checks": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "boolean"
+              }
+            },
+            "diagnostic_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "king_capture": {
+              "type": "string"
+            },
+            "piece_safety": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "checks",
+            "diagnostic_count",
+            "king_capture",
+            "piece_safety"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "baseline": {
+      "type": "string"
+    },
+    "baselines": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/metric"
+      }
+    },
+    "ineligible_reference_categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "agreement_ranking": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "unsupported"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "decision": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "enum": [
+            "eligible-for-owner-review",
+            "not-qualified"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "status",
+        "reasons"
+      ],
+      "additionalProperties": false
+    },
+    "implementation_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "schema",
+    "benchmark_sha256",
+    "perspective",
+    "target",
+    "mode",
+    "dataset",
+    "candidate_manifest_sha256",
+    "seal_sha256",
+    "serving_evidence_sha256",
+    "counts",
+    "leakage",
+    "aggregate",
+    "exact_unseen",
+    "slices",
+    "probes",
+    "baseline",
+    "baselines",
+    "ineligible_reference_categories",
+    "agreement_ranking",
+    "decision",
+    "implementation_sha256"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prevalence": {
+          "type": "number"
+        },
+        "log_loss": {
+          "type": "number"
+        },
+        "brier": {
+          "type": "number"
+        },
+        "ece": {
+          "type": "number"
+        },
+        "calibration": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "properties": {
+              "lower": {
+                "type": "number"
+              },
+              "upper": {
+                "type": "number"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "prediction": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "observed": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "lower",
+              "upper",
+              "count",
+              "prediction",
+              "observed"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "count",
+        "prevalence",
+        "log_loss",
+        "brier",
+        "ece",
+        "calibration"
+      ],
+      "additionalProperties": false
+    },
+    "confidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "group-bootstrap-percentile-95"
+            },
+            "groups": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "intervals": {
+              "type": "null"
+            },
+            "reason": {
+              "const": "fewer-than-two-groups"
+            }
+          },
+          "required": [
+            "method",
+            "groups",
+            "intervals",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "method": {
+              "const": "group-bootstrap-percentile-95"
+            },
+            "groups": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "intervals": {
+              "type": "object",
+              "properties": {
+                "prevalence": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "log_loss": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "brier": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "ece": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "log_loss_delta": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "brier_delta": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              },
+              "required": [
+                "prevalence",
+                "log_loss",
+                "brier",
+                "ece",
+                "log_loss_delta",
+                "brier_delta"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "method",
+            "groups",
+            "intervals"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "candidate": {
+          "$ref": "#/$defs/metric"
+        },
+        "reference": {
+          "$ref": "#/$defs/metric"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      },
+      "required": [
+        "candidate",
+        "reference",
+        "confidence"
+      ],
+      "additionalProperties": false
+    },
+    "slice": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "unsupported"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "measured"
+            },
+            "candidate": {
+              "$ref": "#/$defs/metric"
+            },
+            "reference": {
+              "$ref": "#/$defs/metric"
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidence"
+            }
+          },
+          "required": [
+            "status",
+            "candidate",
+            "reference",
+            "confidence"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

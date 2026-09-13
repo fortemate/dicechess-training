@@ -60,6 +60,19 @@ Python side and fails closed on any mismatch; the feature values themselves are 
 `tests/fixtures/kcp13/` holds the golden vectors written by the engine through
 [`tools/kcp13-golden`](tools/kcp13-golden/README.md) (`mise run golden:kcp13`, needs a JDK and sbt).
 
+## Playground evaluation benchmark
+
+The [versioned benchmark and promotion gate](docs/benchmark/README.md) evaluates the
+ADR 0001 position contract with deterministic game-group splits, leakage audits, calibrated
+binary scores and sealed final qualification. Recompute the public synthetic baseline with:
+
+```bash
+uv run python -m dicechess_training.benchmark --data tests/fixtures/benchmark
+```
+
+This fixture verifies benchmark mechanics; it provides no model-quality evidence. Real model
+reports and final holdout data remain private.
+
 ## Why
 
 Dice Chess is a chess variant where three piece-type dice are rolled each turn, and only the

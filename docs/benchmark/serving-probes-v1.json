@@ -1,0 +1,67 @@
+{
+  "schema": "playground-serving-probes-v1",
+  "probes": [
+    {
+      "id": "immediate-king-capture",
+      "golden_probe": "rook-king-attack-w",
+      "fen": "4k3/8/8/8/8/8/4R3/K7 w - -",
+      "dice": "RRR",
+      "played_moves": [
+        "e2e8"
+      ],
+      "expected_mover_probability": 1.0,
+      "expected_model_calls_for_terminal_candidate": 0
+    },
+    {
+      "id": "captured-side-terminal-loss",
+      "derive_from": "immediate-king-capture",
+      "expected_winner": "w",
+      "expected_loser": "b",
+      "expected_loser_outcome": 0.0,
+      "scope": "engine terminal result and adapter perspective; do not feed a missing-king board into the leaf model"
+    },
+    {
+      "id": "piece-safety",
+      "golden_probes": [
+        "rook-queen-attack-w",
+        "queen-en-prise-w"
+      ],
+      "expected": "queen attack/danger columns match the engine golden vectors; colour twins have identical probabilities",
+      "scope": "matched legal turn alternatives require additional owner-reviewed raw evidence; cross-position probability order is not a theorem"
+    }
+  ],
+  "checks": {
+    "jvm_golden_parity": {
+      "inputs": "Every authored, non-sample golden probe at the pinned enrichment engine version.",
+      "comparison": "Candidate ONNX Runtime probability versus JVM position response from the same side-to-move perspective.",
+      "max_absolute_error": 1e-05,
+      "all_probes_required": true
+    },
+    "torch_onnx_parity": {
+      "inputs": "Every authored golden vector plus all qualification rows; retain raw observations privately.",
+      "comparison": "The manifest-bound training model in inference mode versus the exact exported ONNX bytes; use identical float32 features and embedded preprocessing/calibration.",
+      "max_absolute_error": 1e-06,
+      "all_rows_required": true
+    },
+    "probability_bounds": {
+      "inputs": "All golden, qualification and concurrency-workload inference outputs.",
+      "acceptance": "Every raw model output is finite and within the closed interval [0,1] before any serving clamp; no missing, extra or reordered rows; tensor shapes match the declared contract."
+    },
+    "concurrency": {
+      "workload_binding": "The same concurrency_workload_sha256 must appear in the preregistered seal and serving evidence. The private workload manifest freezes concurrency levels, duration, request mix/order, engine/runtime identity, warmup and sample accounting before results.",
+      "acceptance": "Every admitted request completes without timeout, crash, cross-request state contamination or incorrect row/candidate mapping; all outputs satisfy probability bounds and match serial replay within the JVM parity tolerance. Saturated requests follow the existing documented admission response. Aggregate latency_p95_ms and rss_mb stay within sealed serving_limits; retain raw counts, errors and measurements."
+    },
+    "immediate_king_capture": {
+      "probe": "immediate-king-capture",
+      "acceptance": "The specified legal played turn returns mover probability 1 and performs no model call for that terminal candidate."
+    },
+    "forced_loss": {
+      "probe": "captured-side-terminal-loss",
+      "acceptance": "After the specified capture the engine winner is White and loser is Black; the captured side has terminal outcome 0. Do not reinterpret a nonterminal threat as certain loss."
+    },
+    "piece_safety": {
+      "probe": "piece-safety",
+      "acceptance": "Queen attack/danger vectors match the pinned engine golden corpus and colour twins preserve the same mover probability within the JVM parity tolerance. The private raw evidence also records owner-reviewed matched legal turn alternatives; probability ordering across unmatched boards is not an acceptance criterion."
+    }
+  }
+}
