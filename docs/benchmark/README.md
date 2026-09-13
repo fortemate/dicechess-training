@@ -164,12 +164,16 @@ observations for capture, forced loss and matched piece-safety alternatives, in 
 
 A serving evidence JSON has schema `playground-serving-evidence-v1`, the exact
 `candidate_manifest_sha256`, `probe_suite_sha256` (byte digest of the committed serving catalog),
-`raw_evidence_sha256`, boolean `checks` for `jvm_golden_parity`
+`raw_evidence_sha256`, `concurrency_workload_sha256`, boolean `checks` for `jvm_golden_parity`
 (max error <= 1e-5), `torch_onnx_parity` (<= 1e-6), `immediate_king_capture`, `forced_loss`,
 `piece_safety`, `probability_bounds`, `concurrency`, and finite nonnegative `measurements`
 (`latency_p95_ms`, `rss_mb`). Compare to positive limits in the preregistered seal. Limits and raw
 service details remain private; reports emit only an evidence digest and failed check names.
-The booleans attest reviewed external evidence; the CLI does not run the JVM or attest its truth.
+The suite contains the normative acceptance criteria for every boolean, including parity bounds,
+raw probability bounds and concurrent-versus-serial replay. The concurrency workload manifest
+freezes load levels, request mix/order and sample accounting privately before results; its digest
+must match between seal and serving evidence. The booleans attest reviewed external evidence;
+the CLI does not run the JVM or attest its truth.
 
 ## Commands and model card
 
@@ -192,7 +196,7 @@ Git. Calibration must be inside ONNX; a manifest-only temperature other than 1 i
 The seal has schema `playground-seal-v1`, `implementation_sha256`, `benchmark_sha256`, `development_dataset_sha256`,
 `final_dataset_sha256`, `candidate_manifest_sha256`, `accepted_references` (digest list),
 `promotion_reference` (an accepted digest, or `no-information` only with no accepted models),
-and `serving_limits` for the measurements above. `digest()` canonicalizes JSON with sorted keys,
+`concurrency_workload_sha256`, and `serving_limits` for the measurements above. `digest()` canonicalizes JSON with sorted keys,
 compact separators and UTF-8; file/evidence/model byte digests use SHA-256 of exact bytes. Retain
 the canonical dataset manifest digest as the final dataset identity; it binds the row-byte digest.
 

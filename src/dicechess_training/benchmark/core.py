@@ -61,7 +61,7 @@ def check_training_identity(candidate, manifest, rows):
     )
 
 
-def read_json(path):
+def read_json_snapshot(path):
     def duplicate_safe(pairs):
         result = {}
         for key, value in pairs:
@@ -70,7 +70,12 @@ def read_json(path):
             result[key] = value
         return result
 
-    return json.loads(Path(path).read_text(), object_pairs_hook=duplicate_safe)
+    raw = Path(path).read_bytes()
+    return json.loads(raw, object_pairs_hook=duplicate_safe), hashlib.sha256(raw).hexdigest()
+
+
+def read_json(path):
+    return read_json_snapshot(path)[0]
 
 
 def require(condition, message):
@@ -286,6 +291,11 @@ def serving_check(evidence, candidate_digest, seal):
         == kcp13.sha256_of(ROOT / "docs/benchmark/serving-probes-v1.json"),
         "serving probe suite mismatch",
     )
+    require_sha(seal["concurrency_workload_sha256"])
+    require(
+        evidence["concurrency_workload_sha256"] == seal["concurrency_workload_sha256"],
+        "serving workload mismatch",
+    )
     reasons = []
     for check in (
         "jvm_golden_parity",
@@ -439,8 +449,8 @@ def slice_reports(evaluated, p, baseline, protocol):
 def final_evidence(evidence_path, candidate, seal):
     if evidence_path is None:
         return None, ["missing-serving-evidence"]
-    evidence = read_json(evidence_path)
-    return digest(evidence), serving_check(evidence, digest(candidate), seal)
+    evidence, evidence_digest = read_json_snapshot(evidence_path)
+    return evidence_digest, serving_check(evidence, digest(candidate), seal)
 
 
 def evaluate(

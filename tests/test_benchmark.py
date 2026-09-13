@@ -86,6 +86,7 @@ def final_inputs(tmp_path):
     model = candidate(tmp_path, dev)
     seal = {
         "schema": "playground-seal-v1",
+        "concurrency_workload_sha256": "c" * 64,
         "implementation_sha256": core.implementation_digest(),
         "benchmark_sha256": core.digest(core.load_protocol()),
         "candidate_manifest_sha256": core.digest(core.read_json(model / "manifest.json")),
@@ -391,6 +392,7 @@ def test_missing_accepted_reference_fails(tmp_path):
 def test_serving_checks_and_measurements_fail_closed():
     evidence = {
         "schema": "playground-serving-evidence-v1",
+        "concurrency_workload_sha256": "c" * 64,
         "probe_suite_sha256": kcp13.sha256_of(core.ROOT / "docs/benchmark/serving-probes-v1.json"),
         "candidate_manifest_sha256": "a" * 64,
         "raw_evidence_sha256": "b" * 64,
@@ -408,7 +410,10 @@ def test_serving_checks_and_measurements_fail_closed():
         },
         "measurements": {"latency_p95_ms": 2, "rss_mb": 30},
     }
-    seal = {"serving_limits": {"latency_p95_ms": 3, "rss_mb": 40}}
+    seal = {
+        "serving_limits": {"latency_p95_ms": 3, "rss_mb": 40},
+        "concurrency_workload_sha256": "c" * 64,
+    }
     assert core.serving_check(evidence, "a" * 64, seal) == []
     evidence["measurements"]["latency_p95_ms"] = 4
     evidence["checks"]["forced_loss"] = False
@@ -475,6 +480,7 @@ def test_complete_final_eligibility_path_on_artificial_fixtures(tmp_path):
         seal,
         {
             "schema": "playground-seal-v1",
+            "concurrency_workload_sha256": "c" * 64,
             "implementation_sha256": core.implementation_digest(),
             "benchmark_sha256": core.digest(core.load_protocol()),
             "candidate_manifest_sha256": candidate_digest,
@@ -490,6 +496,7 @@ def test_complete_final_eligibility_path_on_artificial_fixtures(tmp_path):
         evidence,
         {
             "schema": "playground-serving-evidence-v1",
+            "concurrency_workload_sha256": "c" * 64,
             "probe_suite_sha256": kcp13.sha256_of(
                 core.ROOT / "docs/benchmark/serving-probes-v1.json"
             ),
@@ -512,6 +519,8 @@ def test_complete_final_eligibility_path_on_artificial_fixtures(tmp_path):
     )
     report = run_final(dev, final, model, seal, evidence_path=evidence)
     assert report["decision"] == {"status": "eligible-for-owner-review", "reasons": []}
+    assert report["serving_evidence_sha256"] == kcp13.sha256_of(evidence)
+    assert report["serving_evidence_sha256"] != core.digest(core.read_json(evidence))
     jsonschema.validate(report, core.read_json(core.ROOT / "docs/benchmark/report-schema-v1.json"))
 
 
@@ -543,3 +552,29 @@ def test_cli_output_cannot_overwrite_existing_file(tmp_path, capsys):
     assert main(["--data", str(FIXTURE), "--output", str(output)]) == 2
     assert output.read_text() == "preserve this"
     assert "invalid-benchmark-input" in capsys.readouterr().out
+
+
+def test_json_snapshot_digest_binds_exact_bytes(tmp_path):
+    path = tmp_path / "evidence.json"
+    raw = b'{ "value" : 1 }\r\n'
+    path.write_bytes(raw)
+    document, byte_digest = core.read_json_snapshot(path)
+    assert document == {"value": 1}
+    assert byte_digest == kcp13.sha256_of(path)
+    assert byte_digest != core.digest(document)
+    path.write_bytes(b'{"value":1}\n')
+    reformatted, changed_digest = core.read_json_snapshot(path)
+    assert reformatted == document
+    assert changed_digest != byte_digest
+
+
+def test_concurrency_workload_cannot_change_after_sealing():
+    evidence = {
+        "schema": "playground-serving-evidence-v1",
+        "candidate_manifest_sha256": "a" * 64,
+        "probe_suite_sha256": kcp13.sha256_of(core.ROOT / "docs/benchmark/serving-probes-v1.json"),
+        "concurrency_workload_sha256": "d" * 64,
+    }
+    seal = {"concurrency_workload_sha256": "c" * 64}
+    with pytest.raises(ValueError, match="serving workload mismatch"):
+        core.serving_check(evidence, "a" * 64, seal)
