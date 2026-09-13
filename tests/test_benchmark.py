@@ -424,7 +424,8 @@ def test_serving_checks_and_measurements_fail_closed():
 def test_cli_sanitized_error_and_exit_code(capsys, tmp_path):
     assert main(["--data", str(tmp_path / "PRIVATE-CREDENTIAL-PATH")]) == 2
     output = capsys.readouterr().out
-    assert "PRIVATE" not in output and "Traceback" not in output
+    assert "PRIVATE" not in output
+    assert "Traceback" not in output
     assert json.loads(output)["schema"] == "playground-error-v1"
     assert main(["--data", str(FIXTURE), "--mode", "final"]) == 2
 
@@ -528,3 +529,17 @@ def test_reference_inventory_is_evaluated_and_cannot_silently_fall_back(tmp_path
     write_json(seal, record)
     with pytest.raises(ValueError, match="deployable reference required"):
         run_final(dev, final, model, seal, reference_dirs=[reference])
+
+
+@pytest.mark.parametrize("repeats", [0, -1, 10001, 1.5])
+def test_bootstrap_repeat_budget(repeats):
+    with pytest.raises(ValueError, match="bootstrap repeats"):
+        confidence([0, 1], [0.1, 0.9], ["a", "b"], repeats=repeats)
+
+
+def test_cli_output_cannot_overwrite_existing_file(tmp_path, capsys):
+    output = tmp_path / "keep.json"
+    output.write_text("preserve this")
+    assert main(["--data", str(FIXTURE), "--output", str(output)]) == 2
+    assert output.read_text() == "preserve this"
+    assert "invalid-benchmark-input" in capsys.readouterr().out

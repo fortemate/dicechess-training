@@ -37,7 +37,8 @@ def main(argv=None):
         )
         result = json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n"
         if args.output:
-            Path(args.output).write_text(result)
+            with Path(args.output).open("x", encoding="utf-8") as output:
+                output.write(result)
         else:
             print(result, end="")
         return (

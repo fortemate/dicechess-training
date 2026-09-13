@@ -208,6 +208,10 @@ uv run python -m dicechess_training.benchmark \
 
 Exit 0 means a development report completed or final eligibility passed; final refusal exits 1;
 invalid input/runtime/IO exits 2 with a sanitized JSON error, never an input path or traceback.
+`--output` exclusively creates a new file; existing files and symlinks are refused. Input and output
+paths are selected by the invoking owner of this local CLI; this is not a remote service or an
+agent tool with a privileged filesystem boundary. Keep any external automation within its own
+file-access authorization policy.
 Keep all real candidate reports, weights, final rows, seals and experiment verdicts outside public
 Git. Public reports may include only synthetic mechanics; sanitized identities are schema/version/
 digest, never model names, host names, storage locations, credentials, group IDs or FENs.

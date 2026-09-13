@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +17,7 @@ from .splits import assignments, leakage, position_key
 
 ROOT = Path(__file__).resolve().parents[3]
 PROTOCOL = ROOT / "docs/benchmark/protocol-v1.json"
+MODEL_FILE = "model.onnx"
 SHA = re.compile(r"[0-9a-f]{64}")
 SLICES = (
     "phase:opening",
@@ -89,7 +91,7 @@ def load_dataset(directory):
     manifest = read_json(directory / "manifest.json")
     require(manifest["schema"] == "playground-rows-v1", "unsupported dataset schema")
     require(
-        re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", manifest["version"]) is not None,
+        re.fullmatch(r"\d+\.\d+\.\d+", manifest["version"], flags=re.ASCII) is not None,
         "invalid dataset version",
     )
     require(manifest["perspective"] == "side-to-move", "wrong perspective")
@@ -156,8 +158,8 @@ def load_candidate(directory, data_manifest, protocol):
     directory = Path(directory)
     manifest = read_json(directory / "manifest.json")
     kcp13.validate_manifest(manifest, data_manifest["engine_version"])
-    kcp13.verify_model_digest(directory / "model.onnx", manifest)
-    kcp13.validate_onnx_contract(directory / "model.onnx")
+    kcp13.verify_model_digest(directory / MODEL_FILE, manifest)
+    kcp13.validate_onnx_contract(directory / MODEL_FILE)
     provenance = manifest["provenance"]
     for key in (
         "training_data_sha256",
@@ -186,8 +188,12 @@ def train_identity(manifest, rows):
 
 def slice_names(row):
     f = row["features"]
-    phase = "opening" if row["ply"] <= 10 else "endgame" if f[6] <= 20 else "middlegame"
-    material = "behind" if f[5] < -1 else "ahead" if f[5] > 1 else "balanced"
+    phase = "endgame" if f[6] <= 20 else "middlegame"
+    if row["ply"] <= 10:
+        phase = "opening"
+    material = "ahead" if f[5] > 1 else "balanced"
+    if f[5] < -1:
+        material = "behind"
     names = {f"phase:{phase}", f"side:{row['side']}", f"material:{material}", "target:decisive"}
     for i, name in enumerate(("king_attack", "king_danger", "queen_attack", "queen_danger"), 9):
         if f[i] > 0:
@@ -242,25 +248,33 @@ def summarize(rows, p, reference, protocol):
 def gate_check(summary, protocol, *, critical_slice=False):
     rule = protocol["gate"]
     c, r, ci = summary["candidate"], summary["reference"], summary["confidence"]
-    reasons = []
     minimum = rule["min_slice_groups"] if critical_slice else rule["min_groups"]
-    if ci["groups"] < minimum:
-        reasons.append("insufficient-groups")
+    checks = [(ci["groups"] >= minimum, "insufficient-groups")]
     if critical_slice:
-        if c["log_loss"] - r["log_loss"] > rule["max_slice_log_loss_regression"]:
-            reasons.append("slice-log-loss-regression")
-        if c["brier"] - r["brier"] > rule["max_slice_brier_regression"]:
-            reasons.append("slice-brier-regression")
+        checks += [
+            (
+                c["log_loss"] - r["log_loss"] <= rule["max_slice_log_loss_regression"],
+                "slice-log-loss-regression",
+            ),
+            (
+                c["brier"] - r["brier"] <= rule["max_slice_brier_regression"],
+                "slice-brier-regression",
+            ),
+        ]
     else:
-        if c["log_loss"] > r["log_loss"] * (1 - rule["min_relative_log_loss_gain"]):
-            reasons.append("insufficient-relative-gain")
-        if c["brier"] - r["brier"] > rule["max_brier_regression"]:
-            reasons.append("brier-regression")
-        if c["ece"] - r["ece"] > rule["max_ece_regression"]:
-            reasons.append("calibration-regression")
-        if ci["intervals"] is None or ci["intervals"]["log_loss_delta"][1] >= 0:
-            reasons.append("uncertain-improvement")
-    return reasons
+        checks += [
+            (
+                c["log_loss"] <= r["log_loss"] * (1 - rule["min_relative_log_loss_gain"]),
+                "insufficient-relative-gain",
+            ),
+            (c["brier"] - r["brier"] <= rule["max_brier_regression"], "brier-regression"),
+            (c["ece"] - r["ece"] <= rule["max_ece_regression"], "calibration-regression"),
+            (
+                ci["intervals"] is not None and ci["intervals"]["log_loss_delta"][1] < 0,
+                "uncertain-improvement",
+            ),
+        ]
+    return [reason for passed, reason in checks if not passed]
 
 
 def serving_check(evidence, candidate_digest, seal):
@@ -301,6 +315,134 @@ def serving_check(evidence, candidate_digest, seal):
     return reasons
 
 
+@dataclass
+class EvaluationContext:
+    training_manifest: dict
+    training_rows: list
+    evaluated: list
+    seen: set
+    split_counts: dict
+    overlaps: dict
+    reasons: list
+    seal: dict | None = None
+
+
+def decisive(rows):
+    # Categorical outcome codes validated by load_dataset, not measured float comparisons.
+    return [r for r in rows if r["result"] in (0, 1)]
+
+
+def partition(rows, name):
+    return [r for r, s in zip(rows, assignments(rows), strict=True) if s == name]
+
+
+def check_sealed_disjointness(final_rows, development_rows):
+    # Draw rows are also audited. Identity aliases must not evade group disjointness.
+    for key in ("group_id", "game_id", "root_id"):
+        require(
+            not (
+                {r[key] for r in final_rows if r.get(key)}
+                & {r[key] for r in development_rows if r.get(key)}
+            ),
+            "sealed group leakage",
+        )
+
+
+def prepare_final(data, all_rows, candidate, protocol, development_dir, seal_path, seal_sha256):
+    require(
+        candidate is not None and development_dir and seal_path and seal_sha256,
+        "sealed qualification inputs required",
+    )
+    require_sha(seal_sha256)
+    require(kcp13.sha256_of(seal_path) == seal_sha256, "seal digest mismatch")
+    seal = read_json(seal_path)
+    require(seal["schema"] == "playground-seal-v1", "unsupported seal")
+    require(
+        seal["implementation_sha256"] == implementation_digest(), "seal implementation mismatch"
+    )
+    require(seal["benchmark_sha256"] == digest(protocol), "seal protocol mismatch")
+    require(seal["candidate_manifest_sha256"] == digest(candidate), "seal candidate mismatch")
+    require(seal["final_dataset_sha256"] == digest(data), "seal data mismatch")
+    require(data["kind"] == "owner-controlled", "final data must be owner-controlled")
+    dev, dev_all = load_dataset(development_dir)
+    require(dev["kind"] != "synthetic", "synthetic development cannot qualify a model")
+    require(seal["development_dataset_sha256"] == digest(dev), "seal development mismatch")
+    check_training_identity(candidate, dev, dev_all)
+    check_sealed_disjointness(all_rows, dev_all)
+    rows = decisive(all_rows)
+    seen = {position_key(r) for r in dev_all}
+    overlaps = {"development:final": len(seen & {position_key(r) for r in rows})}
+    reasons = ["sealed-position-leakage"] if overlaps["development:final"] else []
+    return EvaluationContext(
+        dev, dev_all, rows, seen, {"sealed_final": len(rows)}, overlaps, reasons, seal
+    )
+
+
+def prepare_development(data, all_rows, candidate):
+    if candidate:
+        check_training_identity(candidate, data, all_rows)
+    rows = decisive(all_rows)
+    parts = assignments(rows)
+    return EvaluationContext(
+        data,
+        all_rows,
+        partition(rows, "validation"),
+        {position_key(r) for r in partition(rows, "train")},
+        {s: parts.count(s) for s in ("train", "validation", "test")},
+        leakage(all_rows, assignments(all_rows)),
+        ["development-only"],
+    )
+
+
+def reference_predictions(reference_dirs, data, protocol, context, x, no_info):
+    manifests = [load_candidate(d, data, protocol) for d in reference_dirs]
+    ids = [digest(m) for m in manifests]
+    require(len(ids) == len(set(ids)), "duplicate references")
+    registry = context.seal if context.seal else protocol
+    expected = registry["accepted_references"]
+    require(set(ids) == set(expected), "accepted reference inventory mismatch")
+    references = {"no-information": no_info}
+    for directory, manifest in zip(reference_dirs, manifests, strict=True):
+        check_training_identity(manifest, context.training_manifest, context.training_rows)
+        references[digest(manifest)] = kcp13.predict(Path(directory) / MODEL_FILE, x)
+    baseline_id = "no-information"
+    if context.seal:
+        baseline_id = context.seal["promotion_reference"]
+        require(baseline_id in references, "unaccepted promotion reference")
+        require(not expected or baseline_id != "no-information", "deployable reference required")
+    return references, baseline_id
+
+
+def unseen_report(evaluated, seen, p, baseline, protocol):
+    idx = [i for i, r in enumerate(evaluated) if position_key(r) not in seen]
+    if not idx:
+        return None, ["no-unseen-positions"]
+    summary = summarize([evaluated[i] for i in idx], p[idx], baseline[idx], protocol)
+    return summary, ["unseen:" + reason for reason in gate_check(summary, protocol)]
+
+
+def slice_reports(evaluated, p, baseline, protocol):
+    slices, reasons = {}, []
+    for name in SLICES:
+        idx = [i for i, row in enumerate(evaluated) if name in slice_names(row)]
+        if not idx:
+            slices[name] = {"status": "unsupported", "reason": "no-applicable-rows"}
+            if name != "target:uncertain":
+                reasons.append("missing-slice:" + name)
+            continue
+        summary = summarize([evaluated[i] for i in idx], p[idx], baseline[idx], protocol)
+        slices[name] = {"status": "measured", **summary}
+        reasons += [name + ":" + r for r in gate_check(summary, protocol, critical_slice=True)]
+    return slices, reasons
+
+
+def final_evidence(evidence_path, candidate, seal):
+    if evidence_path is None:
+        return None, ["missing-serving-evidence"]
+    evidence = read_json(evidence_path)
+    return digest(evidence), serving_check(evidence, digest(candidate), seal)
+
+
 def evaluate(
     data_dir,
     candidate_dir=None,
@@ -314,115 +456,38 @@ def evaluate(
 ):
     protocol = load_protocol()
     data, all_rows = load_dataset(data_dir)
-    rows = [r for r in all_rows if r["result"] != 0.5]
+    rows = decisive(all_rows)
     require(bool(rows), "no decisive outcomes")
     candidate = load_candidate(candidate_dir, data, protocol) if candidate_dir else None
-    reasons = []
     if mode == "final":
-        require(
-            candidate is not None and development_dir and seal_path and seal_sha256,
-            "sealed qualification inputs required",
+        context = prepare_final(
+            data, all_rows, candidate, protocol, development_dir, seal_path, seal_sha256
         )
-        require_sha(seal_sha256)
-        require(kcp13.sha256_of(seal_path) == seal_sha256, "seal digest mismatch")
-        seal = read_json(seal_path)
-        require(seal["schema"] == "playground-seal-v1", "unsupported seal")
-        require(
-            seal["implementation_sha256"] == implementation_digest(), "seal implementation mismatch"
-        )
-        require(seal["benchmark_sha256"] == digest(protocol), "seal protocol mismatch")
-        require(seal["candidate_manifest_sha256"] == digest(candidate), "seal candidate mismatch")
-        require(seal["final_dataset_sha256"] == digest(data), "seal data mismatch")
-        require(data["kind"] == "owner-controlled", "final data must be owner-controlled")
-        dev, dev_all = load_dataset(development_dir)
-        require(dev["kind"] != "synthetic", "synthetic development cannot qualify a model")
-        require(seal["development_dataset_sha256"] == digest(dev), "seal development mismatch")
-        check_training_identity(candidate, dev, dev_all)
-        # Include excluded draw rows and game/root aliases in the leakage audit.
-        for key in ("group_id", "game_id", "root_id"):
-            require(
-                not (
-                    {r[key] for r in all_rows if r.get(key)}
-                    & {r[key] for r in dev_all if r.get(key)}
-                ),
-                "sealed group leakage",
-            )
-        dev_rows = [r for r in dev_all if r["result"] != 0.5]
-        train = [r for r, s in zip(dev_rows, assignments(dev_rows), strict=True) if s == "train"]
-        evaluated = rows
-        seen = {position_key(r) for r in dev_all}
-        split_counts = {"sealed_final": len(rows)}
-        overlaps = {"development:final": len(seen & {position_key(r) for r in rows})}
-        if overlaps["development:final"]:
-            reasons.append("sealed-position-leakage")
     else:
         require(mode == "development", "unknown evaluation mode")
-        parts = assignments(rows)
-        train = [r for r, s in zip(rows, parts, strict=True) if s == "train"]
-        evaluated = [r for r, s in zip(rows, parts, strict=True) if s == "validation"]
-        seen = {position_key(r) for r in train}
-        split_counts = {s: parts.count(s) for s in ("train", "validation", "test")}
-        overlaps = leakage(all_rows, assignments(all_rows))
-        seal = None
-        if candidate:
-            check_training_identity(candidate, data, all_rows)
-        reasons.append("development-only")
+        context = prepare_development(data, all_rows, candidate)
+    train = partition(decisive(context.training_rows), "train")
+    evaluated = context.evaluated
     require(train and evaluated, "empty training or evaluation split")
-    y_train = [r["result"] for r in train]
-    prior = float(np.mean(y_train))
-    no_info = np.full(len(evaluated), prior)
+    no_info = np.full(len(evaluated), float(np.mean([r["result"] for r in train])))
     x = np.asarray([r["features"] for r in evaluated], dtype=np.float32)
-    p = kcp13.predict(Path(candidate_dir) / "model.onnx", x) if candidate else no_info
-    reference_manifests = [load_candidate(d, data, protocol) for d in reference_dirs]
-    reference_ids = [digest(m) for m in reference_manifests]
-    require(len(reference_ids) == len(set(reference_ids)), "duplicate references")
-    expected = seal["accepted_references"] if seal else protocol["accepted_references"]
-    require(set(reference_ids) == set(expected), "accepted reference inventory mismatch")
-    references = {"no-information": no_info}
-    for directory, manifest in zip(reference_dirs, reference_manifests, strict=True):
-        check_training_identity(
-            manifest, dev if mode == "final" else data, dev_all if mode == "final" else all_rows
-        )
-        references[digest(manifest)] = kcp13.predict(Path(directory) / "model.onnx", x)
-    if mode == "final":
-        require(seal["promotion_reference"] in references, "unaccepted promotion reference")
-        baseline_id = seal["promotion_reference"]
-        if expected:
-            require(baseline_id != "no-information", "deployable reference required")
-    else:
-        baseline_id = "no-information"
+    p = kcp13.predict(Path(candidate_dir) / MODEL_FILE, x) if candidate else no_info
+    references, baseline_id = reference_predictions(
+        reference_dirs, data, protocol, context, x, no_info
+    )
     baseline = references[baseline_id]
     aggregate = summarize(evaluated, p, baseline, protocol)
-    reasons += gate_check(aggregate, protocol)
-    unseen_idx = [i for i, r in enumerate(evaluated) if position_key(r) not in seen]
-    unseen = None
-    if unseen_idx:
-        unseen = summarize(
-            [evaluated[i] for i in unseen_idx], p[unseen_idx], baseline[unseen_idx], protocol
-        )
-        reasons += ["unseen:" + reason for reason in gate_check(unseen, protocol)]
-    else:
-        reasons.append("no-unseen-positions")
-    slices = {}
-    for name in SLICES:
-        idx = [i for i, row in enumerate(evaluated) if name in slice_names(row)]
-        if not idx:
-            slices[name] = {"status": "unsupported", "reason": "no-applicable-rows"}
-            if name != "target:uncertain":
-                reasons.append("missing-slice:" + name)
-            continue
-        summary = summarize([evaluated[i] for i in idx], p[idx], baseline[idx], protocol)
-        slices[name] = {"status": "measured", **summary}
-        reasons += [name + ":" + r for r in gate_check(summary, protocol, critical_slice=True)]
-    probes = probe_report(Path(candidate_dir) / "model.onnx", protocol) if candidate else None
+    reasons = context.reasons + gate_check(aggregate, protocol)
+    unseen, unseen_reasons = unseen_report(evaluated, context.seen, p, baseline, protocol)
+    slices, slice_reasons = slice_reports(evaluated, p, baseline, protocol)
+    reasons += unseen_reasons + slice_reasons
+    probes = probe_report(Path(candidate_dir) / MODEL_FILE, protocol) if candidate else None
     if probes and not all(probes["checks"].values()):
         reasons.append("golden-probe-failure")
-    if mode == "final":
-        if evidence_path is None:
-            reasons.append("missing-serving-evidence")
-        else:
-            evidence = read_json(evidence_path)
-            reasons += serving_check(evidence, digest(candidate), seal)
+    evidence_digest = None
+    if context.seal:
+        evidence_digest, evidence_reasons = final_evidence(evidence_path, candidate, context.seal)
+        reasons += evidence_reasons
     report = {
         "schema": protocol["report_schema"],
         "implementation_sha256": implementation_digest(),
@@ -438,16 +503,14 @@ def evaluate(
         },
         "candidate_manifest_sha256": digest(candidate) if candidate else None,
         "seal_sha256": seal_sha256 if mode == "final" else None,
-        "serving_evidence_sha256": digest(read_json(evidence_path))
-        if mode == "final" and evidence_path
-        else None,
+        "serving_evidence_sha256": evidence_digest,
         "counts": {
             "input": len(all_rows),
             "excluded_draws": len(all_rows) - len(rows),
-            "splits": split_counts,
+            "splits": context.split_counts,
             "evaluated_groups": aggregate["confidence"]["groups"],
         },
-        "leakage": overlaps,
+        "leakage": context.overlaps,
         "aggregate": aggregate,
         "exact_unseen": unseen,
         "slices": slices,

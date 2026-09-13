@@ -60,6 +60,8 @@ def confidence(target, probability, groups, reference=None, *, repeats=1000, see
     Fixed-bin sufficient statistics keep memory O(groups * bins), independent of repeats.
     Candidate/reference use the same draws. A single group has no estimable interval.
     """
+    if not isinstance(repeats, int) or not 1 <= repeats <= 10000:
+        raise ValueError("bootstrap repeats must be an integer in [1,10000]")
     y, p = _arrays(target, probability)
     if len(groups) != len(y):
         raise ValueError("groups must align with targets")

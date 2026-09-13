@@ -5,7 +5,9 @@ import hashlib
 
 def split_for(group: str) -> str:
     value = int(hashlib.sha256(("playground-v1:" + group).encode()).hexdigest(), 16) % 10000
-    return "train" if value < 8000 else "validation" if value < 9000 else "test"
+    if value < 8000:
+        return "train"
+    return "validation" if value < 9000 else "test"
 
 
 def position_key(row):
