@@ -244,3 +244,25 @@ The authorized maintainer approved this decision on 2026-09-11 in the
 [Issue #14 decision comment](https://github.com/fortemate/dicechess-training/issues/14#issuecomment-5639730674). The evaluator, engine and analytics repositories share the
 same maintainer, so cross-repository review is covered by that comment; the benchmark (#13) must
 adopt exactly the perspective in Decision 1, and its gate decides the ablation in #17.
+
+## Amendment: Feature Schema Selection (Issue #17, Provisional Status)
+
+Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), the three candidate feature schemas (S0 `kcp-13`, S1 `kcp-mobility-27-v1`, S2 `kcp-mobility-pawns-31-v1`) are evaluated under amended Protocol v2 in [`docs/ablation/protocol-v2.json`](../ablation/protocol-v2.json), which supersedes historical Protocol v1 [`docs/ablation/protocol-v1.json`](../ablation/protocol-v1.json).
+
+### Status, Protocol v2 Lineage, and Data Eligibility
+
+1. **Protocol v2 Amendment**: Amends Protocol v1 by:
+   - Enforcing an 80/10/10 split policy with strictly isolated test holdout (`train < 8000`, `val [8000, 9000)`, `test >= 9000`).
+   - Defining the primary estimand as single-model replication across 5 predeclared seeds with paired whole-game bootstrap confidence intervals computed on the mean seed loss delta.
+   - Gating candidates on non-empty unseen validation positions without regression.
+   - Requiring verified JVM extraction latency benchmark evidence within a 10% relative overhead ceiling.
+2. **Provisional Development Evidence**: Runs performed in this repository against the public sample (`sample/playsite-bots-v0`) confirm pipeline tooling, cross-schema integrity validation, and Protocol v2 mechanics. Because the public sample previously informed earlier review iterations under Protocol v1, public sample results under Protocol v2 represent provisional development evidence.
+3. **Benchmark Custody & Eligibility**: Under Benchmark v1, the public sample is ineligible for final qualification without separately reviewed data-use evidence.
+4. **Owner Qualification**: Final schema selection requires owner-run qualification on an eligible private holdout corpus under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17).
+5. **Private Decision Reference**: The definitive qualification decision is recorded in the private knowledge base:
+   - Page title: `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
+   - In accordance with repository publication boundaries, private numerical metrics and final qualification outcomes are preserved in private documentation and are not published in public Git.
+6. **Active Baseline**: Baseline **S0 (`kcp-13`)** remains the active train-serve contract for ongoing development and tooling under [Issue #13](https://github.com/fortemate/dicechess-training/issues/13).
+7. **Issue State**: [Issue #17](https://github.com/fortemate/dicechess-training/issues/17) remains open pending completion of private corpus qualification and data eligibility review.
+
+

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -110,3 +111,106 @@ def read_shard(path: str) -> pd.DataFrame:
     df = table.to_pandas()
     validate_frame(df)
     return df
+
+
+def _validate_shard_metadata(
+    path: str | Path,
+    metadata: dict,
+    expected_schema: str,
+    expected_engine: str | None,
+) -> None:
+    from dicechess_training.contracts.kcp13 import PERSPECTIVE, RULESET_VERSION
+
+    decoded_meta = {
+        k.decode() if isinstance(k, bytes) else k: (v.decode() if isinstance(v, bytes) else v)
+        for k, v in metadata.items()
+    }
+    actual_schema = decoded_meta.get("feature_schema")
+    if actual_schema != expected_schema:
+        raise ValueError(
+            f"{path}: shard feature schema {actual_schema!r} != supported {expected_schema!r}"
+        )
+    if expected_engine is not None:
+        actual_engine = decoded_meta.get("engine_version")
+        if actual_engine != expected_engine:
+            raise ValueError(
+                f"{path}: shard engine version {actual_engine!r} != expected {expected_engine!r}"
+            )
+
+    for name, expected in (("ruleset", RULESET_VERSION), ("perspective", PERSPECTIVE)):
+        actual = decoded_meta.get(name)
+        if actual != expected:
+            raise ValueError(f"{path}: shard {name} {actual!r} != expected {expected!r}")
+
+
+def _validate_feature_columns(
+    path: str | Path,
+    table_schema,
+    expected_features: tuple[str, ...],
+    df: pd.DataFrame,
+) -> None:
+    for name in expected_features:
+        idx = table_schema.get_field_index(name)
+        if idx < 0:
+            raise ValueError(f"{path}: missing feature column {name!r}")
+        actual_type = table_schema.field(idx).type
+        if actual_type != pa.float32():
+            raise ValueError(
+                f"{path}: feature column {name!r} has type {actual_type}, expected {pa.float32()}"
+            )
+
+    schema_names = table_schema.names
+    base_names = list(COLUMNS)
+    actual_features = tuple(schema_names[len(base_names) :])
+    if actual_features != expected_features:
+        raise ValueError(
+            f"{path}: feature column layout {actual_features} != expected {expected_features}"
+        )
+
+    for col_name in expected_features:
+        vals = df[col_name].to_numpy(dtype=np.float32)
+        if not np.isfinite(vals).all():
+            raise ValueError(f"{path}: column {col_name!r} contains null or non-finite values")
+
+
+def read_enriched_shard(
+    path: str | Path,
+    expected_schema: str,
+    expected_engine: str | None = None,
+) -> pd.DataFrame:
+    """Read one enriched Parquet shard, failing closed on schema, engine, or column mismatch."""
+    from dicechess_training.contracts import SCHEMA_CONTRACTS
+
+    contract = SCHEMA_CONTRACTS.get(expected_schema)
+    if contract is None:
+        raise ValueError(f"unknown expected feature schema {expected_schema!r}")
+
+    table = pq.read_table(str(path))
+    _validate_shard_metadata(path, table.schema.metadata or {}, expected_schema, expected_engine)
+
+    for name, expected in COLUMNS.items():
+        if table.schema.get_field_index(name) < 0:
+            raise ValueError(f"{path}: missing base column {name!r}")
+        actual = table.schema.field(name).type
+        if actual != expected:
+            raise ValueError(f"{path}: base column {name!r} has type {actual}, expected {expected}")
+
+    df = table.to_pandas()
+    validate_frame(df[list(COLUMNS)])
+    _validate_feature_columns(path, table.schema, contract.COLUMN_NAMES, df)
+    return df
+
+
+def read_enriched_shards(
+    directory: str | Path,
+    expected_schema: str,
+    expected_engine: str | None = None,
+) -> pd.DataFrame:
+    """Read every `*.parquet` enriched shard in a directory into one DataFrame."""
+    paths = sorted(Path(directory).glob("*.parquet"))
+    if not paths:
+        raise ValueError(f"no Parquet shards found in {directory!r}")
+    return pd.concat(
+        [read_enriched_shard(str(p), expected_schema, expected_engine) for p in paths],
+        ignore_index=True,
+    )

@@ -49,28 +49,38 @@ object Kcp13Golden:
   private def jsonStrings(values: Seq[String]): String = values.map(jsonString).mkString("[", ", ", "]")
 
   def main(args: Array[String]): Unit =
-    val (input, output) = args match
-      case Array(in, out) => (Path.of(in), Path.of(out))
-      case _              => sys.error("usage: Kcp13Golden <probes.tsv> <golden.json>")
-    val engineVersion = sys.props.getOrElse("engine.version", sys.error("-Dengine.version is required"))
-    val columns       = KcpFeatures.columnNames
-    val probes        = readProbes(input)
-    val ids           = probes.map(_.id)
+    val (schema, input, output) = args match
+      case Array(in, out)      => (Schema, Path.of(in), Path.of(out))
+      case Array(sch, in, out) => (sch, Path.of(in), Path.of(out))
+      case _                   => sys.error("usage: Kcp13Golden [schema] <probes.tsv> <golden.json>")
+    val engineVersion = sys.props.getOrElse("engine.version", "0.9.3")
+    val (columns, extractor) = schema match
+      case "kcp-13" =>
+        (KcpFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => KcpFeatures.extract(s, c))
+      case "kcp-mobility-27-v1" =>
+        (dicechess.engine.search.KcpMobilityFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.KcpMobilityFeatures.extract(s, c))
+      case "kcp-mobility-pawns-31-v1" =>
+        (dicechess.engine.search.KcpMobilityPawnsFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.KcpMobilityPawnsFeatures.extract(s, c))
+      case other =>
+        sys.error(s"unsupported schema '$other' (expected 'kcp-13', 'kcp-mobility-27-v1', or 'kcp-mobility-pawns-31-v1')")
+
+    val probes = readProbes(input)
+    val ids    = probes.map(_.id)
     require(ids.distinct == ids, s"duplicate probe ids: ${ids.diff(ids.distinct).mkString(", ")}")
 
     println(f"${"probe"}%-28s ${"side"}%4s ${"median µs"}%10s ${"p95 µs"}%8s")
     val entries = probes.map { probe =>
       val state = FenParser.parse(padFen(probe.fen)).fold(err => sys.error(s"${probe.id}: $err"), identity)
       val side  = if state.activeColor.isWhite then "w" else "b"
-      val features = KcpFeatures.extract(state, state.activeColor)
+      val features = extractor(state, state.activeColor)
       require(features.length == columns.length, s"${probe.id}: ${features.length} features, expected ${columns.length}")
       require(features.forall(f => !f.isNaN && !f.isInfinite), s"${probe.id}: non-finite feature")
 
       var i = 0
-      while i < 20 do { KcpFeatures.extract(state, state.activeColor); i += 1 }
+      while i < 20 do { extractor(state, state.activeColor); i += 1 }
       val samples = Array.fill(50) {
         val t0 = System.nanoTime()
-        KcpFeatures.extract(state, state.activeColor)
+        extractor(state, state.activeColor)
         (System.nanoTime() - t0) / 1000.0
       }.sorted
       val median = samples(samples.length / 2)
@@ -90,7 +100,7 @@ object Kcp13Golden:
 
     val json =
       s"""{
-         |  "schema": ${jsonString(Schema)},
+         |  "schema": ${jsonString(schema)},
          |  "perspective": ${jsonString(Perspective)},
          |  "engineVersion": ${jsonString(engineVersion)},
          |  "engineArtifact": ${jsonString(s"com.fortemate:dicechess-engine_3:$engineVersion")},
@@ -103,4 +113,4 @@ object Kcp13Golden:
          |""".stripMargin
     Files.createDirectories(output.toAbsolutePath.getParent)
     Files.writeString(output, json, UTF_8)
-    println(s"wrote ${probes.length} probes x ${columns.length} features to $output (engine $engineVersion)")
+    println(s"wrote ${probes.length} probes x ${columns.length} features to $output ($schema, engine $engineVersion)")

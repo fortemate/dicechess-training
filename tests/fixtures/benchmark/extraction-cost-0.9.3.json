@@ -1,0 +1,720 @@
+{
+  "schema": "playground-extraction-benchmark-v1",
+  "engine_version": "0.9.3",
+  "engine_artifact": "com.fortemate:dicechess-engine_3:0.9.3",
+  "timestamp": "2026-09-14T11:01:31.708740Z",
+  "runtime": {
+    "java_version": "26.0.2.1",
+    "java_vendor": "Homebrew",
+    "os_name": "Mac OS X",
+    "os_arch": "aarch64"
+  },
+  "config": {
+    "warmup_iterations": 20,
+    "sample_iterations": 50
+  },
+  "probes": {
+    "start-w": {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 3184.54,
+        "p95_us": 3839.46,
+        "min_us": 2835.92,
+        "max_us": 4361.42
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 3056.83,
+        "p95_us": 3547.58,
+        "min_us": 2813.00,
+        "max_us": 4055.50
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 2870.00,
+        "p95_us": 3183.79,
+        "min_us": 2812.04,
+        "max_us": 3511.08
+      }
+      }
+    },
+    "start-w-6field": {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 2852.04,
+        "p95_us": 3153.00,
+        "min_us": 2786.71,
+        "max_us": 3857.38
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 2824.63,
+        "p95_us": 3231.38,
+        "min_us": 2759.58,
+        "max_us": 3424.58
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 2850.58,
+        "p95_us": 3192.96,
+        "min_us": 2764.04,
+        "max_us": 3489.88
+      }
+      }
+    },
+    "start-b": {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 2836.29,
+        "p95_us": 3134.25,
+        "min_us": 2791.33,
+        "max_us": 3414.96
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 2864.00,
+        "p95_us": 3350.38,
+        "min_us": 2793.88,
+        "max_us": 3892.67
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 2852.67,
+        "p95_us": 3135.46,
+        "min_us": 2784.04,
+        "max_us": 3371.63
+      }
+      }
+    },
+    "kings-only-w": {
+      "fen": "4k3/8/8/8/8/8/8/4K3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 185.92,
+        "p95_us": 302.50,
+        "min_us": 183.71,
+        "max_us": 465.04
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 188.00,
+        "p95_us": 393.58,
+        "min_us": 182.38,
+        "max_us": 542.83
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 184.67,
+        "p95_us": 352.88,
+        "min_us": 182.88,
+        "max_us": 503.96
+      }
+      }
+    },
+    "knight-up-w": {
+      "fen": "r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 2712.96,
+        "p95_us": 3011.29,
+        "min_us": 2649.13,
+        "max_us": 3246.75
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 2703.83,
+        "p95_us": 3000.71,
+        "min_us": 2649.46,
+        "max_us": 3240.58
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 2862.33,
+        "p95_us": 3425.08,
+        "min_us": 2683.96,
+        "max_us": 3468.46
+      }
+      }
+    },
+    "knight-down-b": {
+      "fen": "r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 2762.00,
+        "p95_us": 3178.75,
+        "min_us": 2635.08,
+        "max_us": 3198.92
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 3049.92,
+        "p95_us": 5447.67,
+        "min_us": 2657.46,
+        "max_us": 6230.67
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 2869.08,
+        "p95_us": 8413.54,
+        "min_us": 2654.58,
+        "max_us": 21964.08
+      }
+      }
+    },
+    "rook-king-danger-w": {
+      "fen": "4k3/8/8/8/8/8/4r3/4K3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 51.67,
+        "p95_us": 1082.04,
+        "min_us": 46.67,
+        "max_us": 1816.58
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 50.63,
+        "p95_us": 200.13,
+        "min_us": 42.96,
+        "max_us": 505.17
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 47.79,
+        "p95_us": 97.92,
+        "min_us": 43.58,
+        "max_us": 243.08
+      }
+      }
+    },
+    "rook-queen-attack-w": {
+      "fen": "k7/8/8/4q3/8/8/8/K3R3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 173.54,
+        "p95_us": 232.71,
+        "min_us": 167.58,
+        "max_us": 564.83
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 171.71,
+        "p95_us": 200.29,
+        "min_us": 166.00,
+        "max_us": 613.96
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 176.83,
+        "p95_us": 231.42,
+        "min_us": 165.71,
+        "max_us": 251.92
+      }
+      }
+    },
+    "queen-en-prise-w": {
+      "fen": "4k3/8/8/4p3/3Q4/8/8/4K3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 478.92,
+        "p95_us": 596.42,
+        "min_us": 463.04,
+        "max_us": 698.38
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 479.58,
+        "p95_us": 645.63,
+        "min_us": 469.88,
+        "max_us": 957.54
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 474.54,
+        "p95_us": 544.13,
+        "min_us": 467.79,
+        "max_us": 588.79
+      }
+      }
+    },
+    "rook-king-attack-w": {
+      "fen": "4k3/8/8/8/8/8/4R3/K7 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 36.83,
+        "p95_us": 39.25,
+        "min_us": 35.42,
+        "max_us": 51.54
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 37.75,
+        "p95_us": 39.67,
+        "min_us": 37.38,
+        "max_us": 40.08
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 37.92,
+        "p95_us": 39.50,
+        "min_us": 37.42,
+        "max_us": 42.08
+      }
+      }
+    },
+    "kp-vs-k-w": {
+      "fen": "8/8/8/4k3/8/8/4P3/4K3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 76.50,
+        "p95_us": 79.13,
+        "min_us": 73.54,
+        "max_us": 104.13
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 75.25,
+        "p95_us": 91.33,
+        "min_us": 73.54,
+        "max_us": 549.50
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 74.96,
+        "p95_us": 87.00,
+        "min_us": 73.50,
+        "max_us": 94.71
+      }
+      }
+    },
+    "kp-vs-k-b": {
+      "fen": "8/8/8/4k3/8/8/4P3/4K3 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 73.79,
+        "p95_us": 76.04,
+        "min_us": 72.67,
+        "max_us": 81.13
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 74.58,
+        "p95_us": 77.83,
+        "min_us": 73.33,
+        "max_us": 87.83
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 74.92,
+        "p95_us": 77.21,
+        "min_us": 73.33,
+        "max_us": 81.42
+      }
+      }
+    },
+    "ep-e6-w": {
+      "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 6648.46,
+        "p95_us": 7154.79,
+        "min_us": 6380.38,
+        "max_us": 7998.25
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 6502.63,
+        "p95_us": 6915.58,
+        "min_us": 6342.42,
+        "max_us": 7358.92
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 7383.96,
+        "p95_us": 10672.92,
+        "min_us": 6507.71,
+        "max_us": 12263.42
+      }
+      }
+    },
+    "ep-none-w": {
+      "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 6348.21,
+        "p95_us": 6795.13,
+        "min_us": 6206.13,
+        "max_us": 6932.08
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 6365.71,
+        "p95_us": 6904.75,
+        "min_us": 6220.21,
+        "max_us": 7148.25
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 6362.83,
+        "p95_us": 6771.67,
+        "min_us": 6224.50,
+        "max_us": 6946.75
+      }
+      }
+    },
+    "sample-mid-b": {
+      "fen": "r1bk4/ppp3pp/8/1BP5/2P5/8/R2K2QP/4R3 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 5113.38,
+        "p95_us": 5490.83,
+        "min_us": 5047.21,
+        "max_us": 5631.21
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 5133.63,
+        "p95_us": 5588.75,
+        "min_us": 5033.21,
+        "max_us": 5831.50
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 5188.92,
+        "p95_us": 5621.83,
+        "min_us": 5036.92,
+        "max_us": 5740.50
+      }
+      }
+    },
+    "sample-mid-w": {
+      "fen": "1r1k4/ppp3pp/8/2P5/2P4P/8/R2K2Q1/4R3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 3617.96,
+        "p95_us": 4029.63,
+        "min_us": 3554.54,
+        "max_us": 4284.58
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 3664.71,
+        "p95_us": 4352.33,
+        "min_us": 3551.33,
+        "max_us": 4987.58
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 3603.17,
+        "p95_us": 3951.83,
+        "min_us": 3555.67,
+        "max_us": 4292.08
+      }
+      }
+    },
+    "blocked-pawns-w": {
+      "fen": "4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 54.08,
+        "p95_us": 57.58,
+        "min_us": 53.46,
+        "max_us": 67.88
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 54.58,
+        "p95_us": 57.63,
+        "min_us": 53.92,
+        "max_us": 71.67
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 55.00,
+        "p95_us": 68.96,
+        "min_us": 53.79,
+        "max_us": 105.08
+      }
+      }
+    },
+    "passed-pawn-w": {
+      "fen": "k7/4P3/8/8/8/8/8/4K3 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 89.54,
+        "p95_us": 94.29,
+        "min_us": 88.67,
+        "max_us": 106.00
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 89.58,
+        "p95_us": 95.04,
+        "min_us": 88.58,
+        "max_us": 96.88
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 91.42,
+        "p95_us": 108.00,
+        "min_us": 89.67,
+        "max_us": 145.29
+      }
+      }
+    },
+    "knight-up-w-twin": {
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R1BQKBNR b KQkq -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 3001.21,
+        "p95_us": 3092.38,
+        "min_us": 2914.54,
+        "max_us": 3598.71
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 2998.17,
+        "p95_us": 3175.83,
+        "min_us": 2886.58,
+        "max_us": 3472.46
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 3041.13,
+        "p95_us": 8662.92,
+        "min_us": 2903.33,
+        "max_us": 23744.25
+      }
+      }
+    },
+    "rook-king-danger-w-twin": {
+      "fen": "4k3/4R3/8/8/8/8/8/4K3 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 50.38,
+        "p95_us": 62.04,
+        "min_us": 46.08,
+        "max_us": 69.17
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 48.33,
+        "p95_us": 50.67,
+        "min_us": 46.67,
+        "max_us": 55.21
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 48.75,
+        "p95_us": 50.46,
+        "min_us": 47.83,
+        "max_us": 52.75
+      }
+      }
+    },
+    "rook-queen-attack-w-twin": {
+      "fen": "k3r3/8/8/8/4Q3/8/8/K7 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 172.75,
+        "p95_us": 250.42,
+        "min_us": 169.33,
+        "max_us": 662.96
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 169.54,
+        "p95_us": 209.67,
+        "min_us": 162.58,
+        "max_us": 226.04
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 165.83,
+        "p95_us": 176.00,
+        "min_us": 163.25,
+        "max_us": 180.54
+      }
+      }
+    },
+    "queen-en-prise-w-twin": {
+      "fen": "4k3/8/8/3q4/4P3/8/8/4K3 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 302.46,
+        "p95_us": 371.25,
+        "min_us": 296.54,
+        "max_us": 707.00
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 306.17,
+        "p95_us": 401.96,
+        "min_us": 295.00,
+        "max_us": 464.88
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 308.04,
+        "p95_us": 431.96,
+        "min_us": 295.38,
+        "max_us": 691.79
+      }
+      }
+    },
+    "rook-king-attack-w-twin": {
+      "fen": "k7/4r3/8/8/8/8/8/4K3 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 36.00,
+        "p95_us": 37.67,
+        "min_us": 35.29,
+        "max_us": 65.33
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 36.46,
+        "p95_us": 40.50,
+        "min_us": 35.63,
+        "max_us": 54.42
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 36.38,
+        "p95_us": 38.67,
+        "min_us": 35.58,
+        "max_us": 43.58
+      }
+      }
+    },
+    "sample-mid-b-twin": {
+      "fen": "4r3/r2k2qp/8/2p5/1bp5/8/PPP3PP/R1BK4 w - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 4965.88,
+        "p95_us": 5373.33,
+        "min_us": 4903.25,
+        "max_us": 5559.92
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 4958.08,
+        "p95_us": 5347.38,
+        "min_us": 4900.04,
+        "max_us": 5364.08
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 4970.88,
+        "p95_us": 5434.75,
+        "min_us": 4913.00,
+        "max_us": 5470.79
+      }
+      }
+    },
+    "sample-mid-w-twin": {
+      "fen": "4r3/r2k2q1/8/2p4p/2p5/8/PPP3PP/1R1K4 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 3351.50,
+        "p95_us": 3447.67,
+        "min_us": 3297.21,
+        "max_us": 3931.71
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 3352.00,
+        "p95_us": 3743.50,
+        "min_us": 3303.42,
+        "max_us": 3981.13
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 3343.21,
+        "p95_us": 3687.25,
+        "min_us": 3298.88,
+        "max_us": 4031.79
+      }
+      }
+    },
+    "blocked-pawns-w-twin": {
+      "fen": "4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 53.92,
+        "p95_us": 56.96,
+        "min_us": 53.29,
+        "max_us": 68.50
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 54.67,
+        "p95_us": 58.13,
+        "min_us": 53.46,
+        "max_us": 74.25
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 54.67,
+        "p95_us": 62.67,
+        "min_us": 53.58,
+        "max_us": 103.75
+      }
+      }
+    },
+    "passed-pawn-w-twin": {
+      "fen": "4k3/8/8/8/8/8/4p3/K7 b - -",
+      "schemas": {
+      "S0": {
+        "schema_id": "kcp-13",
+        "median_us": 71.38,
+        "p95_us": 73.13,
+        "min_us": 70.46,
+        "max_us": 87.38
+      },
+      "S1": {
+        "schema_id": "kcp-mobility-27-v1",
+        "median_us": 71.58,
+        "p95_us": 73.42,
+        "min_us": 70.67,
+        "max_us": 81.33
+      },
+      "S2": {
+        "schema_id": "kcp-mobility-pawns-31-v1",
+        "median_us": 72.63,
+        "p95_us": 111.04,
+        "min_us": 70.54,
+        "max_us": 415.67
+      }
+      }
+    }
+  }
+}

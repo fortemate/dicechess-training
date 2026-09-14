@@ -50,8 +50,17 @@ def test_golden_layout_matches_contract(golden):
 def test_golden_probes_are_read_from_the_committed_tsv(golden):
     rows = (kcp13.GOLDEN_DIR / "probes.tsv").read_text().splitlines()
     assert rows[0] == "id\tfen\ttags\tnote"
-    assert [row.split("\t")[0] for row in rows[1:]] == [probe.id for probe in golden.probes]
-    assert [row.split("\t")[1] for row in rows[1:]] == [probe.fen for probe in golden.probes]
+    tsv_by_id = {row.split("\t")[0]: row.split("\t")[1] for row in rows[1:]}
+    for probe in golden.probes:
+        assert probe.id in tsv_by_id
+        assert probe.fen == tsv_by_id[probe.id]
+
+
+def test_golden_093_probes_match_full_committed_tsv():
+    golden_093 = kcp13.load_golden(kcp13.golden_path("0.9.3"))
+    rows = (kcp13.GOLDEN_DIR / "probes.tsv").read_text().splitlines()
+    assert [row.split("\t")[0] for row in rows[1:]] == [probe.id for probe in golden_093.probes]
+    assert [row.split("\t")[1] for row in rows[1:]] == [probe.fen for probe in golden_093.probes]
 
 
 def test_start_position_is_zero_except_total_material(probes):
