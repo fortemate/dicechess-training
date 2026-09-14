@@ -19,6 +19,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from dicechess_training.ablation.extraction_cost import validate_extraction_cost
+from dicechess_training.ablation.paths import resolve_read_path
 from dicechess_training.benchmark.metrics import confidence, losses, scores
 from dicechess_training.benchmark.splits import leakage, position_key
 from dicechess_training.contracts import (
@@ -41,14 +42,8 @@ def digest(value: Any) -> str:
     ).hexdigest()
 
 
-def _safe_protocol_path(p: Path, base: Path = ROOT) -> Path:
-    resolved = p.resolve()
-    base_resolved = base.resolve()
-    if not resolved.is_relative_to(base_resolved):
-        raise ValueError(f"Path traversal detected: {p}")
-    if not resolved.is_file():
-        raise FileNotFoundError(f"Protocol file not found: {resolved}")
-    return resolved
+def _safe_protocol_path(p: Path) -> Path:
+    return resolve_read_path(p)
 
 
 class ValueMLP(nn.Module):

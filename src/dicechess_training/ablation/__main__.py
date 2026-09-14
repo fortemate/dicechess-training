@@ -7,6 +7,7 @@ import json
 import tempfile
 from pathlib import Path
 
+from dicechess_training.ablation.paths import resolve_read_path
 from dicechess_training.ablation.report import render_markdown_report
 from dicechess_training.ablation.runner import (
     DEFAULT_PROTOCOL_PATH,
@@ -95,9 +96,9 @@ def main(args: list[str] | None = None) -> None:
 
     parsed = parser.parse_args(args)
 
-    protocol_path = _safe_write_path(parsed.protocol)
-    data_dir = _safe_write_path(parsed.data_dir)
-    ext_cost_path = _safe_write_path(parsed.extraction_cost) if parsed.extraction_cost else None
+    protocol_path = resolve_read_path(parsed.protocol)
+    data_dir = resolve_read_path(parsed.data_dir, directory=True)
+    ext_cost_path = resolve_read_path(parsed.extraction_cost) if parsed.extraction_cost else None
 
     report = run_ablation(
         protocol_path=protocol_path,

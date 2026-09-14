@@ -16,14 +16,12 @@ def _render_header(
     lines = [
         "# Feature Schema Ablation Report (Issue #17)",
         "",
-        "Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), "
-        "and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v2.json` "
-        "(amends `protocol-v1.json`).",
+        "Offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), "
+        "and **S2** (`kcp-mobility-pawns-31-v1`) under the protocol identified below.",
         "",
         NOTE_ALERT,
-        "> **Provisional Development Report**: Evaluated on public sample "
-        "`sample/playsite-bots-v0` (development-only; ineligible for benchmark "
-        "qualification without separately reviewed data-use evidence).",
+        "> **Provisional Development Report**: Input shard digests below identify the evaluated "
+        "data. Development gate results do not establish final qualification.",
         "> Final qualification requires owner-run evaluation of the frozen private "
         "corpus under the same protocol.",
         (
@@ -48,8 +46,7 @@ def _render_header(
     lines.append(f"- **Engine Version**: `{report['engine_version']}`")
     total_g = split["train_games"] + split["val_games"] + split.get("test_games", 0)
     lines.append(
-        f"- **Dataset**: `sample/playsite-bots-v0` "
-        f"({split['total_positions']:,} rows, {total_g} games)"
+        f"- **Dataset**: input enriched shards ({split['total_positions']:,} rows, {total_g} games)"
     )
     test_pos = split.get("test_positions", 0)
     lines.append(
@@ -72,17 +69,17 @@ def _render_header(
     if sel_name == "S0":
         lines.append(NOTE_ALERT)
         lines.append(
-            "> **Development Verdict**: Neither S1 nor S2 met the strict improvement threshold "
-            "or passed all regression guards."
+            "> **Development Verdict**: Neither wider candidate cleared all development gates."
         )
         lines.append(
-            "> Baseline **S0 (`kcp-13`) proceeds** to playground value model training unchanged."
+            "> Baseline **S0 (`kcp-13`) remains the development reference**; "
+            "final owner qualification remains pending."
         )
     else:
         lines.append("> [!IMPORTANT]")
         lines.append(
             f"> **Development Verdict**: Schema **{sel_name} (`{sel_id}`) cleared all gate rules** "
-            "and qualified as the new feature schema."
+            "for provisional development evidence; final owner qualification remains pending."
         )
     return lines
 

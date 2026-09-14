@@ -119,3 +119,10 @@ it verifies all three feature schemas against engine golden vectors and confirms
 that invalid source perspective does not publish a partial shard. CI runs this
 smoke separately on JDK 21. The current Hadoop dependency is incompatible with
 newer JDKs (reproduced on JDK 26) (`Subject.getSubject`); set `JAVA_HOME` to JDK 21 for enrichment.
+
+CLI input paths (`--data-dir`, `--protocol`, `--extraction-cost`) are read-only:
+existing directories/files may be on a private mount outside the repository.
+Output paths retain their separate location checks and exclusive creation policy.
+Generated reports identify their actual inputs through shard digests rather than
+assuming that every run uses the public sample. Every selection, including S1/S2
+success, remains provisional until separate owner qualification.
