@@ -1,13 +1,14 @@
-"""Predeclared offline feature schema ablation runner (Issue #17).
+"""Offline feature schema ablation runner (Issue #17).
 
 Evaluates S0 (kcp-13), S1 (kcp-mobility-27-v1), and S2 (kcp-mobility-pawns-31-v1)
-under the frozen protocol in docs/ablation/protocol-v1.json.
+under amended protocol v2 in docs/ablation/protocol-v2.json.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from dicechess_training.ablation.extraction_cost import validate_extraction_cost
 from dicechess_training.benchmark.metrics import confidence, losses, scores
 from dicechess_training.benchmark.splits import leakage, position_key
 from dicechess_training.contracts import (
@@ -561,43 +563,29 @@ def _evaluate_extraction_cost_for_candidate(
             "probe_overheads": {},
         }
 
-    probes_data = extraction_cost.get("probes", {})
-    if not probes_data:
+    try:
+        validate_extraction_cost(extraction_cost, protocol)
+    except ValueError as exc:
         return {
             "evidence_valid": False,
             "cost_cleared": False,
-            "reason": "no-probes-in-extraction-cost-evidence",
+            "reason": f"invalid-extraction-cost-evidence: {exc}",
             "mean_relative_overhead": None,
             "max_relative_overhead": None,
             "probe_overheads": {},
         }
 
+    if gate_rules.get("extraction_cost_aggregation") != "mean_relative_overhead":
+        raise ValueError("Unsupported extraction cost aggregation")
+    if metric_key != "median_us":
+        raise ValueError("Unsupported extraction cost metric")
     probe_overheads = {}
-    for pid, pdata in probes_data.items():
-        schemas_data = pdata.get("schemas", {})
-        if "S0" not in schemas_data or s_key not in schemas_data:
-            return {
-                "evidence_valid": False,
-                "cost_cleared": False,
-                "reason": f"missing-probe-measurements-for-{pid}",
-                "mean_relative_overhead": None,
-                "max_relative_overhead": None,
-                "probe_overheads": {},
-            }
-        s0_val = schemas_data["S0"].get(metric_key)
-        s_val = schemas_data[s_key].get(metric_key)
-        if s0_val is None or s_val is None or s0_val <= 0:
-            return {
-                "evidence_valid": False,
-                "cost_cleared": False,
-                "reason": f"invalid-metric-value-in-{pid}",
-                "mean_relative_overhead": None,
-                "max_relative_overhead": None,
-                "probe_overheads": {},
-            }
+    for pid, pdata in extraction_cost["probes"].items():
+        s0_val = pdata["schemas"]["S0"][metric_key]
+        s_val = pdata["schemas"][s_key][metric_key]
         probe_overheads[pid] = float((s_val - s0_val) / s0_val)
 
-    mean_overhead = float(np.mean(list(probe_overheads.values())))
+    mean_overhead = math.fsum(probe_overheads.values()) / len(probe_overheads)
     max_overhead = float(np.max(list(probe_overheads.values())))
     cost_cleared = mean_overhead <= max_ov
 
@@ -801,12 +789,7 @@ def _load_extraction_cost(path: Path | None, protocol: dict) -> dict[str, Any] |
     if path is None or not path.exists():
         return None
     raw = json.loads(path.read_bytes())
-    if raw.get("schema") != "playground-extraction-benchmark-v1":
-        raise ValueError(f"Invalid extraction benchmark schema: {raw.get('schema')}")
-    if raw.get("engine_version") != protocol["engine_version"]:
-        eng = raw.get("engine_version")
-        expected_eng = protocol["engine_version"]
-        raise ValueError(f"Extraction benchmark engine {eng} != protocol {expected_eng}")
+    validate_extraction_cost(raw, protocol)
     return raw
 
 

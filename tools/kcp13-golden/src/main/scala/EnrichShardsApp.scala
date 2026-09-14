@@ -90,6 +90,7 @@ object EnrichShardsApp:
           case "w" => Color.White
           case "b" => Color.Black
           case other => sys.error(s"Invalid side '$other' in game ${raw.gameId} ply ${raw.ply}")
+        require(state.activeColor == color, s"side/FEN mismatch in game ${raw.gameId} ply ${raw.ply}")
         EnrichedRow(raw, extractor(state, color))
       }.iterator()
 
@@ -134,6 +135,8 @@ object EnrichShardsApp:
     val extraMeta: Map[String, String] = Map(
       "feature_schema"            -> ctx.schemaId,
       "engine_version"            -> ctx.engineVersion,
+      "ruleset"                   -> "standard-dicechess-v1",
+      "perspective"               -> "side-to-move",
       "dicechess_training_schema" -> "v0-enriched",
       "columns"                   -> ctx.columns.mkString(",")
     )

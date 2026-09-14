@@ -88,3 +88,34 @@ A wider candidate (S1 or S2) is selected over S0 iff:
   `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
   Per publication boundaries, private numerical metrics and final qualification outcomes are preserved in private documentation and not published in public Git.
 
+
+## Input validation and reproducible checks
+
+Enriched shards must declare `ruleset=standard-dicechess-v1` and
+`perspective=side-to-move`, in addition to the expected feature schema and engine
+version. The JVM producer writes these fields and rejects a source `side` that
+contradicts the FEN active color. The Python reader rejects missing or incompatible
+semantic metadata before exposing features or labels.
+
+Older enriched shards without these fields must be regenerated from the audited
+schema-v0 source using `EnrichShardsApp`; do not attach labels to unverified legacy
+features merely to bypass validation. Existing historical reports retain their
+original input digests. New runs must record the newly generated shard digests and
+write results to an ignored/private output destination.
+
+Extraction-cost evidence must contain the complete probe set from the golden
+corpus for the protocol's engine version, with matching FENs and candidate schema
+identities. Each latency statistic must be numeric, finite and positive, with
+`min <= median <= p95 <= max`. Engine provenance, runtime fields and positive
+warmup/sample counts are required. Both report loading and gate evaluation reject
+partial or incompatible evidence. The mean relative overhead uses compensated
+summation so a candidate exactly at the declared ceiling is not rejected due to
+accumulated rounding error. These validations do not change the protocol v2
+selection threshold or turn development measurements into final qualification.
+
+Run `mise run check` for Python checks and `mise run check:enrichment` for the
+JVM → Parquet → Python contract smoke. The latter requires **JDK 21** and sbt;
+it verifies all three feature schemas against engine golden vectors and confirms
+that invalid source perspective does not publish a partial shard. CI runs this
+smoke separately on JDK 21. The current Hadoop dependency is incompatible with
+newer JDKs (reproduced on JDK 26) (`Subject.getSubject`); set `JAVA_HOME` to JDK 21 for enrichment.

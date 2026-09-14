@@ -119,6 +119,8 @@ def _validate_shard_metadata(
     expected_schema: str,
     expected_engine: str | None,
 ) -> None:
+    from dicechess_training.contracts.kcp13 import PERSPECTIVE, RULESET_VERSION
+
     decoded_meta = {
         k.decode() if isinstance(k, bytes) else k: (v.decode() if isinstance(v, bytes) else v)
         for k, v in metadata.items()
@@ -134,6 +136,11 @@ def _validate_shard_metadata(
             raise ValueError(
                 f"{path}: shard engine version {actual_engine!r} != expected {expected_engine!r}"
             )
+
+    for name, expected in (("ruleset", RULESET_VERSION), ("perspective", PERSPECTIVE)):
+        actual = decoded_meta.get(name)
+        if actual != expected:
+            raise ValueError(f"{path}: shard {name} {actual!r} != expected {expected!r}")
 
 
 def _validate_feature_columns(

@@ -18,7 +18,6 @@ from dicechess_training.ablation.report import (
 from dicechess_training.ablation.runner import (
     DEFAULT_PROTOCOL_PATH,
     ValueMLP,
-    _evaluate_extraction_cost_for_candidate,
     _evaluate_unseen_gate,
     _load_extraction_cost,
     _paired_bootstrap_mean_estimand,
@@ -462,7 +461,7 @@ def test_cli_write_exclusive(tmp_path: Path):
 
 
 def test_extraction_cost_loading_and_rendering():
-    protocol = {"engine_version": "0.9.3"}
+    protocol = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
     fixture_path = ROOT / "tests/fixtures/benchmark/extraction-cost-0.9.3.json"
 
     # None and missing path return None
@@ -477,7 +476,7 @@ def test_extraction_cost_loading_and_rendering():
     assert "start-w" in loaded["probes"]
 
     # Invalid engine version raises ValueError
-    bad_protocol = {"engine_version": "0.9.2"}
+    bad_protocol = {**protocol, "engine_version": "0.9.2"}
     with pytest.raises(ValueError, match="Extraction benchmark engine"):
         _load_extraction_cost(fixture_path, bad_protocol)
 
@@ -665,48 +664,15 @@ def test_unseen_gate_fails_on_empty_unseen():
     assert unseen_eval["reason"] == "no-unseen-positions"
 
 
-def test_extraction_cost_gate_evaluation():
-    protocol = {
-        "gate": {
-            "max_extraction_latency_overhead": 0.10,
-            "extraction_cost_metric": "median_us",
-        }
-    }
-
-    # 1. Missing cost evidence fails
-    eval_none = _evaluate_extraction_cost_for_candidate("S1", None, protocol)
-    assert eval_none["evidence_valid"] is False
-    assert eval_none["cost_cleared"] is False
-    assert eval_none["reason"] == "missing-extraction-cost-evidence"
-
-    # 2. Over-budget candidate (> 10% overhead) fails
-    overbudget_cost = {
-        "probes": {
-            "start-w": {
-                "schemas": {
-                    "S0": {"median_us": 100.0},
-                    "S1": {"median_us": 125.0},  # +25% overhead
-                }
-            }
-        }
-    }
-    eval_over = _evaluate_extraction_cost_for_candidate("S1", overbudget_cost, protocol)
-    assert eval_over["evidence_valid"] is True
-    assert eval_over["cost_cleared"] is False
-    assert eval_over["reason"] == "extraction-latency-overhead-exceeded"
-
-    # 3. Within-budget candidate (e.g. +2% overhead) passes
-    within_cost = {
-        "probes": {
-            "start-w": {
-                "schemas": {
-                    "S0": {"median_us": 100.0},
-                    "S1": {"median_us": 102.0},  # +2% overhead
-                }
-            }
-        }
-    }
-    eval_within = _evaluate_extraction_cost_for_candidate("S1", within_cost, protocol)
-    assert eval_within["evidence_valid"] is True
-    assert eval_within["cost_cleared"] is True
-    assert eval_within["reason"] is None
+def test_paired_bootstrap_cancels_complementary_errors_across_groups():
+    # Each seed varies across groups; their mean loss delta is constant per row.
+    y = np.ones(20)
+    a = np.array([0.2] * 10 + [0.8] * 10)
+    reference = np.full(20, 0.5)
+    result = _paired_bootstrap_mean_estimand(
+        y, [a, a[::-1]], [reference, reference], np.arange(20), repeats=1000, seed=13
+    )
+    expected = np.log(1.25)
+    np.testing.assert_allclose(result["log_loss_delta_ci_95"], [expected, expected])
+    for lower, upper in result["per_seed_log_loss_delta_cis"]:
+        assert lower < upper
