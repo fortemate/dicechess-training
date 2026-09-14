@@ -1,5 +1,7 @@
 # Feature Schema Ablation Report (Issue #17)
 
+> Historical protocol-v2 report template. New runs default to protocol v3; see [the protocol guide](README.md).
+
 Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v2.json` (amends `protocol-v1.json`).
 
 > [!NOTE]

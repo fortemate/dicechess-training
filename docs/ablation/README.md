@@ -1,6 +1,8 @@
 # Playground Feature Schema Ablation Protocol
 
-Status: **AMENDED (Protocol v2)**. Protocol v2 (`docs/ablation/protocol-v2.json`) supersedes historical Protocol v1 (`docs/ablation/protocol-v1.json`).
+Status: **AMENDED (Protocol v3)**. The default is `docs/ablation/protocol-v3.json`.
+Historical `protocol-v1.json` and `protocol-v2.json` remain unchanged and can be
+selected explicitly with `--protocol`.
 
 ## Context & Protocol Lineage
 
@@ -69,7 +71,32 @@ The evaluation service serves `standard-kcp` over the `kcp-13` feature schema. O
   - Mover-canonical twin equality across all probes
 - **Feature Extraction Latency**: Evaluated via verified JVM benchmark tool (`ExtractionBenchmarkApp`) capturing runtime, OS, and JVM engine provenance (`tests/fixtures/benchmark/extraction-cost-0.9.3.json`).
 
-## Decision Gate (Protocol v2)
+## Numerically stable training (Protocol v3)
+
+Protocol v3 amends v2 by setting `model.loss` to `bce-with-logits`.
+The trainer passes unbounded logits directly to `BCEWithLogitsLoss`, while
+`ValueMLP.forward` and `predict` continue returning probabilities. Checkpoint
+parameter names and the sigmoid used for inference are preserved.
+
+With the historical `Sigmoid` followed by `BCELoss`, float32 sigmoid can round
+a confidently wrong prediction to exactly zero or one. The saturated sigmoid
+then blocks the corrective gradient. More epochs do not address that numerical
+failure. The fused logits loss retains the gradient without altering feature
+definitions or normalizing inputs.
+
+Protocols without `model.loss` retain historical `bce` behavior. Explicit `bce`
+also selects that path; unsupported loss names fail closed. The amendment leaves
+architecture, optimizer, seeds, epoch budget, split, metric clipping and gates
+unchanged. Reports carry the actual protocol hash: never pool v2 and v3 runs or
+replace historical evidence. Raw feature scaling remains a separate experiment.
+The probability-based log loss still clips at the documented epsilon; it must
+not be changed to conceal saturated errors.
+
+Regression coverage exercises both extreme-logit gradient directions, actual
+learning from a saturated initialization, historical behavior and checkpoint
+compatibility. See [issue 26](https://github.com/fortemate/dicechess-training/issues/26).
+
+## Decision Gate (unchanged from Protocol v2)
 
 A wider candidate (S1 or S2) is selected over S0 iff:
 1. Relative log-loss improvement on validation: $\frac{\text{LL}_{S0} - \text{LL}_S}{\text{LL}_{S0}} \ge 1.0\%$.

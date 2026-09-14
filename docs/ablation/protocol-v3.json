@@ -1,0 +1,108 @@
+{
+  "protocol_version": "playground-feature-ablation-v3",
+  "amends": "playground-feature-ablation-v2",
+  "amendment_notes": "Numerical training correction: BCEWithLogitsLoss receives logits directly to retain corrective gradients for saturated predictions. Probability inference, evaluation metrics, raw features, model capacity, seeds, splits, epoch budget and decision gates remain unchanged. Historical v1/v2 retain Sigmoid plus BCELoss.",
+  "task": "binary-win-conditioned-on-decisive-game",
+  "perspective": "side-to-move",
+  "engine_version": "0.9.3",
+  "schemas": {
+    "S0": {
+      "schema_id": "kcp-13",
+      "feature_count": 13,
+      "description": "The served baseline: 7 material, mobility_diff, king_safety_diff, 4 capture probabilities."
+    },
+    "S1": {
+      "schema_id": "kcp-mobility-27-v1",
+      "feature_count": 27,
+      "description": "S0 plus 12 pseudo-legal move counts per piece type for both sides and 2 piece diversity indices (own_pdi, opp_pdi)."
+    },
+    "S2": {
+      "schema_id": "kcp-mobility-pawns-31-v1",
+      "feature_count": 31,
+      "description": "S1 plus 2 passed-pawn counts and 2 max passed-pawn ranks for both sides."
+    }
+  },
+  "model": {
+    "family": "mlp",
+    "hidden_dims": [
+      64,
+      64
+    ],
+    "activation": "relu",
+    "optimizer": "adam",
+    "learning_rate": 0.001,
+    "batch_size": 256,
+    "epochs": 5,
+    "loss": "bce-with-logits"
+  },
+  "seeds": [
+    11,
+    23,
+    47,
+    89,
+    131
+  ],
+  "split": {
+    "method": "game-level-sha256",
+    "formula": "int(sha256(\"playground-v1:\" + game_id), 16) % 10000",
+    "train_cutoff": 8000,
+    "val_cutoff": 9000,
+    "test_policy": "reserved-holdout-excluded-from-selection",
+    "draw_policy": "exclude-from-binary-metrics",
+    "leakage_audit": "canonical-position-exact"
+  },
+  "estimand": {
+    "primary": "single-model-replication",
+    "description": "Mean and standard deviation across independent seed trainings of the single serving model.",
+    "paired_uncertainty": "whole-game-bootstrap-mean-seed-delta",
+    "diagnostic_ensemble": true
+  },
+  "metrics": [
+    "log_loss",
+    "brier",
+    "ece"
+  ],
+  "ece": {
+    "binning": "equal-width",
+    "bins": 10
+  },
+  "uncertainty": {
+    "method": "group-bootstrap-percentile-95",
+    "repeats": 1000,
+    "seed": 13
+  },
+  "slices": {
+    "phase": "opening: ply<=10; otherwise endgame: total_material<=20; else middlegame",
+    "side": [
+      "w",
+      "b"
+    ],
+    "material": "behind: material_diff<-1; balanced: abs(material_diff)<=1; ahead: material_diff>1",
+    "target": "decisive: binary observed outcome; uncertain: unsupported without teacher probabilities",
+    "tactical": [
+      "king_attack",
+      "king_danger",
+      "queen_attack",
+      "queen_danger"
+    ]
+  },
+  "probes": {
+    "equal_tolerance": 1e-05,
+    "opening_distance_from_half": 0.1
+  },
+  "gate": {
+    "min_relative_log_loss_gain": 0.01,
+    "require_negative_paired_log_loss_ci_upper": true,
+    "max_brier_regression": 0.0,
+    "max_ece_regression": 0.01,
+    "max_slice_log_loss_regression": 0.01,
+    "max_slice_brier_regression": 0.01,
+    "require_unseen_positions": true,
+    "max_unseen_log_loss_regression": 0.01,
+    "max_unseen_brier_regression": 0.0,
+    "require_extraction_cost_evidence": true,
+    "max_extraction_latency_overhead": 0.1,
+    "extraction_cost_aggregation": "mean_relative_overhead",
+    "extraction_cost_metric": "median_us"
+  }
+}

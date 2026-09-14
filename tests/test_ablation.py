@@ -58,7 +58,15 @@ def _make_dummy_schema_df(
 
 def test_protocol_definition():
     assert DEFAULT_PROTOCOL_PATH.exists()
-    protocol_v2 = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
+    protocol_v3 = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
+    assert protocol_v3["protocol_version"] == "playground-feature-ablation-v3"
+    assert protocol_v3["amends"] == "playground-feature-ablation-v2"
+    assert protocol_v3["model"]["loss"] == "bce-with-logits"
+    protocol_v2 = json.loads((ROOT / "docs/ablation/protocol-v2.json").read_bytes())
+    assert "loss" not in protocol_v2["model"]
+    assert {k: v for k, v in protocol_v3["model"].items() if k != "loss"} == protocol_v2["model"]
+    for key in ("split", "seeds", "gate", "schemas", "estimand"):
+        assert protocol_v3[key] == protocol_v2[key]
     assert protocol_v2["protocol_version"] == "playground-feature-ablation-v2"
     assert protocol_v2["amends"] == "playground-feature-ablation-v1"
     assert protocol_v2["engine_version"] == "0.9.3"
