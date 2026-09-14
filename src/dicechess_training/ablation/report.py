@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 NOTE_ALERT = "> [!NOTE]"
+_SEVEN_COL_SEPARATOR = "|---|---|---|---|---|---|---|"
 
 
 def _render_header(
@@ -202,7 +203,7 @@ def _render_unseen_table(schemas: dict[str, Any], gates: dict[str, Any]) -> list
         "Evaluation on validation positions with no FEN/side overlap in the training partition:",
         "",
         "| Schema | Unseen Positions | Log Loss | 95% CI vs S0 (Δ) | Brier | ECE | Unseen Gate |",
-        "|---|---|---|---|---|---|---|",
+        _SEVEN_COL_SEPARATOR,
     ]
     s0_u = schemas["S0"].get("single_model_unseen", {})
     cnt = s0_u.get("count", 0)
@@ -234,7 +235,7 @@ def _render_slices_table(schemas: dict[str, Any]) -> list[str]:
         "",
         "| Slice | S0 Log Loss | S1 Log Loss (Δ) | S2 Log Loss (Δ) | S0 Brier | S1 Brier (Δ) | "
         "S2 Brier (Δ) |",
-        "|---|---|---|---|---|---|---|",
+        _SEVEN_COL_SEPARATOR,
     ]
     s0_slices = schemas["S0"]["single_model_slices"]
     s1_slices = schemas["S1"]["single_model_slices"]
@@ -267,7 +268,7 @@ def _render_calibration_table(schemas: dict[str, Any]) -> list[str]:
         "",
         "| Bin Range | S0 Count | S0 Pred / Obs | S1 Count | S1 Pred / Obs | "
         "S2 Count | S2 Pred / Obs |",
-        "|---|---|---|---|---|---|---|",
+        _SEVEN_COL_SEPARATOR,
     ]
     s0_cal = schemas["S0"]["ensemble_diagnostic"]["scores"]["calibration"]
     s1_cal = schemas["S1"]["ensemble_diagnostic"]["scores"]["calibration"]

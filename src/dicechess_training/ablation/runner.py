@@ -409,6 +409,10 @@ def _paired_bootstrap_mean_estimand(
     repeats: int = 1000,
     seed: int = 13,
 ) -> dict[str, Any]:
+    if not isinstance(repeats, int) or not 1 <= repeats <= 10000:
+        raise ValueError("bootstrap repeats must be an integer in [1, 10000]")
+    bounded_repeats = max(1, min(int(repeats), 10000))
+
     names, inverse = np.unique(groups, return_inverse=True)
     if len(names) < 2:
         return {
@@ -428,7 +432,7 @@ def _paired_bootstrap_mean_estimand(
         ll_s0, br_s0 = losses(y, p_s0)
         per_seed_ll_deltas.append(ll_s - ll_s0)
         per_seed_br_deltas.append(br_s - br_s0)
-        single_ci = confidence(y, p_s, groups, reference=p_s0, repeats=repeats, seed=seed)
+        single_ci = confidence(y, p_s, groups, reference=p_s0, repeats=bounded_repeats, seed=seed)
         per_seed_cis.append(single_ci["intervals"]["log_loss_delta"])
 
     mean_row_ll_delta = np.mean(per_seed_ll_deltas, axis=0)
@@ -440,7 +444,7 @@ def _paired_bootstrap_mean_estimand(
 
     rng = np.random.default_rng(seed)
     samples = []
-    for _ in range(repeats):
+    for _ in range(bounded_repeats):
         sampled = totals[rng.integers(len(names), size=len(names))].sum(axis=0)
         total_n = sampled[0]
         samples.append([sampled[1] / total_n, sampled[2] / total_n])
@@ -510,12 +514,17 @@ def _evaluate_unseen_gate(
     passed_ll = ll_delta <= max_ll_reg
     passed_br = br_delta <= max_br_reg
 
+    raw_repeats = protocol["uncertainty"]["repeats"]
+    repeats = int(raw_repeats) if isinstance(raw_repeats, (int, str)) else 1000
+    if not 1 <= repeats <= 10000:
+        raise ValueError(f"uncertainty.repeats must be in [1, 10000], got {repeats}")
+
     unseen_ci = _paired_bootstrap_mean_estimand(
         y_val[unseen_val_mask],
         [p[unseen_val_mask] for p in val_preds_by_schema[s_key]],
         [p[unseen_val_mask] for p in val_preds_by_schema["S0"]],
         groups_val[unseen_val_mask],
-        repeats=protocol["uncertainty"]["repeats"],
+        repeats=repeats,
         seed=protocol["uncertainty"]["seed"],
     )
 
@@ -624,12 +633,17 @@ def _evaluate_gate_for_candidate(
     ece_regression = s_sm["ece_mean"] - s0_ece
 
     # Paired whole-game bootstrap on mean seed delta (primary estimand)
+    raw_repeats = protocol["uncertainty"]["repeats"]
+    repeats = int(raw_repeats) if isinstance(raw_repeats, (int, str)) else 1000
+    if not 1 <= repeats <= 10000:
+        raise ValueError(f"uncertainty.repeats must be in [1, 10000], got {repeats}")
+
     primary_ci = _paired_bootstrap_mean_estimand(
         y_val,
         val_preds_by_schema[s_key],
         val_preds_by_schema["S0"],
         groups_val,
-        repeats=protocol["uncertainty"]["repeats"],
+        repeats=repeats,
         seed=protocol["uncertainty"]["seed"],
     )
     ll_ci = primary_ci["log_loss_delta_ci_95"]
