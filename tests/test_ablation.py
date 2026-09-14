@@ -18,7 +18,10 @@ from dicechess_training.ablation.report import (
 from dicechess_training.ablation.runner import (
     DEFAULT_PROTOCOL_PATH,
     ValueMLP,
+    _evaluate_extraction_cost_for_candidate,
+    _evaluate_unseen_gate,
     _load_extraction_cost,
+    _paired_bootstrap_mean_estimand,
     _prepare_dataset_splits,
     _validate_cross_schema_integrity,
     _validate_schema_row_alignment,
@@ -40,9 +43,7 @@ def _make_dummy_schema_df(
     result: float = 1.0,
     prefix_filler: float = 1.0,
 ) -> pd.DataFrame:
-    """Helper to create minimal valid DataFrame for a schema."""
-    contract = SCHEMA_CONTRACTS[schema_id]
-    cols = list(contract.COLUMN_NAMES)
+    cols = list(SCHEMA_CONTRACTS[schema_id].COLUMN_NAMES)
     data: dict[str, Any] = {
         "game_id": [k[0] for k in keys],
         "ply": [k[1] for k in keys],
@@ -58,22 +59,34 @@ def _make_dummy_schema_df(
 
 def test_protocol_definition():
     assert DEFAULT_PROTOCOL_PATH.exists()
-    protocol = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
-    assert protocol["protocol_version"] == "playground-feature-ablation-v1"
-    assert protocol["engine_version"] == "0.9.3"
-    assert "S0" in protocol["schemas"]
-    assert "S1" in protocol["schemas"]
-    assert "S2" in protocol["schemas"]
+    protocol_v2 = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
+    assert protocol_v2["protocol_version"] == "playground-feature-ablation-v2"
+    assert protocol_v2["amends"] == "playground-feature-ablation-v1"
+    assert protocol_v2["engine_version"] == "0.9.3"
+    assert "S0" in protocol_v2["schemas"]
+    assert "S1" in protocol_v2["schemas"]
+    assert "S2" in protocol_v2["schemas"]
 
-    # Protocol includes 80/10/10 split definitions and leakage audit
-    assert protocol["split"]["train_cutoff"] == 8000
-    assert protocol["split"]["val_cutoff"] == 9000
-    assert protocol["split"]["test_policy"] == "reserved-holdout-excluded-from-selection"
-    assert protocol["split"]["leakage_audit"] == "canonical-position-exact"
-    assert protocol["estimand"]["primary"] == "single-model-replication"
-    assert protocol["estimand"]["diagnostic_ensemble"] is True
+    # Historical lineage protocol v1 is preserved
+    hist_v1_path = ROOT / "docs/ablation/protocol-v1.json"
+    assert hist_v1_path.exists()
+    protocol_v1 = json.loads(hist_v1_path.read_bytes())
+    assert protocol_v1["protocol_version"] == "playground-feature-ablation-v1"
 
-    for _skey, sinfo in protocol["schemas"].items():
+    # Protocol v2 includes 80/10/10 split, unseen gate, and extraction cost gate
+    assert protocol_v2["split"]["train_cutoff"] == 8000
+    assert protocol_v2["split"]["val_cutoff"] == 9000
+    assert protocol_v2["split"]["test_policy"] == "reserved-holdout-excluded-from-selection"
+    assert protocol_v2["split"]["leakage_audit"] == "canonical-position-exact"
+    assert protocol_v2["estimand"]["primary"] == "single-model-replication"
+    assert protocol_v2["estimand"]["paired_uncertainty"] == "whole-game-bootstrap-mean-seed-delta"
+    assert protocol_v2["estimand"]["diagnostic_ensemble"] is True
+
+    assert protocol_v2["gate"]["require_unseen_positions"] is True
+    assert protocol_v2["gate"]["require_extraction_cost_evidence"] is True
+    assert protocol_v2["gate"]["max_extraction_latency_overhead"] == 0.10
+
+    for _skey, sinfo in protocol_v2["schemas"].items():
         sid = sinfo["schema_id"]
         assert sid in SCHEMA_CONTRACTS
         assert sinfo["feature_count"] == len(SCHEMA_CONTRACTS[sid].COLUMN_NAMES)
@@ -409,7 +422,15 @@ def test_prepare_dataset_splits_80_10_10_and_leakage_audit():
         }
     }
 
-    train_mask, val_mask, val_df, y_val, groups_val, summary = _prepare_dataset_splits(df, protocol)
+    (
+        train_mask,
+        val_mask,
+        val_df,
+        y_val,
+        groups_val,
+        summary,
+        unseen_val_mask,
+    ) = _prepare_dataset_splits(df, protocol)
 
     # 1. Verification of masks
     assert train_mask.sum() == 1  # only decisive game_1 row
@@ -423,6 +444,7 @@ def test_prepare_dataset_splits_80_10_10_and_leakage_audit():
     assert leak["train:validation"] == 1  # fen_shared is in both train and val
     assert leak["train:test"] == 1  # fen_shared is in both train and test
     assert summary["unseen_val_positions"] == 1  # fen_val_unique is unseen in train
+    assert unseen_val_mask.sum() == 1
 
 
 def test_cli_write_exclusive(tmp_path: Path):
@@ -510,3 +532,181 @@ def test_reader_fails_closed_on_non_float32_features(tmp_path: Path):
 
     with pytest.raises(ValueError, match="has type double, expected float"):
         read_enriched_shard(test_path, "kcp-13", "0.9.3")
+
+
+def test_paired_bootstrap_mean_estimand_complementary_errors():
+    # 4 games with 2 rows each = 8 rows
+    y = np.array([1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0], dtype=np.float32)
+    groups = np.array(["g1", "g1", "g2", "g2", "g3", "g3", "g4", "g4"])
+
+    # Baseline prediction = 0.5
+    p_ref = np.full(8, 0.5, dtype=np.float32)
+
+    # Seed 0 has error delta -d on every row (wins lose less, losses lose less)
+    # Seed 1 has complementary error delta +d on every row
+    # For y=1: p0 = 0.6 -> ll_0 = -ln(0.6) = 0.5108256; ref_ll = ln(2) = 0.6931472
+    #          delta = -0.1823216
+    #          p1 = exp(-(ln(2) - (-0.1823216))) = 0.41666666 -> delta = +0.1823216
+    # For y=0: p0 = 0.4 -> ll_0 = -ln(0.6) = 0.5108256 -> delta = -0.1823216
+    #          p1 = 1 - 0.41666666 = 0.5833333 -> delta = +0.1823216
+    p_s0 = np.array([0.6, 0.4, 0.6, 0.4, 0.6, 0.4, 0.6, 0.4], dtype=np.float32)
+    p_s1 = np.array(
+        [
+            0.41666666,
+            0.5833333,
+            0.41666666,
+            0.5833333,
+            0.41666666,
+            0.5833333,
+            0.41666666,
+            0.5833333,
+        ],
+        dtype=np.float32,
+    )
+
+    res = _paired_bootstrap_mean_estimand(
+        y=y,
+        s_preds=[p_s0, p_s1],
+        s0_preds=[p_ref, p_ref],
+        groups=groups,
+        repeats=100,
+        seed=13,
+    )
+
+    # The mean loss delta across seeds for every row is identically 0.0
+    # Therefore, the mean-seed bootstrap CI collapses to [0.0, 0.0] (degenerate)
+    ci = res["log_loss_delta_ci_95"]
+    assert pytest.approx(ci[0], abs=1e-5) == 0.0
+    assert pytest.approx(ci[1], abs=1e-5) == 0.0
+
+    # In contrast, per-seed individual CIs are non-degenerate
+    seed_cis = res["per_seed_log_loss_delta_cis"]
+    assert len(seed_cis) == 2
+    assert seed_cis[0][1] < 0.0  # Seed 0 is strictly negative (improved)
+    assert seed_cis[1][0] > 0.0  # Seed 1 is strictly positive (regressed)
+
+
+def test_unseen_gate_fails_on_unseen_regression():
+    protocol = {
+        "uncertainty": {"repeats": 50, "seed": 13},
+        "gate": {
+            "min_relative_log_loss_gain": 0.01,
+            "require_negative_paired_log_loss_ci_upper": True,
+            "max_brier_regression": 0.0,
+            "max_ece_regression": 0.01,
+            "max_slice_log_loss_regression": 0.01,
+            "max_slice_brier_regression": 0.01,
+            "require_unseen_positions": True,
+            "max_unseen_log_loss_regression": 0.01,
+            "max_unseen_brier_regression": 0.0,
+            "require_extraction_cost_evidence": True,
+            "max_extraction_latency_overhead": 0.10,
+        },
+    }
+
+    # Full validation has 4 rows, unseen mask is True for 2 rows
+    unseen_val_mask = np.array([True, True, False, False])
+    y_val = np.array([1.0, 0.0, 1.0, 0.0], dtype=np.float32)
+    groups_val = np.array(["g1", "g1", "g2", "g2"])
+
+    p_s0 = np.array([0.5, 0.5, 0.5, 0.5], dtype=np.float32)
+    # Candidate improves on rows 2,3 but regresses on unseen rows 0,1
+    p_s1 = np.array([0.3, 0.7, 0.9, 0.1], dtype=np.float32)
+
+    results_by_schema = {
+        "S0": {
+            "single_model_summary": {"log_loss_mean": 0.70, "brier_mean": 0.25, "ece_mean": 0.05},
+            "single_model_slices": {},
+            "single_model_unseen": {"log_loss_mean": 0.693, "brier_mean": 0.25},
+        },
+        "S1": {
+            "single_model_summary": {"log_loss_mean": 0.50, "brier_mean": 0.20, "ece_mean": 0.03},
+            # Severe unseen regression:
+            "single_model_unseen": {"log_loss_mean": 1.200, "brier_mean": 0.35},
+        },
+    }
+
+    val_preds_by_schema = {"S0": [p_s0], "S1": [p_s1]}
+
+    unseen_eval = _evaluate_unseen_gate(
+        s_key="S1",
+        results_by_schema=results_by_schema,
+        val_preds_by_schema=val_preds_by_schema,
+        y_val=y_val,
+        groups_val=groups_val,
+        unseen_val_mask=unseen_val_mask,
+        protocol=protocol,
+    )
+
+    assert unseen_eval["passed"] is False
+    assert unseen_eval["passed_ll"] is False
+    assert unseen_eval["reason"] == "unseen-metrics-regressed"
+
+
+def test_unseen_gate_fails_on_empty_unseen():
+    protocol = {
+        "uncertainty": {"repeats": 10, "seed": 13},
+        "gate": {
+            "max_unseen_log_loss_regression": 0.01,
+            "max_unseen_brier_regression": 0.0,
+        },
+    }
+    unseen_val_mask = np.array([False, False, False])
+    unseen_eval = _evaluate_unseen_gate(
+        s_key="S1",
+        results_by_schema={},
+        val_preds_by_schema={},
+        y_val=np.array([1.0, 0.0, 1.0]),
+        groups_val=np.array(["g1", "g1", "g2"]),
+        unseen_val_mask=unseen_val_mask,
+        protocol=protocol,
+    )
+    assert unseen_eval["passed"] is False
+    assert unseen_eval["reason"] == "no-unseen-positions"
+
+
+def test_extraction_cost_gate_evaluation():
+    protocol = {
+        "gate": {
+            "max_extraction_latency_overhead": 0.10,
+            "extraction_cost_metric": "median_us",
+        }
+    }
+
+    # 1. Missing cost evidence fails
+    eval_none = _evaluate_extraction_cost_for_candidate("S1", None, protocol)
+    assert eval_none["evidence_valid"] is False
+    assert eval_none["cost_cleared"] is False
+    assert eval_none["reason"] == "missing-extraction-cost-evidence"
+
+    # 2. Over-budget candidate (> 10% overhead) fails
+    overbudget_cost = {
+        "probes": {
+            "start-w": {
+                "schemas": {
+                    "S0": {"median_us": 100.0},
+                    "S1": {"median_us": 125.0},  # +25% overhead
+                }
+            }
+        }
+    }
+    eval_over = _evaluate_extraction_cost_for_candidate("S1", overbudget_cost, protocol)
+    assert eval_over["evidence_valid"] is True
+    assert eval_over["cost_cleared"] is False
+    assert eval_over["reason"] == "extraction-latency-overhead-exceeded"
+
+    # 3. Within-budget candidate (e.g. +2% overhead) passes
+    within_cost = {
+        "probes": {
+            "start-w": {
+                "schemas": {
+                    "S0": {"median_us": 100.0},
+                    "S1": {"median_us": 102.0},  # +2% overhead
+                }
+            }
+        }
+    }
+    eval_within = _evaluate_extraction_cost_for_candidate("S1", within_cost, protocol)
+    assert eval_within["evidence_valid"] is True
+    assert eval_within["cost_cleared"] is True
+    assert eval_within["reason"] is None

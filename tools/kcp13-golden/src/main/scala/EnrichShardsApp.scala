@@ -86,7 +86,10 @@ object EnrichShardsApp:
           err => sys.error(s"FEN error in game ${raw.gameId} ply ${raw.ply}: $err"),
           identity
         )
-        val color = if raw.side == "w" then Color.White else Color.Black
+        val color = raw.side match
+          case "w" => Color.White
+          case "b" => Color.Black
+          case other => sys.error(s"Invalid side '$other' in game ${raw.gameId} ply ${raw.ply}")
         EnrichedRow(raw, extractor(state, color))
       }.iterator()
 

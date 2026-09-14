@@ -1,5 +1,7 @@
 {
-  "protocol_version": "playground-feature-ablation-v1",
+  "protocol_version": "playground-feature-ablation-v2",
+  "amends": "playground-feature-ablation-v1",
+  "amendment_notes": "Versioned protocol amendment: isolates test bucket under 80/10/10 split policy, defines primary estimand as across-seed single-model replication with paired whole-game bootstrap CI on mean seed loss delta, adds unseen-position evaluation and gating, and enforces measured JVM extraction cost evidence in candidate selection.",
   "task": "binary-win-conditioned-on-decisive-game",
   "perspective": "side-to-move",
   "engine_version": "0.9.3",
@@ -43,13 +45,26 @@
     "method": "game-level-sha256",
     "formula": "int(sha256(\"playground-v1:\" + game_id), 16) % 10000",
     "train_cutoff": 8000,
-    "draw_policy": "exclude-from-binary-metrics"
+    "val_cutoff": 9000,
+    "test_policy": "reserved-holdout-excluded-from-selection",
+    "draw_policy": "exclude-from-binary-metrics",
+    "leakage_audit": "canonical-position-exact"
+  },
+  "estimand": {
+    "primary": "single-model-replication",
+    "description": "Mean and standard deviation across independent seed trainings of the single serving model.",
+    "paired_uncertainty": "whole-game-bootstrap-mean-seed-delta",
+    "diagnostic_ensemble": true
   },
   "metrics": [
     "log_loss",
     "brier",
     "ece"
   ],
+  "ece": {
+    "binning": "equal-width",
+    "bins": 10
+  },
   "uncertainty": {
     "method": "group-bootstrap-percentile-95",
     "repeats": 1000,
@@ -80,6 +95,13 @@
     "max_brier_regression": 0.0,
     "max_ece_regression": 0.01,
     "max_slice_log_loss_regression": 0.01,
-    "max_slice_brier_regression": 0.01
+    "max_slice_brier_regression": 0.01,
+    "require_unseen_positions": true,
+    "max_unseen_log_loss_regression": 0.01,
+    "max_unseen_brier_regression": 0.0,
+    "require_extraction_cost_evidence": true,
+    "max_extraction_latency_overhead": 0.10,
+    "extraction_cost_aggregation": "mean_relative_overhead",
+    "extraction_cost_metric": "median_us"
   }
 }

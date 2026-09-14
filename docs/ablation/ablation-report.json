@@ -1,6 +1,6 @@
 {
-  "protocol_version": "playground-feature-ablation-v1",
-  "protocol_sha256": "41c0ce06d5fa6f070d2db36a5868cd16232ecf2756aa9491fb9c39492492011b",
+  "protocol_version": "playground-feature-ablation-v2",
+  "protocol_sha256": "0cb0f0b3a64c117a7c6995cc09bce136eefc955438224525aa5e17fbe09932ba",
   "engine_version": "0.9.3",
   "status": "provisional-development",
   "split_summary": {
@@ -44,6 +44,15 @@
         "brier_std": 0.004436731574006541,
         "ece_mean": 0.06532700050375911,
         "ece_std": 0.010727086280679464
+      },
+      "single_model_unseen": {
+        "count": 3805,
+        "log_loss_mean": 1.219175107236608,
+        "log_loss_std": 0.5447293845706453,
+        "brier_mean": 0.23724789804810556,
+        "brier_std": 0.005003269189250329,
+        "ece_mean": 0.07631520709926055,
+        "ece_std": 0.009721359207187849
       },
       "single_model_slices": {
         "phase:opening": {
@@ -1192,6 +1201,85 @@
               "blocked-pawns-w-twin": 0.53408,
               "passed-pawn-w-twin": 0.83225
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 2.3085591883554444,
+            "brier": 0.23996548148735905,
+            "ece": 0.08621533377421593,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 548,
+                "prediction": 0.004319316724546417,
+                "observed": 0.3102189781021898
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 53,
+                "prediction": 0.1522505370513448,
+                "observed": 0.49056603773584906
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 105,
+                "prediction": 0.2573001695530755,
+                "observed": 0.22857142857142856
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 245,
+                "prediction": 0.3637204364854462,
+                "observed": 0.3551020408163265
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 678,
+                "prediction": 0.4523158365294645,
+                "observed": 0.4085545722713864
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 806,
+                "prediction": 0.548082944255313,
+                "observed": 0.5260545905707196
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 603,
+                "prediction": 0.6447824981082139,
+                "observed": 0.6218905472636815
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 292,
+                "prediction": 0.7415654991995798,
+                "observed": 0.7226027397260274
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 120,
+                "prediction": 0.8444347530603409,
+                "observed": 0.7416666666666667
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 355,
+                "prediction": 0.9866463424454273,
+                "observed": 0.8225352112676056
+              }
+            ]
           }
         },
         {
@@ -2266,6 +2354,85 @@
               "blocked-pawns-w-twin": 0.49582,
               "passed-pawn-w-twin": 0.7794
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9584914177662487,
+            "brier": 0.24586960894303722,
+            "ece": 0.08944814491260711,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 65,
+                "prediction": 0.04427399898234468,
+                "observed": 0.23076923076923078
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 101,
+                "prediction": 0.15168202188935612,
+                "observed": 0.3069306930693069
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 144,
+                "prediction": 0.2543175075617101,
+                "observed": 0.3333333333333333
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 453,
+                "prediction": 0.3631829506908821,
+                "observed": 0.3333333333333333
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 732,
+                "prediction": 0.45077496779258136,
+                "observed": 0.4822404371584699
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 709,
+                "prediction": 0.5461751469772188,
+                "observed": 0.5218617771509168
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 552,
+                "prediction": 0.647772970298926,
+                "observed": 0.5869565217391305
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 417,
+                "prediction": 0.7479997098588829,
+                "observed": 0.5755395683453237
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 262,
+                "prediction": 0.8457807659647847,
+                "observed": 0.5267175572519084
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 370,
+                "prediction": 0.9818802915714883,
+                "observed": 0.8243243243243243
+              }
+            ]
           }
         },
         {
@@ -3340,6 +3507,85 @@
               "blocked-pawns-w-twin": 0.49711,
               "passed-pawn-w-twin": 0.74943
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9421694085842304,
+            "brier": 0.23374334304849187,
+            "ece": 0.06939151217523379,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 448,
+                "prediction": 0.05691816797843785,
+                "observed": 0.26785714285714285
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 218,
+                "prediction": 0.14272274141874883,
+                "observed": 0.41743119266055045
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 129,
+                "prediction": 0.255634640769441,
+                "observed": 0.3178294573643411
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 262,
+                "prediction": 0.3586356874185664,
+                "observed": 0.3473282442748092
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 853,
+                "prediction": 0.45328396611168964,
+                "observed": 0.46776084407971863
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 883,
+                "prediction": 0.5444768160952852,
+                "observed": 0.5481313703284258
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 512,
+                "prediction": 0.64066930138506,
+                "observed": 0.6796875
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 115,
+                "prediction": 0.7424496433009272,
+                "observed": 0.782608695652174
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 79,
+                "prediction": 0.8405141936072821,
+                "observed": 0.5949367088607594
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 306,
+                "prediction": 0.9904900031541687,
+                "observed": 0.8627450980392157
+              }
+            ]
           }
         },
         {
@@ -4414,6 +4660,85 @@
               "blocked-pawns-w-twin": 0.5071,
               "passed-pawn-w-twin": 0.81656
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9465816581429854,
+            "brier": 0.23381574917064682,
+            "ece": 0.06477167472040159,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 459,
+                "prediction": 0.05134889881039335,
+                "observed": 0.2788671023965142
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 170,
+                "prediction": 0.14640691381166962,
+                "observed": 0.45294117647058824
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 106,
+                "prediction": 0.25190827911192515,
+                "observed": 0.20754716981132076
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 315,
+                "prediction": 0.3617836798940386,
+                "observed": 0.3682539682539683
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 906,
+                "prediction": 0.4527278346796962,
+                "observed": 0.46357615894039733
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 770,
+                "prediction": 0.5458377727440425,
+                "observed": 0.5454545454545454
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 527,
+                "prediction": 0.64294535860391,
+                "observed": 0.6717267552182163
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 149,
+                "prediction": 0.7392401675249907,
+                "observed": 0.7315436241610739
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 88,
+                "prediction": 0.8411475894126025,
+                "observed": 0.7159090909090909
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 315,
+                "prediction": 0.989571073509398,
+                "observed": 0.8444444444444444
+              }
+            ]
           }
         },
         {
@@ -5488,6 +5813,85 @@
               "blocked-pawns-w-twin": 0.53041,
               "passed-pawn-w-twin": 0.82832
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9400738633341301,
+            "brier": 0.23284530759099267,
+            "ece": 0.07174936991384433,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 432,
+                "prediction": 0.05929075674578565,
+                "observed": 0.2662037037037037
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 239,
+                "prediction": 0.14325135350850834,
+                "observed": 0.38493723849372385
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 124,
+                "prediction": 0.25484538847400295,
+                "observed": 0.3548387096774194
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 370,
+                "prediction": 0.3597640350058272,
+                "observed": 0.34324324324324323
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 618,
+                "prediction": 0.4507753287222007,
+                "observed": 0.4692556634304207
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 731,
+                "prediction": 0.5479250128716027,
+                "observed": 0.5321477428180574
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 527,
+                "prediction": 0.647473864808707,
+                "observed": 0.6261859582542695
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 302,
+                "prediction": 0.7421289913306962,
+                "observed": 0.7185430463576159
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 135,
+                "prediction": 0.8467973046832614,
+                "observed": 0.7037037037037037
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 327,
+                "prediction": 0.9869474575424778,
+                "observed": 0.8440366972477065
+              }
+            ]
           }
         }
       ],
@@ -6575,6 +6979,15 @@
         "brier_std": 0.002509611914829285,
         "ece_mean": 0.05001702905152002,
         "ece_std": 0.009884334783713445
+      },
+      "single_model_unseen": {
+        "count": 3805,
+        "log_loss_mean": 0.929713758047361,
+        "log_loss_std": 0.013191456925050337,
+        "brier_mean": 0.22876166249426627,
+        "brier_std": 0.0031081323052438072,
+        "ece_mean": 0.05659921088254718,
+        "ece_std": 0.013953045501130952
       },
       "single_model_slices": {
         "phase:opening": {
@@ -7723,6 +8136,85 @@
               "blocked-pawns-w-twin": 0.52124,
               "passed-pawn-w-twin": 0.88798
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9170173492052476,
+            "brier": 0.2257855936816834,
+            "ece": 0.04830727042060016,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 82,
+                "prediction": 0.05844310552972119,
+                "observed": 0.2926829268292683
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 152,
+                "prediction": 0.16017400257681547,
+                "observed": 0.2565789473684211
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 342,
+                "prediction": 0.25304123724413197,
+                "observed": 0.2982456140350877
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 467,
+                "prediction": 0.35210737802997644,
+                "observed": 0.3147751605995717
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 644,
+                "prediction": 0.451009669474193,
+                "observed": 0.4518633540372671
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 679,
+                "prediction": 0.551130936844535,
+                "observed": 0.5493372606774669
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 612,
+                "prediction": 0.648637975158255,
+                "observed": 0.6013071895424836
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 329,
+                "prediction": 0.7394307259368317,
+                "observed": 0.7416413373860182
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 131,
+                "prediction": 0.8456044392731353,
+                "observed": 0.7022900763358778
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 367,
+                "prediction": 0.9858809594237512,
+                "observed": 0.8038147138964578
+              }
+            ]
           }
         },
         {
@@ -8797,6 +9289,85 @@
               "blocked-pawns-w-twin": 0.46544,
               "passed-pawn-w-twin": 0.92831
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9444130865972303,
+            "brier": 0.23229973217044475,
+            "ece": 0.07385733137467117,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 356,
+                "prediction": 0.05834833062888291,
+                "observed": 0.2612359550561798
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 286,
+                "prediction": 0.13995225029391842,
+                "observed": 0.36013986013986016
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 220,
+                "prediction": 0.2510516990992156,
+                "observed": 0.36818181818181817
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 444,
+                "prediction": 0.3533964075215228,
+                "observed": 0.34234234234234234
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 629,
+                "prediction": 0.4522142912511416,
+                "observed": 0.4912559618441971
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 627,
+                "prediction": 0.5518691631025104,
+                "observed": 0.543859649122807
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 477,
+                "prediction": 0.6466064501858357,
+                "observed": 0.6415094339622641
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 258,
+                "prediction": 0.7429664121117703,
+                "observed": 0.7441860465116279
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 144,
+                "prediction": 0.8482567162977325,
+                "observed": 0.6875
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 364,
+                "prediction": 0.9853702703347573,
+                "observed": 0.8214285714285714
+              }
+            ]
           }
         },
         {
@@ -9871,6 +10442,85 @@
               "blocked-pawns-w-twin": 0.38852,
               "passed-pawn-w-twin": 0.85486
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9470320094107745,
+            "brier": 0.23277890566086012,
+            "ece": 0.07302664122880778,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 427,
+                "prediction": 0.057994019906461865,
+                "observed": 0.27634660421545665
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 230,
+                "prediction": 0.14263536518682604,
+                "observed": 0.41304347826086957
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 194,
+                "prediction": 0.2542541690708436,
+                "observed": 0.30412371134020616
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 402,
+                "prediction": 0.3557939680654611,
+                "observed": 0.32338308457711445
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 639,
+                "prediction": 0.4526881646942085,
+                "observed": 0.4788732394366197
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 708,
+                "prediction": 0.5494738478781813,
+                "observed": 0.556497175141243
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 537,
+                "prediction": 0.6440522132417121,
+                "observed": 0.6517690875232774
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 233,
+                "prediction": 0.7421322562152224,
+                "observed": 0.759656652360515
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 97,
+                "prediction": 0.8441787097871918,
+                "observed": 0.7319587628865979
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 338,
+                "prediction": 0.9879136831450039,
+                "observed": 0.8136094674556213
+              }
+            ]
           }
         },
         {
@@ -10945,6 +11595,85 @@
               "blocked-pawns-w-twin": 0.50565,
               "passed-pawn-w-twin": 0.83737
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9182885244367869,
+            "brier": 0.22608182968984003,
+            "ece": 0.041204239420578104,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 101,
+                "prediction": 0.046359970119071774,
+                "observed": 0.27722772277227725
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 148,
+                "prediction": 0.15335449994214484,
+                "observed": 0.34459459459459457
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 304,
+                "prediction": 0.25614808137087447,
+                "observed": 0.24671052631578946
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 634,
+                "prediction": 0.35154139901561315,
+                "observed": 0.34542586750788645
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 723,
+                "prediction": 0.44925637388625084,
+                "observed": 0.47579529737206083
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 648,
+                "prediction": 0.548448685142729,
+                "observed": 0.5555555555555556
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 518,
+                "prediction": 0.6453007301998875,
+                "observed": 0.6447876447876448
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 271,
+                "prediction": 0.7418307910546166,
+                "observed": 0.7416974169741697
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 105,
+                "prediction": 0.8452326820010231,
+                "observed": 0.7428571428571429
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 353,
+                "prediction": 0.9874516779572701,
+                "observed": 0.8073654390934845
+              }
+            ]
           }
         },
         {
@@ -12019,6 +12748,85 @@
               "blocked-pawns-w-twin": 0.47889,
               "passed-pawn-w-twin": 0.88786
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.921817820586766,
+            "brier": 0.22686225126850318,
+            "ece": 0.04660057196807871,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 107,
+                "prediction": 0.0416577261966157,
+                "observed": 0.29906542056074764
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 135,
+                "prediction": 0.16017944867964143,
+                "observed": 0.25925925925925924
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 316,
+                "prediction": 0.2585657378540763,
+                "observed": 0.31645569620253167
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 612,
+                "prediction": 0.3517819214490504,
+                "observed": 0.3300653594771242
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 732,
+                "prediction": 0.4501996631912195,
+                "observed": 0.47950819672131145
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 711,
+                "prediction": 0.549435119085674,
+                "observed": 0.5555555555555556
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 528,
+                "prediction": 0.6453440500931307,
+                "observed": 0.6571969696969697
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 232,
+                "prediction": 0.7415922610410328,
+                "observed": 0.7155172413793104
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 92,
+                "prediction": 0.8398865448391956,
+                "observed": 0.7391304347826086
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 340,
+                "prediction": 0.9895006786374485,
+                "observed": 0.8205882352941176
+              }
+            ]
           }
         }
       ],
@@ -13106,6 +13914,15 @@
         "brier_std": 0.002047769214264594,
         "ece_mean": 0.05676912318188363,
         "ece_std": 0.0066271133809138886
+      },
+      "single_model_unseen": {
+        "count": 3805,
+        "log_loss_mean": 0.8195810602605107,
+        "log_loss_std": 0.12296508222624193,
+        "brier_mean": 0.22796902959727153,
+        "brier_std": 0.0022089117554784524,
+        "ece_mean": 0.06345082798366325,
+        "ece_std": 0.0056800854218594645
       },
       "single_model_slices": {
         "phase:opening": {
@@ -14254,6 +15071,85 @@
               "blocked-pawns-w-twin": 0.47682,
               "passed-pawn-w-twin": 0.88148
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9212658970078359,
+            "brier": 0.22780887235947547,
+            "ece": 0.05894122356634571,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 87,
+                "prediction": 0.04973642087016983,
+                "observed": 0.3563218390804598
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 132,
+                "prediction": 0.1519001041623679,
+                "observed": 0.2803030303030303
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 245,
+                "prediction": 0.2536998763984563,
+                "observed": 0.2816326530612245
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 440,
+                "prediction": 0.35363594171675766,
+                "observed": 0.3340909090909091
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 692,
+                "prediction": 0.45126976520684414,
+                "observed": 0.40895953757225434
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 709,
+                "prediction": 0.5494969224055496,
+                "observed": 0.5077574047954866
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 651,
+                "prediction": 0.6477193631884139,
+                "observed": 0.6251920122887865
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 341,
+                "prediction": 0.7411028090809797,
+                "observed": 0.7008797653958945
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 147,
+                "prediction": 0.8453909369553028,
+                "observed": 0.7551020408163265
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 361,
+                "prediction": 0.9852633430026575,
+                "observed": 0.8060941828254847
+              }
+            ]
           }
         },
         {
@@ -15328,6 +16224,85 @@
               "blocked-pawns-w-twin": 0.49247,
               "passed-pawn-w-twin": 0.89442
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9163742938770129,
+            "brier": 0.2270951258534242,
+            "ece": 0.06133438492739643,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 71,
+                "prediction": 0.04614702420650234,
+                "observed": 0.323943661971831
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 76,
+                "prediction": 0.15125080825466858,
+                "observed": 0.2236842105263158
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 156,
+                "prediction": 0.2573662770864291,
+                "observed": 0.3269230769230769
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 407,
+                "prediction": 0.3579428619190282,
+                "observed": 0.28992628992628994
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 801,
+                "prediction": 0.4526479886786619,
+                "observed": 0.3982521847690387
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 823,
+                "prediction": 0.5487760456770043,
+                "observed": 0.5066828675577156
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 695,
+                "prediction": 0.6458859208676455,
+                "observed": 0.637410071942446
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 313,
+                "prediction": 0.74095152989744,
+                "observed": 0.7060702875399361
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 119,
+                "prediction": 0.8511257998081816,
+                "observed": 0.7058823529411765
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 344,
+                "prediction": 0.9863633449340976,
+                "observed": 0.8197674418604651
+              }
+            ]
           }
         },
         {
@@ -16402,6 +17377,85 @@
               "blocked-pawns-w-twin": 0.50712,
               "passed-pawn-w-twin": 0.90239
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.9213721557135409,
+            "brier": 0.22669482650968156,
+            "ece": 0.05945226057602701,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 131,
+                "prediction": 0.05716368847149815,
+                "observed": 0.2824427480916031
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 346,
+                "prediction": 0.15408162428119968,
+                "observed": 0.2861271676300578
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 373,
+                "prediction": 0.2489552909343556,
+                "observed": 0.3297587131367292
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 499,
+                "prediction": 0.3526615462226715,
+                "observed": 0.37074148296593185
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 635,
+                "prediction": 0.4510709960629621,
+                "observed": 0.494488188976378
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 641,
+                "prediction": 0.5488447993296357,
+                "observed": 0.5522620904836193
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 502,
+                "prediction": 0.64421784711549,
+                "observed": 0.6613545816733067
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 214,
+                "prediction": 0.7446218358579083,
+                "observed": 0.7523364485981309
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 118,
+                "prediction": 0.8432578358609798,
+                "observed": 0.7711864406779662
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 346,
+                "prediction": 0.989412075522318,
+                "observed": 0.8063583815028902
+              }
+            ]
           }
         },
         {
@@ -17476,6 +18530,85 @@
               "blocked-pawns-w-twin": 0.45055,
               "passed-pawn-w-twin": 0.89563
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.6544280211637835,
+            "brier": 0.22601515080436163,
+            "ece": 0.0631031342411264,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 151,
+                "prediction": 0.06106844908921726,
+                "observed": 0.2052980132450331
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 379,
+                "prediction": 0.1514889823769202,
+                "observed": 0.316622691292876
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 329,
+                "prediction": 0.25101097032291914,
+                "observed": 0.3282674772036474
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 534,
+                "prediction": 0.35173655968257106,
+                "observed": 0.3857677902621723
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 647,
+                "prediction": 0.45014374356549897,
+                "observed": 0.482225656877898
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 624,
+                "prediction": 0.5507798933256896,
+                "observed": 0.5705128205128205
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 487,
+                "prediction": 0.6442153049935061,
+                "observed": 0.6858316221765913
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 222,
+                "prediction": 0.7427269692893501,
+                "observed": 0.7612612612612613
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 167,
+                "prediction": 0.856810405939639,
+                "observed": 0.7365269461077845
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 265,
+                "prediction": 0.9457116093275681,
+                "observed": 0.8150943396226416
+              }
+            ]
           }
         },
         {
@@ -18550,6 +19683,85 @@
               "blocked-pawns-w-twin": 0.47105,
               "passed-pawn-w-twin": 0.8838
             }
+          },
+          "unseen_scores": {
+            "count": 3805,
+            "prevalence": 0.519053876478318,
+            "log_loss": 0.6844649335403806,
+            "brier": 0.2322311724594148,
+            "ece": 0.0744231366074207,
+            "calibration": [
+              {
+                "lower": 0.0,
+                "upper": 0.1,
+                "count": 81,
+                "prediction": 0.04538245585223913,
+                "observed": 0.3333333333333333
+              },
+              {
+                "lower": 0.1,
+                "upper": 0.2,
+                "count": 85,
+                "prediction": 0.15387957271407632,
+                "observed": 0.32941176470588235
+              },
+              {
+                "lower": 0.2,
+                "upper": 0.3,
+                "count": 176,
+                "prediction": 0.2570019396529956,
+                "observed": 0.29545454545454547
+              },
+              {
+                "lower": 0.3,
+                "upper": 0.4,
+                "count": 362,
+                "prediction": 0.3575641014793301,
+                "observed": 0.2983425414364641
+              },
+              {
+                "lower": 0.4,
+                "upper": 0.5,
+                "count": 701,
+                "prediction": 0.4527266074434327,
+                "observed": 0.4122681883024251
+              },
+              {
+                "lower": 0.5,
+                "upper": 0.6,
+                "count": 801,
+                "prediction": 0.5502913147769171,
+                "observed": 0.5056179775280899
+              },
+              {
+                "lower": 0.6,
+                "upper": 0.7,
+                "count": 713,
+                "prediction": 0.6473874340217879,
+                "observed": 0.5680224403927069
+              },
+              {
+                "lower": 0.7,
+                "upper": 0.8,
+                "count": 376,
+                "prediction": 0.7415358823664645,
+                "observed": 0.7021276595744681
+              },
+              {
+                "lower": 0.8,
+                "upper": 0.9,
+                "count": 168,
+                "prediction": 0.8424419334956578,
+                "observed": 0.6785714285714286
+              },
+              {
+                "lower": 0.9,
+                "upper": 1.0,
+                "count": 342,
+                "prediction": 0.9843574328380719,
+                "observed": 0.827485380116959
+              }
+            ]
           }
         }
       ],
@@ -19633,10 +20845,35 @@
       "cleared": false,
       "relative_log_loss_gain": 0.2151032283255489,
       "log_loss_delta_ci_95": [
-        -0.3063956725217589,
-        -0.178377726681013
+        -0.29309736201868,
+        -0.19136164673944772
       ],
-      "log_loss_delta_ci_upper_max": 0.0327991013424357,
+      "brier_delta_ci_95": [
+        -0.011748926392229244,
+        -0.0018626687355618302
+      ],
+      "per_seed_log_loss_delta_cis": [
+        [
+          -1.3907001016400242,
+          -0.9650581554256188
+        ],
+        [
+          -0.043499724922872254,
+          0.020129983228765278
+        ],
+        [
+          -0.015895587989278044,
+          0.0327991013424357
+        ],
+        [
+          -0.043321890931210125,
+          0.002110234564697486
+        ],
+        [
+          -0.03856105712540987,
+          0.018130202884655267
+        ]
+      ],
       "brier_regression": -0.0074051821084359926,
       "ece_regression": -0.015309971452239092,
       "max_slice_log_loss_regression": 0.13866625318293968,
@@ -19691,23 +20928,103 @@
           "brier_delta": -0.00921451876648477
         }
       },
+      "unseen_evaluation": {
+        "unseen_count": 3805,
+        "passed_exists": true,
+        "passed_ll": true,
+        "passed_brier": true,
+        "passed": true,
+        "reason": null,
+        "log_loss_delta": -0.28946134918924693,
+        "brier_delta": -0.008486235553839289,
+        "log_loss_delta_ci_95": [
+          -0.35025032116350147,
+          -0.22648865068659435
+        ]
+      },
+      "extraction_cost_evaluation": {
+        "evidence_valid": true,
+        "cost_cleared": true,
+        "reason": null,
+        "mean_relative_overhead": 0.001837680619505588,
+        "max_relative_overhead": 0.10424330195510502,
+        "probe_overheads": {
+          "start-w": -0.040103123214027786,
+          "start-w-6field": -0.009610664647059598,
+          "start-b": 0.009769804921217519,
+          "kings-only-w": 0.01118760757314981,
+          "knight-up-w": -0.0033653279075254,
+          "knight-down-b": 0.10424330195510502,
+          "rook-king-danger-w": -0.02012773369460033,
+          "rook-queen-attack-w": -0.010545119280857348,
+          "queen-en-prise-w": 0.001378100726634862,
+          "rook-king-attack-w": 0.024979636166168932,
+          "kp-vs-k-w": -0.016339869281045753,
+          "kp-vs-k-b": 0.01070605773139981,
+          "ep-e6-w": -0.021934402854194793,
+          "ep-none-w": 0.0027566825924158146,
+          "sample-mid-b": 0.003960198537953369,
+          "sample-mid-w": 0.0129216464526971,
+          "blocked-pawns-w": 0.009245562130177515,
+          "passed-pawn-w": 0.00044672771945490327,
+          "knight-up-w-twin": -0.0010129247870025635,
+          "rook-king-danger-w-twin": -0.04069075029773728,
+          "rook-queen-attack-w-twin": -0.018581765557163576,
+          "queen-en-prise-w-twin": 0.01226608477154016,
+          "rook-king-attack-w-twin": 0.012777777777777801,
+          "sample-mid-b-twin": -0.0015707185836146226,
+          "sample-mid-w-twin": 0.0001491869312248247,
+          "blocked-pawns-w-twin": 0.013909495548961424,
+          "passed-pawn-w-twin": 0.0028019052956010488
+        }
+      },
       "checks": {
         "relative_log_loss_gain_gte_1pct": true,
-        "paired_ci_upper_lt_0": false,
+        "paired_ci_upper_lt_0": true,
         "brier_no_regression": true,
         "ece_regression_lte_0_01": true,
         "slice_log_loss_lte_0_01": false,
-        "slice_brier_lte_0_01": false
+        "slice_brier_lte_0_01": false,
+        "unseen_positions_exist": true,
+        "unseen_log_loss_lte_0_01": true,
+        "unseen_brier_no_regression": true,
+        "extraction_cost_evidence_valid": true,
+        "extraction_cost_lte_tolerance": true
       }
     },
     "S2": {
       "cleared": false,
       "relative_log_loss_gain": 0.29694994082446,
       "log_loss_delta_ci_95": [
-        -0.4260316018615911,
-        -0.25279790967455307
+        -0.4189741881339038,
+        -0.26122753197821585
       ],
-      "log_loss_delta_ci_upper_max": 0.008338517224152398,
+      "brier_delta_ci_95": [
+        -0.012125914761702923,
+        -0.003148150065381381
+      ],
+      "per_seed_log_loss_delta_cis": [
+        [
+          -1.3869235173652674,
+          -0.9616768439033361
+        ],
+        [
+          -0.053571996048424275,
+          -0.01808663562357864
+        ],
+        [
+          -0.037096486124848664,
+          0.008338517224152398
+        ],
+        [
+          -0.3437375506772862,
+          -0.16252453298310257
+        ],
+        [
+          -0.3088284590921289,
+          -0.13004005308690067
+        ]
+      ],
       "brier_regression": -0.007968105701334688,
       "ece_regression": -0.008557877321875483,
       "max_slice_log_loss_regression": 0.041439798717654686,
@@ -19762,13 +21079,68 @@
           "brier_delta": -0.008863931527556351
         }
       },
+      "unseen_evaluation": {
+        "unseen_count": 3805,
+        "passed_exists": true,
+        "passed_ll": true,
+        "passed_brier": true,
+        "passed": true,
+        "reason": null,
+        "log_loss_delta": -0.39959404697609724,
+        "brier_delta": -0.009278868450834032,
+        "log_loss_delta_ci_95": [
+          -0.48944111998774487,
+          -0.3159043964400103
+        ]
+      },
+      "extraction_cost_evaluation": {
+        "evidence_valid": true,
+        "cost_cleared": true,
+        "reason": null,
+        "mean_relative_overhead": 0.004243207823175637,
+        "max_relative_overhead": 0.11062712267201728,
+        "probe_overheads": {
+          "start-w": -0.09877093708981516,
+          "start-w-6field": -0.000511914278902132,
+          "start-b": 0.005775149931777113,
+          "kings-only-w": -0.006723321858864028,
+          "knight-up-w": 0.05505794409058736,
+          "knight-down-b": 0.038769007965242554,
+          "rook-king-danger-w": -0.07509192955293212,
+          "rook-queen-attack-w": 0.018958165264492455,
+          "queen-en-prise-w": -0.009145577549486335,
+          "rook-king-attack-w": 0.029595438501221923,
+          "kp-vs-k-w": -0.020130718954248446,
+          "kp-vs-k-b": 0.01531372814744539,
+          "ep-e6-w": 0.11062712267201728,
+          "ep-none-w": 0.002303011400063938,
+          "sample-mid-b": 0.014773007286765302,
+          "sample-mid-w": -0.004087939059580527,
+          "blocked-pawns-w": 0.01701183431952666,
+          "passed-pawn-w": 0.02099620281438458,
+          "knight-up-w-twin": 0.013301301808270688,
+          "rook-king-danger-w-twin": -0.032354108773322794,
+          "rook-queen-attack-w-twin": -0.0400578871201157,
+          "queen-en-prise-w-twin": 0.018448720491966015,
+          "rook-king-attack-w-twin": 0.010555555555555627,
+          "sample-mid-b-twin": 0.0010068708869324268,
+          "sample-mid-w-twin": -0.002473519319707583,
+          "blocked-pawns-w-twin": 0.013909495548961424,
+          "passed-pawn-w-twin": 0.017511908097506305
+        }
+      },
       "checks": {
         "relative_log_loss_gain_gte_1pct": true,
-        "paired_ci_upper_lt_0": false,
+        "paired_ci_upper_lt_0": true,
         "brier_no_regression": true,
         "ece_regression_lte_0_01": true,
         "slice_log_loss_lte_0_01": false,
-        "slice_brier_lte_0_01": false
+        "slice_brier_lte_0_01": false,
+        "unseen_positions_exist": true,
+        "unseen_log_loss_lte_0_01": true,
+        "unseen_brier_no_regression": true,
+        "extraction_cost_evidence_valid": true,
+        "extraction_cost_lte_tolerance": true
       }
     }
   },

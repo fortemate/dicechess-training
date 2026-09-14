@@ -16,7 +16,8 @@ def _render_header(
         "# Feature Schema Ablation Report (Issue #17)",
         "",
         "Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), "
-        "and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.",
+        "and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v2.json` "
+        "(amends `protocol-v1.json`).",
         "",
         NOTE_ALERT,
         "> **Provisional Development Report**: Evaluated on public sample "
@@ -105,7 +106,9 @@ def _render_key_metrics(schemas: dict[str, Any], gates: dict[str, Any]) -> list[
     lines = [
         "## 2. Primary Estimand: Single-Model Replication",
         "",
-        "Evaluation of single-model performance across independent random seeds (mean ± std):",
+        "Evaluation of single-model performance across independent random seeds (mean ± std). "
+        "Paired 95% confidence intervals are computed via whole-game bootstrap resampling "
+        "on the mean seed loss delta of the primary estimand:",
         "",
         "| Schema | Features | Log Loss | 95% CI vs S0 (Δ) | Brier | ECE | Rel. LL Gain | "
         "Gate Status |",
@@ -124,7 +127,7 @@ def _render_key_metrics(schemas: dict[str, Any], gates: dict[str, Any]) -> list[
         sm = info["single_model_summary"]
         gate = gates[skey]
         ci = gate["log_loss_delta_ci_95"]
-        ci_str = f"[{ci[0]:+.4f}, {ci[1]:+.4f}]"
+        ci_str = f"[{ci[0]:+.4f}, {ci[1]:+.4f}]" if ci else "—"
         rel_gain = gate["relative_log_loss_gain"] * 100
         status = "**PASSED**" if gate["cleared"] else "FAILED"
         lines.append(
@@ -167,12 +170,23 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
         "|---|---|---|---|",
     ]
     rules = [
-        ("relative_log_loss_gain_gte_1pct", ">= +1.0% relative gain"),
-        ("paired_ci_upper_lt_0", "Paired 95% CI upper bound < 0 across seeds (p < 0.05)"),
+        ("relative_log_loss_gain_gte_1pct", ">= +1.0% relative gain on full validation"),
+        (
+            "paired_ci_upper_lt_0",
+            "Paired 95% group-bootstrap CI upper bound < 0 on mean seed delta",
+        ),
         ("brier_no_regression", "Brier regression <= 0.0000"),
         ("ece_regression_lte_0_01", "ECE regression <= 0.0100"),
         ("slice_log_loss_lte_0_01", "Max slice log loss regression <= 0.0100"),
         ("slice_brier_lte_0_01", "Max slice Brier regression <= 0.0100"),
+        ("unseen_positions_exist", "Non-empty unseen validation partition (no-position-leakage)"),
+        ("unseen_log_loss_lte_0_01", "Unseen positions log loss regression <= 0.0100"),
+        ("unseen_brier_no_regression", "Unseen positions Brier regression <= 0.0000"),
+        ("extraction_cost_evidence_valid", "Verified JVM extraction benchmark artifact present"),
+        (
+            "extraction_cost_lte_tolerance",
+            "Mean JVM extraction latency overhead <= 10.0% relative to S0",
+        ),
     ]
     for rule_name, req in rules:
         s1_ok = "PASS" if gates["S1"]["checks"].get(rule_name, False) else "FAIL"
@@ -181,9 +195,42 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _render_unseen_table(schemas: dict[str, Any], gates: dict[str, Any]) -> list[str]:
+    lines = [
+        "## 3. Unseen Validation Positions Performance",
+        "",
+        "Evaluation on validation positions with no FEN/side overlap in the training partition:",
+        "",
+        "| Schema | Unseen Positions | Log Loss | 95% CI vs S0 (Δ) | Brier | ECE | Unseen Gate |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    s0_u = schemas["S0"].get("single_model_unseen", {})
+    cnt = s0_u.get("count", 0)
+    lines.append(
+        f"| **S0** (`kcp-13`) | {cnt:,} | "
+        f"{s0_u.get('log_loss_mean', 0.0):.4f} ± {s0_u.get('log_loss_std', 0.0):.4f} | "
+        f"— (Reference) | {s0_u.get('brier_mean', 0.0):.4f} ± {s0_u.get('brier_std', 0.0):.4f} | "
+        f"{s0_u.get('ece_mean', 0.0):.4f} ± {s0_u.get('ece_std', 0.0):.4f} | Baseline |"
+    )
+    for skey in ["S1", "S2"]:
+        su = schemas[skey].get("single_model_unseen", {})
+        gate = gates[skey]
+        ue = gate.get("unseen_evaluation", {})
+        ci = ue.get("log_loss_delta_ci_95")
+        ci_str = f"[{ci[0]:+.4f}, {ci[1]:+.4f}]" if ci else "—"
+        status = "**PASS**" if ue.get("passed", False) else "FAIL"
+        lines.append(
+            f"| **{skey}** (`{schemas[skey]['schema_id']}`) | {su.get('count', 0):,} | "
+            f"{su.get('log_loss_mean', 0.0):.4f} ± {su.get('log_loss_std', 0.0):.4f} | "
+            f"{ci_str} | {su.get('brier_mean', 0.0):.4f} ± {su.get('brier_std', 0.0):.4f} | "
+            f"{su.get('ece_mean', 0.0):.4f} ± {su.get('ece_std', 0.0):.4f} | {status} |"
+        )
+    return lines
+
+
 def _render_slices_table(schemas: dict[str, Any]) -> list[str]:
     lines = [
-        "## 3. Predeclared Slices Performance (Single-Model Means)",
+        "## 4. Predeclared Slices Performance (Single-Model Means)",
         "",
         "| Slice | S0 Log Loss | S1 Log Loss (Δ) | S2 Log Loss (Δ) | S0 Brier | S1 Brier (Δ) | "
         "S2 Brier (Δ) |",
@@ -216,7 +263,7 @@ def _render_slices_table(schemas: dict[str, Any]) -> list[str]:
 
 def _render_calibration_table(schemas: dict[str, Any]) -> list[str]:
     lines = [
-        "## 4. Calibration Analysis (Ensemble Diagnostic)",
+        "## 5. Calibration Analysis (Ensemble Diagnostic)",
         "",
         "| Bin Range | S0 Count | S0 Pred / Obs | S1 Count | S1 Pred / Obs | "
         "S2 Count | S2 Pred / Obs |",
@@ -239,7 +286,7 @@ def _render_calibration_table(schemas: dict[str, Any]) -> list[str]:
 
 def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
     lines = [
-        "## 5. Probe Suite Behavior",
+        "## 6. Probe Suite Behavior",
         "",
         "| Check | S0 | S1 | S2 |",
         "|---|---|---|---|",
@@ -257,7 +304,7 @@ def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
 
 
 def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]:
-    lines = ["## 6. Feature Extraction Cost Analysis", ""]
+    lines = ["## 7. Feature Extraction Cost Analysis", ""]
     if extraction_cost is None:
         lines.append(NOTE_ALERT)
         lines.append("> **Status**: Not measured (no verified JVM benchmark artifact provided).")
@@ -315,7 +362,7 @@ def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]
 
 
 def _render_next_actions() -> list[str]:
-    lines = ["## 7. Next Actions", ""]
+    lines = ["## 8. Next Actions", ""]
     lines.append(
         "1. **Private Qualification**: Issue #17 remains open pending owner execution "
         "of the frozen protocol on the private corpus."
@@ -339,6 +386,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         _render_header(report, split, decision),
         _render_input_shards(report),
         _render_key_metrics(schemas, gates),
+        _render_unseen_table(schemas, gates),
         _render_diagnostic_ensemble(schemas),
         _render_gate_checklist(gates),
         _render_slices_table(schemas),

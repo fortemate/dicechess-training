@@ -1,8 +1,8 @@
 # Playground Feature Schema Ablation Protocol
 
-Status: **FROZEN**. Committed prior to generating results in Issue #17.
+Status: **AMENDED (Protocol v2)**. Protocol v2 (`docs/ablation/protocol-v2.json`) supersedes historical Protocol v1 (`docs/ablation/protocol-v1.json`).
 
-## Context
+## Context & Protocol Lineage
 
 Parent epic: [Issue #12](https://github.com/fortemate/dicechess-training/issues/12).
 Decision record: [ADR 0001](../decisions/0001-playground-train-serve-contract.md).
@@ -10,7 +10,14 @@ Benchmark specification: [Benchmark v1](../benchmark/README.md).
 
 The evaluation service serves `standard-kcp` over the `kcp-13` feature schema. Owner research indicates that position properties such as expected wasted rolls, pawn blockage, tempo as independent own/opponent mobility, and passed pawns are critical for one-ply position evaluation. The engine implements these features as versioned extractors (`kcp-mobility-27-v1` and `kcp-mobility-pawns-31-v1`) in `com.fortemate:dicechess-engine_3:0.9.3` (engine Issue #215).
 
-This protocol defines the predeclared offline ablation to select the feature schema for the first real playground model.
+### Protocol Version History
+
+- **Protocol v1 (`playground-feature-ablation-v1`)**: Initial historical pre-results protocol definition.
+- **Protocol v2 Amendment (`playground-feature-ablation-v2`)**: Supersedes v1 with four key methodological enhancements:
+  1. **Split Boundary Isolation**: Enforces an 80/10/10 game split policy (`train < 8000`, `val [8000, 9000)`, `test >= 9000`), strictly excluding test holdout rows from candidate selection.
+  2. **Primary Estimand Bootstrap**: Formally evaluates single-model replication across 5 predeclared random seeds (`[11, 23, 47, 89, 131]`) and computes paired 95% group-bootstrap confidence intervals directly on the mean seed loss delta for each resampled whole-game draw.
+  3. **Unseen-Position Gating**: Requires non-empty unseen validation positions and gates against regressions on unseen positions (`position_key` not seen in train).
+  4. **Extraction Cost Enforcement**: Integrates verified JVM benchmark evidence into the candidate selection gate (mean probe latency overhead <= 10.0% relative to S0; missing or over-budget evidence blocks qualification).
 
 ## Candidate Schemas
 
@@ -47,7 +54,7 @@ This protocol defines the predeclared offline ablation to select the feature sch
 - **Secondary Diagnostic**: A 5-model ensemble ($p_{\text{ens}} = \frac{1}{5}\sum_k p_k$) is evaluated separately for variance-reduction diagnostics and is clearly labeled as non-serving.
 - **Primary metric**: Log-loss $-\frac{1}{N}\sum [y \ln(p) + (1-y) \ln(1-p)]$, clipped at $10^{-15}$.
 - **Calibration metrics**: Brier score $\frac{1}{N}\sum (p - y)^2$ and Expected Calibration Error (ECE) across 10 equal-width bins.
-- **Uncertainty**: 95% bootstrap confidence intervals computed by resampling whole games/groups (1,000 resamples, seed 13). Paired deltas against S0 computed on identical resample draws.
+- **Uncertainty**: 95% bootstrap confidence intervals computed by resampling whole games/groups (1,000 resamples, seed 13) on the mean seed delta.
 - **Slices**:
   - Phase: opening ($\text{ply} \le 10$), endgame ($\text{total\_material} \le 20$), middlegame (otherwise).
   - Side to move: White (`w`), Black (`b`).
@@ -62,20 +69,21 @@ This protocol defines the predeclared offline ablation to select the feature sch
   - Mover-canonical twin equality across all probes
 - **Feature Extraction Latency**: Evaluated via verified JVM benchmark tool (`ExtractionBenchmarkApp`) capturing runtime, OS, and JVM engine provenance (`tests/fixtures/benchmark/extraction-cost-0.9.3.json`).
 
-## Decision Gate (frozen in #13)
+## Decision Gate (Protocol v2)
 
 A wider candidate (S1 or S2) is selected over S0 iff:
 1. Relative log-loss improvement on validation: $\frac{\text{LL}_{S0} - \text{LL}_S}{\text{LL}_{S0}} \ge 1.0\%$.
-2. Paired 95% bootstrap CI upper bound of log-loss delta: $\Delta \text{LL}_{97.5} < 0$.
+2. Paired 95% whole-game bootstrap CI upper bound of mean seed log-loss delta: $\Delta \bar{\text{LL}}_{97.5} < 0$.
 3. Brier score does not regress: $\text{Brier}_S - \text{Brier}_{S0} \le 0.0$.
 4. ECE does not regress beyond tolerance: $\text{ECE}_S - \text{ECE}_{S0} \le 0.01$.
 5. Critical slices do not regress beyond point-estimate tolerance: $\Delta \text{LL}_{\text{slice}} \le 0.01$, $\Delta \text{Brier}_{\text{slice}} \le 0.01$.
-6. Serving extraction cost measured on JVM is bounded (latency overhead <= 10% relative to S0 across benchmark probes).
+6. Unseen positions partition is non-empty and does not regress: $\Delta \text{LL}_{\text{unseen}} \le 0.01$, $\Delta \text{Brier}_{\text{unseen}} \le 0.0$.
+7. Serving extraction cost measured on JVM is verified and bounded (mean probe latency overhead <= 10% relative to S0; missing or over-budget evidence blocks qualification).
 
 ## Qualification & Publication Boundary
 
-- **Provisional Development Evidence**: Runs executed on `sample/playsite-bots-v0` verify tooling, pipeline execution, and protocol mechanics. In accordance with Benchmark v1, public samples are ineligible for official qualification without reviewed data-use evidence.
-- **Owner Qualification**: Final schema qualification is run by the repository owner on the frozen private corpus under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17).
+- **Provisional Development Evidence**: Runs executed on `sample/playsite-bots-v0` verify tooling, pipeline execution, and protocol mechanics. Because the public sample previously informed earlier review steps under Protocol v1, public sample runs under Protocol v2 are provisional development evidence and are ineligible for final qualification without reviewed data-use evidence.
+- **Owner Qualification**: Final schema qualification is run by the repository owner on an eligible holdout that has not previously informed selection under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17).
 - **Private Decision Reference**: The definitive qualification decision is recorded in the private knowledge base under page title:
   `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
   Per publication boundaries, private numerical metrics and final qualification outcomes are preserved in private documentation and not published in public Git.

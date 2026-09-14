@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from dicechess_training.benchmark.metrics import confidence, scores
+from dicechess_training.benchmark.metrics import confidence, losses, scores
 from dicechess_training.benchmark.splits import leakage, position_key
 from dicechess_training.contracts import (
     SCHEMA_CONTRACTS,
@@ -26,7 +26,7 @@ from dicechess_training.contracts import (
 from dicechess_training.schema import read_enriched_shards
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PROTOCOL_PATH = ROOT / "docs/ablation/protocol-v1.json"
+DEFAULT_PROTOCOL_PATH = ROOT / "docs/ablation/protocol-v2.json"
 
 
 def sha256_of_bytes(data: bytes) -> str:
@@ -250,18 +250,17 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
     splits_for_leakage = split_tags[decisive_indices].tolist()
     leakage_audit = leakage(rows_for_leakage, splits_for_leakage)
 
-    # Unseen validation positions count
+    # Unseen validation positions mask and count
     train_positions = {
         position_key(r)
         for r, s in zip(rows_for_leakage, splits_for_leakage, strict=True)
         if s == "train"
     }
-    val_positions = [
-        position_key(r)
-        for r, s in zip(rows_for_leakage, splits_for_leakage, strict=True)
-        if s == "validation"
-    ]
-    unseen_val_count = sum(1 for p in val_positions if p not in train_positions)
+    unseen_val_mask = np.array(
+        [position_key({"fen": fen}) not in train_positions for fen in val_df["fen"]],
+        dtype=bool,
+    )
+    unseen_val_count = int(unseen_val_mask.sum())
 
     split_summary = {
         "total_positions": int(len(base_df)),
@@ -275,7 +274,7 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
         "leakage": leakage_audit,
         "unseen_val_positions": unseen_val_count,
     }
-    return train_mask, val_mask, val_df, y_val, groups_val, split_summary
+    return train_mask, val_mask, val_df, y_val, groups_val, split_summary, unseen_val_mask
 
 
 def _train_single_schema(
@@ -287,6 +286,7 @@ def _train_single_schema(
     val_df: pd.DataFrame,
     y_train: np.ndarray,
     y_val: np.ndarray,
+    unseen_val_mask: np.ndarray,
     protocol: dict,
 ) -> tuple[dict[str, Any], np.ndarray, list[np.ndarray]]:
     contract = SCHEMA_CONTRACTS[sid]
@@ -301,6 +301,9 @@ def _train_single_schema(
     val_preds_all_seeds = []
     probe_preds_all_seeds: list[dict[str, float]] = []
 
+    has_unseen = bool(unseen_val_mask.sum() > 0)
+    y_val_unseen = y_val[unseen_val_mask] if has_unseen else None
+
     print(f"\nTraining and evaluating {s_key} ({sid}, {len(feature_cols)} features)...")
     for seed in seeds:
         model = train_model(x_train, y_train, len(feature_cols), model_cfg, seed)
@@ -313,12 +316,14 @@ def _train_single_schema(
         sc = scores(y_val, p_val)
         sl = compute_slices(val_df, y_val, p_val)
         pr = evaluate_probe_predictions(p_probes, protocol)
+        sc_unseen = scores(y_val_unseen, p_val[unseen_val_mask]) if has_unseen else None
         seed_results.append(
             {
                 "seed": seed,
                 "scores": sc,
                 "slices": sl,
                 "probes": pr,
+                "unseen_scores": sc_unseen,
             }
         )
         print(
@@ -338,6 +343,25 @@ def _train_single_schema(
         "ece_mean": float(np.mean(eces)),
         "ece_std": float(np.std(eces)),
     }
+
+    if has_unseen:
+        u_lls = [s["unseen_scores"]["log_loss"] for s in seed_results if s["unseen_scores"]]
+        u_brs = [s["unseen_scores"]["brier"] for s in seed_results if s["unseen_scores"]]
+        u_eces = [s["unseen_scores"]["ece"] for s in seed_results if s["unseen_scores"]]
+        single_model_unseen = {
+            "count": int(unseen_val_mask.sum()),
+            "log_loss_mean": float(np.mean(u_lls)),
+            "log_loss_std": float(np.std(u_lls)),
+            "brier_mean": float(np.mean(u_brs)),
+            "brier_std": float(np.std(u_brs)),
+            "ece_mean": float(np.mean(u_eces)),
+            "ece_std": float(np.std(u_eces)),
+        }
+    else:
+        single_model_unseen = {
+            "count": 0,
+            "status": "no-unseen-positions",
+        }
 
     first_slices = seed_results[0]["slices"]
     single_model_slices = {}
@@ -369,6 +393,7 @@ def _train_single_schema(
         "schema_id": sid,
         "feature_count": len(feature_cols),
         "single_model_summary": single_model_summary,
+        "single_model_unseen": single_model_unseen,
         "single_model_slices": single_model_slices,
         "seed_evaluations": seed_results,
         "ensemble_diagnostic": ensemble_diagnostic,
@@ -376,49 +401,63 @@ def _train_single_schema(
     return schema_res, p_val_ensemble, val_preds_all_seeds
 
 
-def _evaluate_gate_for_candidate(
-    s_key: str,
-    results_by_schema: dict[str, Any],
-    val_preds_by_schema: dict[str, list[np.ndarray]],
-    y_val: np.ndarray,
-    groups_val: np.ndarray,
-    protocol: dict,
+def _paired_bootstrap_mean_estimand(
+    y: np.ndarray,
+    s_preds: list[np.ndarray],
+    s0_preds: list[np.ndarray],
+    groups: np.ndarray,
+    repeats: int = 1000,
+    seed: int = 13,
 ) -> dict[str, Any]:
-    s0_sm = results_by_schema["S0"]["single_model_summary"]
-    s_sm = results_by_schema[s_key]["single_model_summary"]
+    names, inverse = np.unique(groups, return_inverse=True)
+    if len(names) < 2:
+        return {
+            "method": "group-bootstrap-percentile-95-mean-seed-delta",
+            "groups": len(names),
+            "log_loss_delta_ci_95": None,
+            "brier_delta_ci_95": None,
+            "per_seed_log_loss_delta_cis": [],
+            "reason": "fewer-than-two-groups",
+        }
 
-    s0_ll = s0_sm["log_loss_mean"]
-    s0_brier = s0_sm["brier_mean"]
-    s0_ece = s0_sm["ece_mean"]
-
-    rel_log_loss_gain = (s0_ll - s_sm["log_loss_mean"]) / s0_ll
-    brier_regression = s_sm["brier_mean"] - s0_brier
-    ece_regression = s_sm["ece_mean"] - s0_ece
-
-    # Paired seed-matched bootstrap confidence intervals across seeds
-    s0_preds = val_preds_by_schema["S0"]
-    s_preds = val_preds_by_schema[s_key]
-    seed_cis = []
+    per_seed_ll_deltas = []
+    per_seed_br_deltas = []
+    per_seed_cis = []
     for p_s, p_s0 in zip(s_preds, s0_preds, strict=True):
-        ci = confidence(
-            y_val,
-            p_s,
-            groups_val,
-            reference=p_s0,
-            repeats=protocol["uncertainty"]["repeats"],
-            seed=protocol["uncertainty"]["seed"],
-        )
-        seed_cis.append(ci)
+        ll_s, br_s = losses(y, p_s)
+        ll_s0, br_s0 = losses(y, p_s0)
+        per_seed_ll_deltas.append(ll_s - ll_s0)
+        per_seed_br_deltas.append(br_s - br_s0)
+        single_ci = confidence(y, p_s, groups, reference=p_s0, repeats=repeats, seed=seed)
+        per_seed_cis.append(single_ci["intervals"]["log_loss_delta"])
 
-    ci_uppers = [ci["intervals"]["log_loss_delta"][1] for ci in seed_cis]
-    ll_ci_upper_max = float(np.max(ci_uppers))
-    mean_ci = [
-        float(np.mean([ci["intervals"]["log_loss_delta"][0] for ci in seed_cis])),
-        float(np.mean([ci["intervals"]["log_loss_delta"][1] for ci in seed_cis])),
-    ]
+    mean_row_ll_delta = np.mean(per_seed_ll_deltas, axis=0)
+    mean_row_br_delta = np.mean(per_seed_br_deltas, axis=0)
 
-    s0_slices = results_by_schema["S0"]["single_model_slices"]
-    s_slices = results_by_schema[s_key]["single_model_slices"]
+    values = np.column_stack([np.ones(len(y)), mean_row_ll_delta, mean_row_br_delta])
+    totals = np.zeros((len(names), 3))
+    np.add.at(totals, inverse, values)
+
+    rng = np.random.default_rng(seed)
+    samples = []
+    for _ in range(repeats):
+        sampled = totals[rng.integers(len(names), size=len(names))].sum(axis=0)
+        total_n = sampled[0]
+        samples.append([sampled[1] / total_n, sampled[2] / total_n])
+
+    bounds = np.quantile(samples, [0.025, 0.975], axis=0)
+    return {
+        "method": "group-bootstrap-percentile-95-mean-seed-delta",
+        "groups": len(names),
+        "log_loss_delta_ci_95": bounds[:, 0].tolist(),
+        "brier_delta_ci_95": bounds[:, 1].tolist(),
+        "per_seed_log_loss_delta_cis": per_seed_cis,
+    }
+
+
+def _evaluate_slice_regressions(
+    s0_slices: dict[str, Any], s_slices: dict[str, Any]
+) -> tuple[dict[str, Any], float, float]:
     slice_regressions = {}
     max_slice_ll_reg = 0.0
     max_slice_brier_reg = 0.0
@@ -433,14 +472,197 @@ def _evaluate_gate_for_candidate(
             }
             max_slice_ll_reg = max(max_slice_ll_reg, ll_diff)
             max_slice_brier_reg = max(max_slice_brier_reg, brier_diff)
+    return slice_regressions, max_slice_ll_reg, max_slice_brier_reg
+
+
+def _evaluate_unseen_gate(
+    s_key: str,
+    results_by_schema: dict[str, Any],
+    val_preds_by_schema: dict[str, list[np.ndarray]],
+    y_val: np.ndarray,
+    groups_val: np.ndarray,
+    unseen_val_mask: np.ndarray,
+    protocol: dict,
+) -> dict[str, Any]:
+    unseen_count = int(unseen_val_mask.sum())
+    gate_rules = protocol["gate"]
+    if unseen_count == 0:
+        return {
+            "unseen_count": 0,
+            "passed_exists": False,
+            "passed_ll": False,
+            "passed_brier": False,
+            "passed": False,
+            "reason": "no-unseen-positions",
+            "log_loss_delta": None,
+            "brier_delta": None,
+            "log_loss_delta_ci_95": None,
+        }
+
+    s0_unseen = results_by_schema["S0"]["single_model_unseen"]
+    s_unseen = results_by_schema[s_key]["single_model_unseen"]
+    ll_delta = s_unseen["log_loss_mean"] - s0_unseen["log_loss_mean"]
+    br_delta = s_unseen["brier_mean"] - s0_unseen["brier_mean"]
+
+    max_ll_reg = gate_rules.get("max_unseen_log_loss_regression", 0.01)
+    max_br_reg = gate_rules.get("max_unseen_brier_regression", 0.0)
+
+    passed_ll = ll_delta <= max_ll_reg
+    passed_br = br_delta <= max_br_reg
+
+    unseen_ci = _paired_bootstrap_mean_estimand(
+        y_val[unseen_val_mask],
+        [p[unseen_val_mask] for p in val_preds_by_schema[s_key]],
+        [p[unseen_val_mask] for p in val_preds_by_schema["S0"]],
+        groups_val[unseen_val_mask],
+        repeats=protocol["uncertainty"]["repeats"],
+        seed=protocol["uncertainty"]["seed"],
+    )
+
+    passed_unseen = passed_ll and passed_br
+    return {
+        "unseen_count": unseen_count,
+        "passed_exists": True,
+        "passed_ll": passed_ll,
+        "passed_brier": passed_br,
+        "passed": passed_unseen,
+        "reason": None if passed_unseen else "unseen-metrics-regressed",
+        "log_loss_delta": ll_delta,
+        "brier_delta": br_delta,
+        "log_loss_delta_ci_95": unseen_ci["log_loss_delta_ci_95"],
+    }
+
+
+def _evaluate_extraction_cost_for_candidate(
+    s_key: str,
+    extraction_cost: dict[str, Any] | None,
+    protocol: dict,
+) -> dict[str, Any]:
+    gate_rules = protocol["gate"]
+    metric_key = gate_rules.get("extraction_cost_metric", "median_us")
+    max_ov = gate_rules.get("max_extraction_latency_overhead", 0.10)
+
+    if extraction_cost is None:
+        return {
+            "evidence_valid": False,
+            "cost_cleared": False,
+            "reason": "missing-extraction-cost-evidence",
+            "mean_relative_overhead": None,
+            "max_relative_overhead": None,
+            "probe_overheads": {},
+        }
+
+    probes_data = extraction_cost.get("probes", {})
+    if not probes_data:
+        return {
+            "evidence_valid": False,
+            "cost_cleared": False,
+            "reason": "no-probes-in-extraction-cost-evidence",
+            "mean_relative_overhead": None,
+            "max_relative_overhead": None,
+            "probe_overheads": {},
+        }
+
+    probe_overheads = {}
+    for pid, pdata in probes_data.items():
+        schemas_data = pdata.get("schemas", {})
+        if "S0" not in schemas_data or s_key not in schemas_data:
+            return {
+                "evidence_valid": False,
+                "cost_cleared": False,
+                "reason": f"missing-probe-measurements-for-{pid}",
+                "mean_relative_overhead": None,
+                "max_relative_overhead": None,
+                "probe_overheads": {},
+            }
+        s0_val = schemas_data["S0"].get(metric_key)
+        s_val = schemas_data[s_key].get(metric_key)
+        if s0_val is None or s_val is None or s0_val <= 0:
+            return {
+                "evidence_valid": False,
+                "cost_cleared": False,
+                "reason": f"invalid-metric-value-in-{pid}",
+                "mean_relative_overhead": None,
+                "max_relative_overhead": None,
+                "probe_overheads": {},
+            }
+        probe_overheads[pid] = float((s_val - s0_val) / s0_val)
+
+    mean_overhead = float(np.mean(list(probe_overheads.values())))
+    max_overhead = float(np.max(list(probe_overheads.values())))
+    cost_cleared = mean_overhead <= max_ov
+
+    return {
+        "evidence_valid": True,
+        "cost_cleared": cost_cleared,
+        "reason": None if cost_cleared else "extraction-latency-overhead-exceeded",
+        "mean_relative_overhead": mean_overhead,
+        "max_relative_overhead": max_overhead,
+        "probe_overheads": probe_overheads,
+    }
+
+
+def _evaluate_gate_for_candidate(
+    s_key: str,
+    results_by_schema: dict[str, Any],
+    val_preds_by_schema: dict[str, list[np.ndarray]],
+    y_val: np.ndarray,
+    groups_val: np.ndarray,
+    unseen_val_mask: np.ndarray,
+    extraction_cost: dict[str, Any] | None,
+    protocol: dict,
+) -> dict[str, Any]:
+    s0_sm = results_by_schema["S0"]["single_model_summary"]
+    s_sm = results_by_schema[s_key]["single_model_summary"]
+
+    s0_ll = s0_sm["log_loss_mean"]
+    s0_brier = s0_sm["brier_mean"]
+    s0_ece = s0_sm["ece_mean"]
+
+    rel_log_loss_gain = (s0_ll - s_sm["log_loss_mean"]) / s0_ll
+    brier_regression = s_sm["brier_mean"] - s0_brier
+    ece_regression = s_sm["ece_mean"] - s0_ece
+
+    # Paired whole-game bootstrap on mean seed delta (primary estimand)
+    primary_ci = _paired_bootstrap_mean_estimand(
+        y_val,
+        val_preds_by_schema[s_key],
+        val_preds_by_schema["S0"],
+        groups_val,
+        repeats=protocol["uncertainty"]["repeats"],
+        seed=protocol["uncertainty"]["seed"],
+    )
+    ll_ci = primary_ci["log_loss_delta_ci_95"]
+
+    # Critical slices
+    slice_regs, max_slice_ll_reg, max_slice_brier_reg = _evaluate_slice_regressions(
+        results_by_schema["S0"]["single_model_slices"],
+        results_by_schema[s_key]["single_model_slices"],
+    )
+
+    # Unseen positions evaluation
+    unseen_eval = _evaluate_unseen_gate(
+        s_key,
+        results_by_schema,
+        val_preds_by_schema,
+        y_val,
+        groups_val,
+        unseen_val_mask,
+        protocol,
+    )
+
+    # Extraction cost evaluation
+    cost_eval = _evaluate_extraction_cost_for_candidate(s_key, extraction_cost, protocol)
 
     gate_rules = protocol["gate"]
-    passed_rel_gain = rel_log_loss_gain >= gate_rules["min_relative_log_loss_gain"]
-    passed_ci_upper = ll_ci_upper_max < 0
-    passed_brier = brier_regression <= gate_rules["max_brier_regression"]
-    passed_ece = ece_regression <= gate_rules["max_ece_regression"]
-    passed_slice_ll = max_slice_ll_reg <= gate_rules["max_slice_log_loss_regression"]
-    passed_slice_brier = max_slice_brier_reg <= gate_rules["max_slice_brier_regression"]
+    passed_rel_gain = bool(rel_log_loss_gain >= gate_rules["min_relative_log_loss_gain"])
+    passed_ci_upper = bool((ll_ci is not None) and (ll_ci[1] < 0))
+    passed_brier = bool(brier_regression <= gate_rules["max_brier_regression"])
+    passed_ece = bool(ece_regression <= gate_rules["max_ece_regression"])
+    passed_slice_ll = bool(max_slice_ll_reg <= gate_rules["max_slice_log_loss_regression"])
+    passed_slice_brier = bool(max_slice_brier_reg <= gate_rules["max_slice_brier_regression"])
+    passed_unseen = bool(unseen_eval["passed"])
+    passed_cost = bool(cost_eval["cost_cleared"])
 
     cleared = (
         passed_rel_gain
@@ -449,18 +671,23 @@ def _evaluate_gate_for_candidate(
         and passed_ece
         and passed_slice_ll
         and passed_slice_brier
+        and passed_unseen
+        and passed_cost
     )
 
     return {
         "cleared": cleared,
         "relative_log_loss_gain": rel_log_loss_gain,
-        "log_loss_delta_ci_95": mean_ci,
-        "log_loss_delta_ci_upper_max": ll_ci_upper_max,
+        "log_loss_delta_ci_95": ll_ci,
+        "brier_delta_ci_95": primary_ci["brier_delta_ci_95"],
+        "per_seed_log_loss_delta_cis": primary_ci["per_seed_log_loss_delta_cis"],
         "brier_regression": brier_regression,
         "ece_regression": ece_regression,
         "max_slice_log_loss_regression": max_slice_ll_reg,
         "max_slice_brier_regression": max_slice_brier_reg,
-        "slice_regressions": slice_regressions,
+        "slice_regressions": slice_regs,
+        "unseen_evaluation": unseen_eval,
+        "extraction_cost_evaluation": cost_eval,
         "checks": {
             "relative_log_loss_gain_gte_1pct": passed_rel_gain,
             "paired_ci_upper_lt_0": passed_ci_upper,
@@ -468,6 +695,11 @@ def _evaluate_gate_for_candidate(
             "ece_regression_lte_0_01": passed_ece,
             "slice_log_loss_lte_0_01": passed_slice_ll,
             "slice_brier_lte_0_01": passed_slice_brier,
+            "unseen_positions_exist": bool(unseen_eval["passed_exists"]),
+            "unseen_log_loss_lte_0_01": bool(unseen_eval["passed_ll"]),
+            "unseen_brier_no_regression": bool(unseen_eval["passed_brier"]),
+            "extraction_cost_evidence_valid": bool(cost_eval["evidence_valid"]),
+            "extraction_cost_lte_tolerance": passed_cost,
         },
     }
 
@@ -602,8 +834,8 @@ def run_ablation(
     _validate_cross_schema_integrity(schema_dfs)
 
     base_df = schema_dfs["S0"]
-    train_mask, val_mask, val_df, y_val, groups_val, split_summary = _prepare_dataset_splits(
-        base_df, protocol
+    train_mask, val_mask, val_df, y_val, groups_val, split_summary, unseen_val_mask = (
+        _prepare_dataset_splits(base_df, protocol)
     )
     y_train = base_df.loc[train_mask, "result"].to_numpy(dtype=np.float32)
 
@@ -620,6 +852,7 @@ def run_ablation(
             val_df,
             y_train,
             y_val,
+            unseen_val_mask,
             protocol,
         )
         results_by_schema[s_key] = res
@@ -633,6 +866,8 @@ def run_ablation(
             val_preds_all_by_schema,
             y_val,
             groups_val,
+            unseen_val_mask,
+            extraction_cost,
             protocol,
         )
 
