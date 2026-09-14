@@ -5,8 +5,8 @@ Status: **FROZEN**. Committed prior to generating results in Issue #17.
 ## Context
 
 Parent epic: [Issue #12](https://github.com/fortemate/dicechess-training/issues/12).
-Decision record: [ADR 0001](../../docs/decisions/0001-playground-train-serve-contract.md).
-Benchmark specification: [Benchmark v1](../../docs/benchmark/README.md).
+Decision record: [ADR 0001](../decisions/0001-playground-train-serve-contract.md).
+Benchmark specification: [Benchmark v1](../benchmark/README.md).
 
 The evaluation service serves `standard-kcp` over the `kcp-13` feature schema. Owner research indicates that position properties such as expected wasted rolls, pawn blockage, tempo as independent own/opponent mobility, and passed pawns are critical for one-ply position evaluation. The engine implements these features as versioned extractors (`kcp-mobility-27-v1` and `kcp-mobility-pawns-31-v1`) in `com.fortemate:dicechess-engine_3:0.9.3` (engine Issue #215).
 
@@ -66,7 +66,7 @@ A wider candidate (S1 or S2) is selected over S0 iff:
 3. Brier score does not regress: $\text{Brier}_S - \text{Brier}_{S0} \le 0.0$.
 4. ECE does not regress beyond tolerance: $\text{ECE}_S - \text{ECE}_{S0} \le 0.01$.
 5. Critical slices do not regress beyond point-estimate tolerance: $\Delta \text{LL}_{\text{slice}} \le 0.01$, $\Delta \text{Brier}_{\text{slice}} \le 0.01$.
-6. Serving extraction cost measured on JVM is bounded.
+6. Serving extraction cost measured on JVM is bounded (latency overhead <= 10% relative to S0 across benchmark probes).
 
 If S1 or S2 clears the gate, the best-performing qualifying schema is selected and a `dicechess-evaluation` issue is opened.
 If neither clears the gate, S0 is retained as the playground model schema.

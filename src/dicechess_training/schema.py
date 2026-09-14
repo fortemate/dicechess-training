@@ -143,8 +143,14 @@ def _validate_feature_columns(
     df: pd.DataFrame,
 ) -> None:
     for name in expected_features:
-        if table_schema.get_field_index(name) < 0:
+        idx = table_schema.get_field_index(name)
+        if idx < 0:
             raise ValueError(f"{path}: missing feature column {name!r}")
+        actual_type = table_schema.field(idx).type
+        if actual_type != pa.float32():
+            raise ValueError(
+                f"{path}: feature column {name!r} has type {actual_type}, expected {pa.float32()}"
+            )
 
     schema_names = table_schema.names
     base_names = list(COLUMNS)

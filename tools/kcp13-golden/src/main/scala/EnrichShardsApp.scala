@@ -119,9 +119,10 @@ object EnrichShardsApp:
       conf: Configuration,
       chunkSize: Int
   ): Long =
-    Files.deleteIfExists(outFile)
+    val tmpFile = outFile.resolveSibling(s".${outFile.getFileName}.tmp")
+    Files.deleteIfExists(tmpFile)
     val inHPath  = new HPath(shardPath.toAbsolutePath.toString)
-    val outHPath = new HPath(outFile.toAbsolutePath.toString)
+    val tmpHPath = new HPath(tmpFile.toAbsolutePath.toString)
 
     val extraMeta: Map[String, String] = Map(
       "feature_schema"            -> schemaId,
@@ -131,7 +132,7 @@ object EnrichShardsApp:
     )
 
     val reader = AvroParquetReader.builder[GenericRecord](inHPath).withConf(conf).build()
-    val writer = AvroParquetWriter.builder[GenericRecord](outHPath)
+    val writer = AvroParquetWriter.builder[GenericRecord](tmpHPath)
       .withSchema(schema)
       .withConf(conf)
       .withCompressionCodec(CompressionCodecName.SNAPPY)
@@ -140,6 +141,7 @@ object EnrichShardsApp:
       .build()
 
     var shardRows = 0L
+    var succeeded = false
     try
       var record = reader.read()
       val chunk = new ArrayList[RawRow](chunkSize)
@@ -157,9 +159,19 @@ object EnrichShardsApp:
         record = reader.read()
 
       shardRows += writeBatch(chunk, extractor, columns, schema, writer)
+      succeeded = true
     finally
       reader.close()
       writer.close()
+      if succeeded then
+        Files.move(
+          tmpFile,
+          outFile,
+          java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+      else
+        Files.deleteIfExists(tmpFile)
 
     println(f"  ${shardPath.getFileName}%-32s -> ${outFile.getFileName}%-32s ($shardRows%,d rows)")
     shardRows

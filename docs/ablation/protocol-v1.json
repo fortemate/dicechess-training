@@ -50,6 +50,10 @@
     "brier",
     "ece"
   ],
+  "ece": {
+    "binning": "equal-width",
+    "bins": 10
+  },
   "uncertainty": {
     "method": "group-bootstrap-percentile-95",
     "repeats": 1000,

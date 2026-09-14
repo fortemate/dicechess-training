@@ -161,37 +161,62 @@ def compute_slices(df: pd.DataFrame, y: np.ndarray, p: np.ndarray) -> dict[str, 
     return result
 
 
-def evaluate_probe_suite(model: ValueMLP, schema_id: str, protocol: dict) -> dict[str, Any]:
-    contract = SCHEMA_CONTRACTS[schema_id]
-    corpus = contract.load_golden()
-    authored_probes = [p for p in corpus.probes if not p.id.startswith("sample-")]
-    features = np.stack([p.features for p in authored_probes])
-    preds = predict(model, features)
-    p = dict(zip((p.id for p in authored_probes), preds, strict=True))
-
+def evaluate_probe_predictions(
+    preds_by_probe_id: dict[str, float],
+    protocol: dict,
+) -> dict[str, Any]:
     tol = protocol["probes"]["equal_tolerance"]
     checks = {}
-    for name in p:
+    for name in sorted(preds_by_probe_id):
         if name.endswith("-twin"):
             base_name = name.removesuffix("-twin")
-            if base_name in p:
-                checks[f"twin:{name}"] = abs(p[name] - p[base_name]) <= tol
+            if base_name in preds_by_probe_id:
+                checks[f"twin:{name}"] = (
+                    abs(preds_by_probe_id[name] - preds_by_probe_id[base_name]) <= tol
+                )
 
-    checks["opening:start-w==start-w-6field"] = abs(p["start-w"] - p["start-w-6field"]) <= tol
-    checks["opening:start-w==start-b"] = abs(p["start-w"] - p["start-b"]) <= tol
+    checks["opening:start-w==start-w-6field"] = (
+        abs(preds_by_probe_id["start-w"] - preds_by_probe_id["start-w-6field"]) <= tol
+    )
+    checks["opening:start-w==start-b"] = (
+        abs(preds_by_probe_id["start-w"] - preds_by_probe_id["start-b"]) <= tol
+    )
     checks["opening:start-w~0.5"] = (
-        abs(p["start-w"] - 0.5) <= protocol["probes"]["opening_distance_from_half"]
+        abs(preds_by_probe_id["start-w"] - 0.5) <= protocol["probes"]["opening_distance_from_half"]
     )
-    checks["canonical:ep-e6==ep-none"] = abs(p["ep-e6-w"] - p["ep-none-w"]) <= tol
+    checks["canonical:ep-e6==ep-none"] = (
+        abs(preds_by_probe_id["ep-e6-w"] - preds_by_probe_id["ep-none-w"]) <= tol
+    )
     checks["material:knight-up>start-w>knight-down"] = (
-        p["knight-up-w"] > p["start-w"] > p["knight-down-b"]
+        preds_by_probe_id["knight-up-w"]
+        > preds_by_probe_id["start-w"]
+        > preds_by_probe_id["knight-down-b"]
     )
-    checks["endgame:kings-only-finite"] = np.isfinite(p["kings-only-w"])
+    checks["endgame:kings-only-finite"] = bool(np.isfinite(preds_by_probe_id["kings-only-w"]))
 
     return {
         "checks": {k: bool(v) for k, v in checks.items()},
-        "predictions": {k: round(float(v), 5) for k, v in p.items()},
+        "predictions": {k: round(float(v), 5) for k, v in preds_by_probe_id.items()},
     }
+
+
+def predict_probes(model: ValueMLP, schema_id: str, protocol: dict) -> dict[str, float]:
+    contract = SCHEMA_CONTRACTS[schema_id]
+    engine_ver = protocol.get("engine_version")
+    corpus = (
+        contract.load_golden(contract.golden_path(engine_ver))
+        if engine_ver
+        else contract.load_golden()
+    )
+    authored_probes = [p for p in corpus.probes if not p.id.startswith("sample-")]
+    features = np.stack([p.features for p in authored_probes])
+    preds = predict(model, features)
+    return dict(zip((p.id for p in authored_probes), (float(x) for x in preds), strict=True))
+
+
+def evaluate_probe_suite(model: ValueMLP, schema_id: str, protocol: dict) -> dict[str, Any]:
+    preds = predict_probes(model, schema_id, protocol)
+    return evaluate_probe_predictions(preds, protocol)
 
 
 def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
@@ -241,23 +266,32 @@ def _train_single_schema(
 
     seed_results = []
     val_preds_all_seeds = []
-    last_model = None
+    probe_preds_all_seeds: list[dict[str, float]] = []
 
     print(f"\nTraining and evaluating {s_key} ({sid}, {len(feature_cols)} features)...")
     for seed in seeds:
         model = train_model(x_train, y_train, len(feature_cols), model_cfg, seed)
-        last_model = model
         p_val = predict(model, x_val)
         val_preds_all_seeds.append(p_val)
 
+        p_probes = predict_probes(model, sid, protocol)
+        probe_preds_all_seeds.append(p_probes)
+
         sc = scores(y_val, p_val)
         sl = compute_slices(val_df, y_val, p_val)
-        pr = evaluate_probe_suite(model, sid, protocol)
+        pr = evaluate_probe_predictions(p_probes, protocol)
         seed_results.append({"scores": sc, "slices": sl, "probes": pr})
         print(
             f"  seed {seed:3d}: log_loss = {sc['log_loss']:.4f}, "
             f"brier = {sc['brier']:.4f}, ece = {sc['ece']:.4f}"
         )
+
+    all_probe_ids = list(probe_preds_all_seeds[0].keys())
+    mean_probe_preds = {
+        pid: float(np.mean([seed_p[pid] for seed_p in probe_preds_all_seeds]))
+        for pid in all_probe_ids
+    }
+    probe_suite_mean = evaluate_probe_predictions(mean_probe_preds, protocol)
 
     p_val_mean = np.mean(val_preds_all_seeds, axis=0)
     schema_res = {
@@ -266,7 +300,7 @@ def _train_single_schema(
         "mean_scores": scores(y_val, p_val_mean),
         "mean_slices": compute_slices(val_df, y_val, p_val_mean),
         "seed_evaluations": seed_results,
-        "probe_suite_mean": evaluate_probe_suite(last_model, sid, protocol),
+        "probe_suite_mean": probe_suite_mean,
     }
     return schema_res, p_val_mean
 
@@ -365,6 +399,29 @@ def _select_schema(gate_evaluations: dict[str, Any], results_by_schema: dict[str
     return "S0"
 
 
+def _validate_schema_row_alignment(schema_dfs: dict[str, pd.DataFrame]) -> None:
+    """Ensure all schema DataFrames are non-empty and strictly aligned by row."""
+    if not schema_dfs:
+        raise ValueError("No schema DataFrames provided")
+    base_key = "S0" if "S0" in schema_dfs else next(iter(schema_dfs))
+    base_df = schema_dfs[base_key]
+    base_game_ids = base_df["game_id"].to_numpy()
+    base_plies = base_df["ply"].to_numpy()
+    base_len = len(base_df)
+
+    for key, df in schema_dfs.items():
+        if key == base_key:
+            continue
+        if len(df) != base_len:
+            raise ValueError(
+                f"Schema {key} row count ({len(df)}) does not match {base_key} ({base_len})"
+            )
+        if not np.array_equal(df["game_id"].to_numpy(), base_game_ids):
+            raise ValueError(f"Schema {key} game_id sequence does not match {base_key}")
+        if not np.array_equal(df["ply"].to_numpy(), base_plies):
+            raise ValueError(f"Schema {key} ply sequence does not match {base_key}")
+
+
 def run_ablation(
     protocol_path: Path | None = None,
     enriched_base_dir: Path | None = None,
@@ -387,6 +444,8 @@ def run_ablation(
         print(f"Loading enriched shards for {schema_key} ({sid}) from {shard_dir}...")
         df = read_enriched_shards(shard_dir, sid, protocol["engine_version"])
         schema_dfs[schema_key] = df
+
+    _validate_schema_row_alignment(schema_dfs)
 
     base_df = schema_dfs["S0"]
     train_mask, val_mask, val_df, y_val, groups_val, split_summary = _prepare_dataset_splits(

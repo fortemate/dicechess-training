@@ -9,7 +9,13 @@ import pandas as pd
 import pytest
 
 from dicechess_training.ablation.report import render_markdown_report
-from dicechess_training.ablation.runner import DEFAULT_PROTOCOL_PATH, ValueMLP, predict, train_model
+from dicechess_training.ablation.runner import (
+    DEFAULT_PROTOCOL_PATH,
+    ValueMLP,
+    _validate_schema_row_alignment,
+    predict,
+    train_model,
+)
 from dicechess_training.contracts import SCHEMA_CONTRACTS
 from dicechess_training.schema import read_enriched_shard, read_enriched_shards
 
@@ -210,3 +216,71 @@ def test_render_markdown_report_mock():
     assert "# Feature Schema Ablation Report (Issue #17)" in md
     assert "kcp-mobility-pawns-31-v1" in md
     assert "PASSED" in md
+
+
+def test_validate_schema_row_alignment():
+    df0 = pd.DataFrame({"game_id": ["g1", "g2"], "ply": [1, 2]})
+    df1 = pd.DataFrame({"game_id": ["g1", "g2"], "ply": [1, 2]})
+    df_diff_len = pd.DataFrame({"game_id": ["g1"], "ply": [1]})
+    df_diff_gid = pd.DataFrame({"game_id": ["g1", "g3"], "ply": [1, 2]})
+    df_diff_ply = pd.DataFrame({"game_id": ["g1", "g2"], "ply": [1, 3]})
+
+    # Aligned schemas pass
+    _validate_schema_row_alignment({"S0": df0, "S1": df1})
+
+    # Mismatched length raises ValueError
+    with pytest.raises(ValueError, match="row count"):
+        _validate_schema_row_alignment({"S0": df0, "S1": df_diff_len})
+
+    # Mismatched game_id raises ValueError
+    with pytest.raises(ValueError, match="game_id sequence"):
+        _validate_schema_row_alignment({"S0": df0, "S1": df_diff_gid})
+
+    # Mismatched ply raises ValueError
+    with pytest.raises(ValueError, match="ply sequence"):
+        _validate_schema_row_alignment({"S0": df0, "S1": df_diff_ply})
+
+    # Empty raises ValueError
+    with pytest.raises(ValueError, match="No schema DataFrames"):
+        _validate_schema_row_alignment({})
+
+
+def test_reader_fails_closed_on_non_float32_features(tmp_path: Path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    fields = [
+        pa.field("game_id", pa.string()),
+        pa.field("ply", pa.int32()),
+        pa.field("fen", pa.string()),
+        pa.field("dice", pa.string()),
+        pa.field("side", pa.string()),
+        pa.field("result", pa.float32()),
+    ]
+    data: dict[str, list] = {
+        "game_id": ["g1"],
+        "ply": [1],
+        "fen": ["4k3/8/8/8/8/8/8/4K3 w - -"],
+        "dice": ["PPP"],
+        "side": ["w"],
+        "result": [1.0],
+    }
+    for name in SCHEMA_CONTRACTS["kcp-13"].COLUMN_NAMES:
+        fields.append(pa.field(name, pa.float64()))
+        data[name] = [1.0]
+
+    meta = {
+        b"feature_schema": b"kcp-13",
+        b"feature_count": b"13",
+        b"engine_version": b"0.9.3",
+        b"ruleset": b"standard-dicechess-v1",
+        b"perspective": b"side-to-move",
+    }
+    schema = pa.schema(fields, metadata=meta)
+    arrays = [pa.array(data[f.name], type=f.type) for f in fields]
+    table = pa.Table.from_arrays(arrays, schema=schema)
+    test_path = tmp_path / "bad_type.parquet"
+    pq.write_table(table, test_path)
+
+    with pytest.raises(ValueError, match="has type double, expected float"):
+        read_enriched_shard(test_path, "kcp-13", "0.9.3")

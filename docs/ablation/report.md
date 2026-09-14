@@ -1,12 +1,11 @@
 # Feature Schema Ablation Report (Issue #17)
 
-Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`),
-and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.
+Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.
 
 ## 1. Executive Summary & Decision
 
 - **Selected Feature Schema**: **`kcp-13`** (S0)
-- **Protocol Version**: `playground-feature-ablation-v1` (SHA-256: `c904b28bd19d1881...`)
+- **Protocol Version**: `playground-feature-ablation-v1` (SHA-256: `eaed64aa8a1f1095...`)
 - **Engine Version**: `0.9.3`
 - **Dataset**: `sample/playsite-bots-v0` (49,000 rows, 2998 games)
   - Decisive rows: 48,729 (39,121 train / 9,608 val)
@@ -76,9 +75,9 @@ and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.
 | `opening:start-w==start-b` | PASS | PASS | PASS |
 | `opening:start-w==start-w-6field` | PASS | PASS | PASS |
 | `opening:start-w~0.5` | PASS | PASS | PASS |
-| `twin:blocked-pawns-w-twin` | FAIL | PASS | PASS |
+| `twin:blocked-pawns-w-twin` | PASS | PASS | PASS |
 | `twin:knight-up-w-twin` | PASS | PASS | PASS |
-| `twin:passed-pawn-w-twin` | FAIL | PASS | PASS |
+| `twin:passed-pawn-w-twin` | PASS | PASS | PASS |
 | `twin:queen-en-prise-w-twin` | PASS | PASS | PASS |
 | `twin:rook-king-attack-w-twin` | PASS | PASS | PASS |
 | `twin:rook-king-danger-w-twin` | PASS | PASS | PASS |

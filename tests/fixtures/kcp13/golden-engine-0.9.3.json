@@ -139,7 +139,7 @@
       "fen": "4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 w - -",
       "side": "w",
       "tags": ["blocked-pawn", "pawn-blockage"],
-      "note": "Blocked pawn chain: White to move, own_moves_p and opp_moves_p are both zero.",
+      "note": "Blocked pawn chain: White to move, zero mobility diff, symmetric 8-pawn material.",
       "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     },
     {
@@ -147,7 +147,7 @@
       "fen": "k7/4P3/8/8/8/8/8/4K3 w - -",
       "side": "w",
       "tags": ["passed-pawn", "endgame", "promotion"],
-      "note": "Promotion-eligible passed pawn on e7: own_passed_pawns=1, own_passed_max_rank=6, opp_passed_pawns=0.",
+      "note": "Promotion-eligible passed pawn on e7: +1 pawn diff, +1 material diff, White king and pawn only.",
       "features": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 6.0, 0.0, 0.2777778, 0.0, 0.0, 0.0]
     },
     {

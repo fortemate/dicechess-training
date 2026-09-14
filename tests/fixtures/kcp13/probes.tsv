@@ -15,8 +15,8 @@ ep-e6-w	rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6	canonicalizati
 ep-none-w	rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -	canonicalization	ep-e6-w with the unusable en-passant target dropped (X-FEN normalisation).
 sample-mid-b	r1bk4/ppp3pp/8/1BP5/2P5/8/R2K2QP/4R3 b - -	middlegame sample	Public sample playsite-bots-v0, game 0030b6cf-7074-5886-8ad0-39af6dcad9f7 ply 20.
 sample-mid-w	1r1k4/ppp3pp/8/2P5/2P4P/8/R2K2Q1/4R3 w - -	middlegame sample	Public sample playsite-bots-v0, same game, ply 23.
-blocked-pawns-w	4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 w - -	blocked-pawn pawn-blockage	Blocked pawn chain: White to move, own_moves_p and opp_moves_p are both zero.
-passed-pawn-w	k7/4P3/8/8/8/8/8/4K3 w - -	passed-pawn endgame promotion	Promotion-eligible passed pawn on e7: own_passed_pawns=1, own_passed_max_rank=6, opp_passed_pawns=0.
+blocked-pawns-w	4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 w - -	blocked-pawn pawn-blockage	Blocked pawn chain: White to move, zero mobility diff, symmetric 8-pawn material.
+passed-pawn-w	k7/4P3/8/8/8/8/8/4K3 w - -	passed-pawn endgame promotion	Promotion-eligible passed pawn on e7: +1 pawn diff, +1 material diff, White king and pawn only.
 knight-up-w-twin	rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R1BQKBNR b KQkq -	twin perspective	Colour-swapped rank-mirror of knight-up-w: the mover-canonical vector must be identical.
 rook-king-danger-w-twin	4k3/4R3/8/8/8/8/8/4K3 b - -	twin perspective	Colour-swapped rank-mirror of rook-king-danger-w: the mover-canonical vector must be identical.
 rook-queen-attack-w-twin	k3r3/8/8/8/4Q3/8/8/K7 b - -	twin perspective	Colour-swapped rank-mirror of rook-queen-attack-w: the mover-canonical vector must be identical.
