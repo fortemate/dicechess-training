@@ -37,11 +37,14 @@ This protocol defines the predeclared offline ablation to select the feature sch
 - **Target**: Decisive game outcome from the side-to-move perspective (win = 1.0, loss = 0.0). Draws (0.5) are counted and excluded from binary scores.
 - **Game-level split**: `int(sha256('playground-v1:' + game_id), 16) % 10000`:
   - Train: value $< 8000$ (80% of games)
-  - Validation: value $\ge 8000$ (20% of games)
-- No position leakage across splits.
+  - Validation: $8000 \le \text{value} < 9000$ (10% of games, used for candidate selection)
+  - Test holdout: value $\ge 9000$ (10% of games, reserved holdout strictly excluded from schema selection)
+- **Position leakage audit**: Exact canonical position overlap (`position_key`, FEN and side-to-move) is audited across splits (`train:validation`, `train:test`, `validation:test`).
 
-## Evaluation & Metrics
+## Evaluation & Estimand
 
+- **Primary Estimand**: Single-model replication across 5 predeclared random seeds (`[11, 23, 47, 89, 131]`). Reports per-metric mean and standard deviation across seeds. Selection gates and paired confidence intervals evaluate this single-model distribution because the evaluation service serves a single model instance.
+- **Secondary Diagnostic**: A 5-model ensemble ($p_{\text{ens}} = \frac{1}{5}\sum_k p_k$) is evaluated separately for variance-reduction diagnostics and is clearly labeled as non-serving.
 - **Primary metric**: Log-loss $-\frac{1}{N}\sum [y \ln(p) + (1-y) \ln(1-p)]$, clipped at $10^{-15}$.
 - **Calibration metrics**: Brier score $\frac{1}{N}\sum (p - y)^2$ and Expected Calibration Error (ECE) across 10 equal-width bins.
 - **Uncertainty**: 95% bootstrap confidence intervals computed by resampling whole games/groups (1,000 resamples, seed 13). Paired deltas against S0 computed on identical resample draws.
@@ -57,6 +60,7 @@ This protocol defines the predeclared offline ablation to select the feature sch
   - Blocked pawn chain (`blocked-pawns-w`)
   - Passed pawn advancement (`passed-pawn-w`)
   - Mover-canonical twin equality across all probes
+- **Feature Extraction Latency**: Evaluated via verified JVM benchmark tool (`ExtractionBenchmarkApp`) capturing runtime, OS, and JVM engine provenance (`tests/fixtures/benchmark/extraction-cost-0.9.3.json`).
 
 ## Decision Gate (frozen in #13)
 
@@ -68,5 +72,11 @@ A wider candidate (S1 or S2) is selected over S0 iff:
 5. Critical slices do not regress beyond point-estimate tolerance: $\Delta \text{LL}_{\text{slice}} \le 0.01$, $\Delta \text{Brier}_{\text{slice}} \le 0.01$.
 6. Serving extraction cost measured on JVM is bounded (latency overhead <= 10% relative to S0 across benchmark probes).
 
-If S1 or S2 clears the gate, the best-performing qualifying schema is selected and a `dicechess-evaluation` issue is opened.
-If neither clears the gate, S0 is retained as the playground model schema.
+## Qualification & Publication Boundary
+
+- **Provisional Development Evidence**: Runs executed on `sample/playsite-bots-v0` verify tooling, pipeline execution, and protocol mechanics. In accordance with Benchmark v1, public samples are ineligible for official qualification without reviewed data-use evidence.
+- **Owner Qualification**: Final schema qualification is run by the repository owner on the frozen private corpus under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17).
+- **Private Decision Reference**: The definitive qualification decision is recorded in the private knowledge base under page title:
+  `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
+  Per publication boundaries, private numerical metrics and final qualification outcomes are preserved in private documentation and not published in public Git.
+

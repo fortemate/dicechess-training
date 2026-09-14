@@ -43,7 +43,15 @@
     "method": "game-level-sha256",
     "formula": "int(sha256(\"playground-v1:\" + game_id), 16) % 10000",
     "train_cutoff": 8000,
-    "draw_policy": "exclude-from-binary-metrics"
+    "val_cutoff": 9000,
+    "test_policy": "reserved-holdout-excluded-from-selection",
+    "draw_policy": "exclude-from-binary-metrics",
+    "leakage_audit": "canonical-position-exact"
+  },
+  "estimand": {
+    "primary": "single-model-replication",
+    "description": "Mean and standard deviation across independent seed trainings of the single serving model.",
+    "diagnostic_ensemble": true
   },
   "metrics": [
     "log_loss",

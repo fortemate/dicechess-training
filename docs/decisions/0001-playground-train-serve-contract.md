@@ -245,26 +245,19 @@ The authorized maintainer approved this decision on 2026-09-11 in the
 same maintainer, so cross-repository review is covered by that comment; the benchmark (#13) must
 adopt exactly the perspective in Decision 1, and its gate decides the ablation in #17.
 
-## Amendment: Feature Schema Selection (Issue #17, 2026-09-14)
+## Amendment: Feature Schema Selection (Issue #17, Provisional Status)
 
-Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), the three candidate feature schemas were evaluated on the public sample (`sample/playsite-bots-v0`, 49,000 positions, 2,998 games) using engine 0.9.3 under the predeclared, frozen protocol in [`docs/ablation/protocol-v1.json`](../ablation/protocol-v1.json) (SHA-256: `c904b28bd19d1881...`).
+Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), the three candidate feature schemas (S0 `kcp-13`, S1 `kcp-mobility-27-v1`, S2 `kcp-mobility-pawns-31-v1`) are evaluated under the frozen, predeclared protocol in [`docs/ablation/protocol-v1.json`](../ablation/protocol-v1.json).
 
-### Evidence Summary
+### Status and Data Eligibility
 
-Evaluated across 5 random seeds (11, 23, 47, 89, 131) with paired group-bootstrap 95% confidence intervals (1,000 repeats) against S0:
+1. **Provisional Development Evidence**: Runs performed in this repository against the public sample (`sample/playsite-bots-v0`) confirm pipeline tooling, cross-schema integrity validation, and protocol mechanics (including the 80/10/10 split and canonical position leakage audit).
+2. **Benchmark Custody & Eligibility**: Under Benchmark v1, the committed public sample is ineligible for final qualification without separately reviewed data-use evidence.
+3. **Owner Qualification**: Final schema selection requires owner-run qualification on the frozen private corpus under the exact same frozen protocol (`docs/ablation/protocol-v1.json`).
+4. **Private Decision Reference**: The definitive qualification decision is recorded in the private knowledge base:
+   - Page title: `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
+   - In accordance with repository publication boundaries, private numerical metrics and final qualification outcomes are preserved in private documentation and are not published in public Git.
+5. **Active Baseline**: Baseline **S0 (`kcp-13`)** remains the active train-serve contract for ongoing development and tooling under [Issue #13](https://github.com/fortemate/dicechess-training/issues/13).
+6. **Issue State**: [Issue #17](https://github.com/fortemate/dicechess-training/issues/17) remains open pending completion of private corpus qualification and data eligibility review.
 
-| Schema | Features | Log Loss | 95% CI vs S0 (Δ) | Brier | ECE | Rel. LL Gain | Gate Status |
-|---|---|---|---|---|---|---|---|
-| **S0** (`kcp-13`) | 13 | 0.8551 | — (Reference) | 0.2227 | 0.0330 | — | **Baseline Selected** |
-| **S1** (`kcp-mobility-27-v1`) | 27 | 0.8516 | [-0.0132, +0.0089] | 0.2195 | 0.0318 | +0.41% | FAILED (gain < 1.0%, CI includes 0, endgame regression) |
-| **S2** (`kcp-mobility-pawns-31-v1`) | 31 | 0.6380 | [-0.2766, -0.1555] | 0.2194 | 0.0275 | +25.39% | FAILED (endgame slice log loss Δ +0.0437, Brier Δ +0.0193 > 0.0100 guard) |
-
-### Decision
-
-1. **Neither additive candidate cleared all predeclared gate rules**:
-   - S1 delivered only +0.41% relative log-loss gain (below the 1.0% bar), its 95% paired CI crossed zero, and it regressed significantly in the endgame slice (+0.1164 log loss).
-   - S2 achieved strong overall loss reduction (+25.39% relative gain, CI [-0.2766, -0.1555]), but failed the strict slice regression guards in `phase:endgame` (log loss regressed by +0.0437 and Brier regressed by +0.0193, exceeding the 0.0100 ceiling).
-2. **Outcome**: Per the protocol and Issue #17 rules, **S0 (`kcp-13`) proceeds as the confirmed playground feature schema** for value model training under Issue #13.
-3. **Serving Impact**: Because S0 was retained, no modifications or schema-expansion issues are required on `dicechess-evaluation`. The evaluator continues serving `standard-kcp` with `kcp-13` unchanged.
-4. **Full Artifacts**: Complete logs, calibration tables, probe-suite evaluations, and slice breakdowns are recorded in [`docs/ablation/report.md`](../ablation/report.md) and [`docs/ablation/ablation-report.json`](../ablation/ablation-report.json).
 

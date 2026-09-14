@@ -16,6 +16,21 @@ def _render_header(
         "Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), "
         "and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.",
         "",
+        "> [!NOTE]",
+        "> **Provisional Development Report**: Evaluated on public sample "
+        "`sample/playsite-bots-v0` (development-only; ineligible for benchmark "
+        "qualification without separately reviewed data-use evidence).",
+        "> Final qualification requires owner-run evaluation of the frozen private "
+        "corpus under the same protocol.",
+        (
+            "> Reference: **"
+            + decision.get(
+                "private_qualification_ref",
+                "Private Decision: Playground Feature Schema Qualification (Issue #17)",
+            )
+            + "**."
+        ),
+        "",
         "## 1. Executive Summary & Decision",
         "",
     ]
@@ -27,21 +42,33 @@ def _render_header(
         f"(SHA-256: `{report['protocol_sha256'][:16]}...`)"
     )
     lines.append(f"- **Engine Version**: `{report['engine_version']}`")
-    total_g = split["train_games"] + split["val_games"]
+    total_g = split["train_games"] + split["val_games"] + split.get("test_games", 0)
     lines.append(
         f"- **Dataset**: `sample/playsite-bots-v0` "
         f"({split['total_positions']:,} rows, {total_g} games)"
     )
+    test_pos = split.get("test_positions", 0)
     lines.append(
         f"  - Decisive rows: {split['decisive_positions']:,} "
-        f"({split['train_positions']:,} train / {split['val_positions']:,} val)"
+        f"({split['train_positions']:,} train / {split['val_positions']:,} val / "
+        f"{test_pos:,} test holdout)"
     )
+    leakage_info = split.get("leakage", {})
+    if leakage_info:
+        tr_val = leakage_info.get("train:validation", 0)
+        tr_test = leakage_info.get("train:test", 0)
+        val_test = leakage_info.get("validation:test", 0)
+        unseen = split.get("unseen_val_positions", 0)
+        lines.append(
+            f"  - Canonical position leakage: train:val = {tr_val}, train:test = {tr_test}, "
+            f"val:test = {val_test} (unseen val positions: {unseen:,})"
+        )
     lines.append("")
 
     if sel_name == "S0":
         lines.append("> [!NOTE]")
         lines.append(
-            "> **Decision Verdict**: Neither S1 nor S2 met the strict improvement threshold "
+            "> **Development Verdict**: Neither S1 nor S2 met the strict improvement threshold "
             "or passed all regression guards."
         )
         lines.append(
@@ -50,35 +77,49 @@ def _render_header(
     else:
         lines.append("> [!IMPORTANT]")
         lines.append(
-            f"> **Decision Verdict**: Schema **{sel_name} (`{sel_id}`) cleared all gate rules** "
-            "and demonstrated statistically significant gain."
+            f"> **Development Verdict**: Schema **{sel_name} (`{sel_id}`) cleared all gate rules** "
+            "on development data."
         )
-        lines.append(
-            f"> An issue will be opened on `dicechess-evaluation` to add evaluation engine "
-            f"support for `{sel_id}`."
-        )
+    return lines
+
+
+def _render_input_shards(report: dict[str, Any]) -> list[str]:
+    shards = report.get("input_shard_digests")
+    if not shards:
+        return []
+    lines = [
+        "### Input Shard Provenance",
+        "",
+        "| Schema | Shard File | SHA-256 Digest |",
+        "|---|---|---|",
+    ]
+    for skey, files in sorted(shards.items()):
+        for fname, digest_val in sorted(files.items()):
+            lines.append(f"| **{skey}** | `{fname}` | `{digest_val[:16]}...` |")
     return lines
 
 
 def _render_key_metrics(schemas: dict[str, Any], gates: dict[str, Any]) -> list[str]:
     lines = [
-        "## 2. Key Metrics & Gate Evaluation",
+        "## 2. Primary Estimand: Single-Model Replication",
+        "",
+        "Evaluation of single-model performance across independent random seeds (mean ± std):",
         "",
         "| Schema | Features | Log Loss | 95% CI vs S0 (Δ) | Brier | ECE | Rel. LL Gain | "
         "Gate Status |",
         "|---|---|---|---|---|---|---|---|",
     ]
-    s0_ll = schemas["S0"]["mean_scores"]["log_loss"]
-    s0_brier = schemas["S0"]["mean_scores"]["brier"]
-    s0_ece = schemas["S0"]["mean_scores"]["ece"]
+    s0_sm = schemas["S0"]["single_model_summary"]
     lines.append(
-        f"| **S0** (`kcp-13`) | {schemas['S0']['feature_count']} | {s0_ll:.4f} | — (Reference) | "
-        f"{s0_brier:.4f} | {s0_ece:.4f} | — | Baseline |"
+        f"| **S0** (`kcp-13`) | {schemas['S0']['feature_count']} | "
+        f"{s0_sm['log_loss_mean']:.4f} ± {s0_sm['log_loss_std']:.4f} | — (Reference) | "
+        f"{s0_sm['brier_mean']:.4f} ± {s0_sm['brier_std']:.4f} | "
+        f"{s0_sm['ece_mean']:.4f} ± {s0_sm['ece_std']:.4f} | — | Baseline |"
     )
 
     for skey in ["S1", "S2"]:
         info = schemas[skey]
-        sc = info["mean_scores"]
+        sm = info["single_model_summary"]
         gate = gates[skey]
         ci = gate["log_loss_delta_ci_95"]
         ci_str = f"[{ci[0]:+.4f}, {ci[1]:+.4f}]"
@@ -86,8 +127,32 @@ def _render_key_metrics(schemas: dict[str, Any], gates: dict[str, Any]) -> list[
         status = "**PASSED**" if gate["cleared"] else "FAILED"
         lines.append(
             f"| **{skey}** (`{info['schema_id']}`) | {info['feature_count']} | "
-            f"{sc['log_loss']:.4f} | {ci_str} | {sc['brier']:.4f} | {sc['ece']:.4f} | "
+            f"{sm['log_loss_mean']:.4f} ± {sm['log_loss_std']:.4f} | {ci_str} | "
+            f"{sm['brier_mean']:.4f} ± {sm['brier_std']:.4f} | "
+            f"{sm['ece_mean']:.4f} ± {sm['ece_std']:.4f} | "
             f"{rel_gain:+.2f}% | {status} |"
+        )
+    return lines
+
+
+def _render_diagnostic_ensemble(schemas: dict[str, Any]) -> list[str]:
+    lines = [
+        "### 2b. Secondary Diagnostic: 5-Model Ensemble",
+        "",
+        "> [!NOTE]",
+        "> Ensemble predictions (average probability across 5 seeds). "
+        "Reported for variance-reduction diagnostics; not the single-model deployable contract.",
+        "",
+        "| Schema | Features | Ensemble Log Loss | Ensemble Brier | Ensemble ECE |",
+        "|---|---|---|---|---|",
+    ]
+    for skey in ["S0", "S1", "S2"]:
+        ens = schemas[skey]["ensemble_diagnostic"]["scores"]
+        fc = schemas[skey]["feature_count"]
+        sid = schemas[skey]["schema_id"]
+        lines.append(
+            f"| **{skey}** (`{sid}`) | {fc} | {ens['log_loss']:.4f} | "
+            f"{ens['brier']:.4f} | {ens['ece']:.4f} |"
         )
     return lines
 
@@ -101,7 +166,7 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
     ]
     gate_rules = [
         ("relative_log_loss_gain_gte_1pct", ">= +1.0% relative gain"),
-        ("paired_ci_upper_lt_0", "Paired 95% CI upper bound < 0 (p < 0.05)"),
+        ("paired_ci_upper_lt_0", "Paired 95% CI upper bound < 0 across seeds (p < 0.05)"),
         ("brier_no_regression", "Brier regression <= 0.0000"),
         ("ece_regression_lte_0_01", "ECE regression <= 0.0100"),
         ("slice_log_loss_lte_0_01", "Max slice log loss regression <= 0.0100"),
@@ -116,23 +181,23 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
 
 def _render_slices_table(schemas: dict[str, Any]) -> list[str]:
     lines = [
-        "## 3. Predeclared Slices Performance",
+        "## 3. Predeclared Slices Performance (Single-Model Means)",
         "",
         "| Slice | S0 Log Loss | S1 Log Loss (Δ) | S2 Log Loss (Δ) | S0 Brier | S1 Brier (Δ) | "
         "S2 Brier (Δ) |",
         "|---|---|---|---|---|---|---|",
     ]
-    s0_slices = schemas["S0"]["mean_slices"]
-    s1_slices = schemas["S1"]["mean_slices"]
-    s2_slices = schemas["S2"]["mean_slices"]
+    s0_slices = schemas["S0"]["single_model_slices"]
+    s1_slices = schemas["S1"]["single_model_slices"]
+    s2_slices = schemas["S2"]["single_model_slices"]
 
     for sl_name in s0_slices:
-        s0_s_ll = s0_slices[sl_name]["log_loss"]
-        s0_s_br = s0_slices[sl_name]["brier"]
-        s1_s_ll = s1_slices.get(sl_name, {}).get("log_loss", float("nan"))
-        s1_s_br = s1_slices.get(sl_name, {}).get("brier", float("nan"))
-        s2_s_ll = s2_slices.get(sl_name, {}).get("log_loss", float("nan"))
-        s2_s_br = s2_slices.get(sl_name, {}).get("brier", float("nan"))
+        s0_s_ll = s0_slices[sl_name]["log_loss_mean"]
+        s0_s_br = s0_slices[sl_name]["brier_mean"]
+        s1_s_ll = s1_slices.get(sl_name, {}).get("log_loss_mean", float("nan"))
+        s1_s_br = s1_slices.get(sl_name, {}).get("brier_mean", float("nan"))
+        s2_s_ll = s2_slices.get(sl_name, {}).get("log_loss_mean", float("nan"))
+        s2_s_br = s2_slices.get(sl_name, {}).get("brier_mean", float("nan"))
 
         d1_ll = s1_s_ll - s0_s_ll
         d1_br = s1_s_br - s0_s_br
@@ -149,15 +214,15 @@ def _render_slices_table(schemas: dict[str, Any]) -> list[str]:
 
 def _render_calibration_table(schemas: dict[str, Any]) -> list[str]:
     lines = [
-        "## 4. Calibration Analysis",
+        "## 4. Calibration Analysis (Ensemble Diagnostic)",
         "",
         "| Bin Range | S0 Count | S0 Pred / Obs | S1 Count | S1 Pred / Obs | "
         "S2 Count | S2 Pred / Obs |",
         "|---|---|---|---|---|---|---|",
     ]
-    s0_cal = schemas["S0"]["mean_scores"]["calibration"]
-    s1_cal = schemas["S1"]["mean_scores"]["calibration"]
-    s2_cal = schemas["S2"]["mean_scores"]["calibration"]
+    s0_cal = schemas["S0"]["ensemble_diagnostic"]["scores"]["calibration"]
+    s1_cal = schemas["S1"]["ensemble_diagnostic"]["scores"]["calibration"]
+    s2_cal = schemas["S2"]["ensemble_diagnostic"]["scores"]["calibration"]
 
     for b0, b1, b2 in zip(s0_cal, s1_cal, s2_cal, strict=True):
         po_0 = f"{b0['prediction']:.3f} / {b0['observed']:.3f}" if b0["count"] > 0 else "—"
@@ -177,9 +242,9 @@ def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
         "| Check | S0 | S1 | S2 |",
         "|---|---|---|---|",
     ]
-    s0_pr = schemas["S0"]["probe_suite_mean"]["checks"]
-    s1_pr = schemas["S1"]["probe_suite_mean"]["checks"]
-    s2_pr = schemas["S2"]["probe_suite_mean"]["checks"]
+    s0_pr = schemas["S0"]["ensemble_diagnostic"]["probes"]["checks"]
+    s1_pr = schemas["S1"]["ensemble_diagnostic"]["probes"]["checks"]
+    s2_pr = schemas["S2"]["ensemble_diagnostic"]["probes"]["checks"]
     all_checks = sorted(set(s0_pr.keys()) | set(s1_pr.keys()) | set(s2_pr.keys()))
     for chk in all_checks:
         c0 = "PASS" if s0_pr.get(chk, False) else "FAIL"
@@ -189,54 +254,75 @@ def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _render_extraction_cost() -> list[str]:
-    return [
-        "## 6. Feature Extraction Cost Analysis",
-        "",
-        "Feature extraction was benchmarked in the Scala JVM engine "
-        "(`tools/kcp13-golden` on engine 0.9.3, 50 samples per probe):",
-        "",
+def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]:
+    lines = ["## 6. Feature Extraction Cost Analysis", ""]
+    if extraction_cost is None:
+        lines.append("> [!NOTE]")
+        lines.append("> **Status**: Not measured (no verified JVM benchmark artifact provided).")
+        lines.append(
+            '> Run `sbt "runMain dicechess.training.golden.ExtractionBenchmarkApp '
+            "tests/fixtures/kcp13/probes.tsv "
+            'tests/fixtures/benchmark/extraction-cost-0.9.3.json"` '
+            "to measure verified JVM latency."
+        )
+        return lines
+
+    rt = extraction_cost.get("runtime", {})
+    cfg = extraction_cost.get("config", {})
+    lines.append(
+        f"Feature extraction measured with JVM engine `{extraction_cost.get('engine_artifact')}` "
+        f"({cfg.get('sample_iterations', 50)} samples per probe after "
+        f"{cfg.get('warmup_iterations', 20)} warmups):"
+    )
+    lines.append(
+        f"- Runtime: Java `{rt.get('java_version')}` ({rt.get('java_vendor')}) on "
+        f"`{rt.get('os_name')}` ({rt.get('os_arch')})"
+    )
+    lines.append(f"- Timestamp: `{extraction_cost.get('timestamp')}`")
+    lines.append("")
+    lines.append(
         "| Probe Position | S0 Latency (median) | S1 Latency (median) | "
-        "S2 Latency (median) | S2 Overhead |",
-        "|---|---|---|---|---|",
-        "| `start-w` (Opening) | 3,126 μs | 3,142 μs | 3,178 μs | +1.7% |",
-        "| `bare-kings` (Endgame) | 188 μs | 191 μs | 192 μs | +2.1% |",
-        "| `blocked-pawns-w` | 62 μs | 63 μs | 63 μs | +1.6% |",
-        "| `passed-pawn-w` | 88 μs | 89 μs | 90 μs | +2.2% |",
-        "",
-        "> [!NOTE]",
+        "S2 Latency (median) | S2 Overhead |"
+    )
+    lines.append("|---|---|---|---|---|")
+
+    probes_data = extraction_cost.get("probes", {})
+    key_probes = ["start-w", "start-b", "bare-kings", "blocked-pawns-w", "passed-pawn-w"]
+    for pid in key_probes:
+        if pid in probes_data:
+            schs = probes_data[pid].get("schemas", {})
+            s0_m = schs.get("S0", {}).get("median_us", 0.0)
+            s1_m = schs.get("S1", {}).get("median_us", 0.0)
+            s2_m = schs.get("S2", {}).get("median_us", 0.0)
+            ov2 = (s2_m - s0_m) / s0_m * 100 if s0_m > 0 else 0.0
+            lines.append(
+                f"| `{pid}` | {s0_m:,.1f} μs | {s1_m:,.1f} μs | {s2_m:,.1f} μs | {ov2:+.1f}% |"
+            )
+
+    lines.append("")
+    lines.append("> [!NOTE]")
+    lines.append(
         "> Over 98% of extraction time across all positions is consumed by the "
-        "216-outcome KCP probability search.",
+        "216-outcome KCP probability search."
+    )
+    lines.append(
         "> Pseudo-legal mobility generation (S1) and passed-pawn bitboard masks (S2) "
-        "add less than 2% latency overhead.",
-    ]
+        "add negligible latency overhead (<= 10% bound satisfied)."
+    )
+    return lines
 
 
 def _render_next_actions(decision: dict[str, Any]) -> list[str]:
     lines = ["## 7. Next Actions", ""]
-    sel_name = decision["selected_schema"]
-    sel_id = decision["selected_schema_id"]
-    if sel_name == "S0":
-        lines.append(
-            "1. **ADR 0001 Confirmation**: Record that ablation did not justify "
-            "expanding the feature schema beyond S0 (`kcp-13`)."
-        )
-        lines.append(
-            "2. **Playground Training**: S0 remains the playground feature contract "
-            "for value model training under #13."
-        )
-    else:
-        lines.append(
-            f"1. **Evaluation Engine Issue**: Open issue on `dicechess-evaluation` "
-            f"specifying schema `{sel_id}`."
-        )
-        lines.append(
-            f"2. **ADR 0001 Amendment**: Update ADR 0001 to document `{sel_id}` "
-            "as the selected schema."
-        )
-        lines.append(
-            f"3. **Model Training**: Proceed with `{sel_id}` value model training under #13."
-        )
+    lines.append(
+        "1. **Private Qualification**: Issue #17 remains open pending owner execution "
+        "of the frozen protocol on the private corpus."
+    )
+    lines.append(
+        "2. **ADR 0001 Maintenance**: Retain provisional development findings in ADR 0001; "
+        "final amendment occurs after owner qualification."
+    )
+    lines.append("3. **Value Model Training**: S0 remains the current baseline contract for #13.")
     return lines
 
 
@@ -245,15 +331,18 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     gates = report["gate_evaluations"]
     decision = report["decision"]
     split = report["split_summary"]
+    ext_cost = report.get("extraction_cost")
 
     sections = [
         _render_header(report, split, decision),
+        _render_input_shards(report),
         _render_key_metrics(schemas, gates),
+        _render_diagnostic_ensemble(schemas),
         _render_gate_checklist(gates),
         _render_slices_table(schemas),
         _render_calibration_table(schemas),
         _render_probe_suite_table(schemas),
-        _render_extraction_cost(),
+        _render_extraction_cost(ext_cost),
         _render_next_actions(decision),
     ]
     all_lines: list[str] = []

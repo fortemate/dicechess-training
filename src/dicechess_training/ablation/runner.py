@@ -18,6 +18,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from dicechess_training.benchmark.metrics import confidence, scores
+from dicechess_training.benchmark.splits import leakage, position_key
 from dicechess_training.contracts import (
     SCHEMA_CONTRACTS,
     kcp13,
@@ -227,20 +228,52 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
     split_col = base_df["game_id"].map(game_hashes)
     decisive_mask = base_df["result"].isin([0.0, 1.0])
 
-    train_mask = decisive_mask & (split_col < protocol["split"]["train_cutoff"])
-    val_mask = decisive_mask & (split_col >= protocol["split"]["train_cutoff"])
+    train_cutoff = protocol["split"]["train_cutoff"]
+    val_cutoff = protocol["split"].get("val_cutoff", 9000)
+
+    train_mask = decisive_mask & (split_col < train_cutoff)
+    val_mask = decisive_mask & (split_col >= train_cutoff) & (split_col < val_cutoff)
+    test_mask = decisive_mask & (split_col >= val_cutoff)
 
     val_df = base_df[val_mask].reset_index(drop=True)
     y_val = val_df["result"].to_numpy(dtype=float)
     groups_val = val_df["game_id"].to_numpy()
+
+    # Position leakage audit across partitions
+    split_tags = np.full(len(base_df), "excluded", dtype=object)
+    split_tags[train_mask] = "train"
+    split_tags[val_mask] = "validation"
+    split_tags[test_mask] = "test"
+
+    decisive_indices = np.where(decisive_mask)[0]
+    rows_for_leakage = [{"fen": base_df.at[idx, "fen"]} for idx in decisive_indices]
+    splits_for_leakage = split_tags[decisive_indices].tolist()
+    leakage_audit = leakage(rows_for_leakage, splits_for_leakage)
+
+    # Unseen validation positions count
+    train_positions = {
+        position_key(r)
+        for r, s in zip(rows_for_leakage, splits_for_leakage, strict=True)
+        if s == "train"
+    }
+    val_positions = [
+        position_key(r)
+        for r, s in zip(rows_for_leakage, splits_for_leakage, strict=True)
+        if s == "validation"
+    ]
+    unseen_val_count = sum(1 for p in val_positions if p not in train_positions)
 
     split_summary = {
         "total_positions": int(len(base_df)),
         "decisive_positions": int(decisive_mask.sum()),
         "train_positions": int(train_mask.sum()),
         "val_positions": int(val_mask.sum()),
+        "test_positions": int(test_mask.sum()),
         "train_games": int(len(set(base_df.loc[train_mask, "game_id"]))),
         "val_games": int(len(set(base_df.loc[val_mask, "game_id"]))),
+        "test_games": int(len(set(base_df.loc[test_mask, "game_id"]))),
+        "leakage": leakage_audit,
+        "unseen_val_positions": unseen_val_count,
     }
     return train_mask, val_mask, val_df, y_val, groups_val, split_summary
 
@@ -252,16 +285,16 @@ def _train_single_schema(
     train_mask: np.ndarray,
     val_mask: np.ndarray,
     val_df: pd.DataFrame,
+    y_train: np.ndarray,
     y_val: np.ndarray,
     protocol: dict,
-) -> tuple[dict[str, Any], np.ndarray]:
+) -> tuple[dict[str, Any], np.ndarray, list[np.ndarray]]:
     contract = SCHEMA_CONTRACTS[sid]
     feature_cols = list(contract.COLUMN_NAMES)
     model_cfg = protocol["model"]
     seeds = protocol["seeds"]
 
     x_train = df_s.loc[train_mask, feature_cols].to_numpy(dtype=np.float32)
-    y_train = df_s.loc[train_mask, "result"].to_numpy(dtype=np.float32)
     x_val = df_s.loc[val_mask, feature_cols].to_numpy(dtype=np.float32)
 
     seed_results = []
@@ -280,68 +313,120 @@ def _train_single_schema(
         sc = scores(y_val, p_val)
         sl = compute_slices(val_df, y_val, p_val)
         pr = evaluate_probe_predictions(p_probes, protocol)
-        seed_results.append({"scores": sc, "slices": sl, "probes": pr})
+        seed_results.append(
+            {
+                "seed": seed,
+                "scores": sc,
+                "slices": sl,
+                "probes": pr,
+            }
+        )
         print(
             f"  seed {seed:3d}: log_loss = {sc['log_loss']:.4f}, "
             f"brier = {sc['brier']:.4f}, ece = {sc['ece']:.4f}"
         )
+
+    # Primary estimand: single-model replication summary across independent seeds
+    lls = [s["scores"]["log_loss"] for s in seed_results]
+    brs = [s["scores"]["brier"] for s in seed_results]
+    eces = [s["scores"]["ece"] for s in seed_results]
+    single_model_summary = {
+        "log_loss_mean": float(np.mean(lls)),
+        "log_loss_std": float(np.std(lls)),
+        "brier_mean": float(np.mean(brs)),
+        "brier_std": float(np.std(brs)),
+        "ece_mean": float(np.mean(eces)),
+        "ece_std": float(np.std(eces)),
+    }
+
+    first_slices = seed_results[0]["slices"]
+    single_model_slices = {}
+    for sl_name in first_slices:
+        sl_lls = [s["slices"][sl_name]["log_loss"] for s in seed_results if sl_name in s["slices"]]
+        sl_brs = [s["slices"][sl_name]["brier"] for s in seed_results if sl_name in s["slices"]]
+        single_model_slices[sl_name] = {
+            "log_loss_mean": float(np.mean(sl_lls)),
+            "log_loss_std": float(np.std(sl_lls)),
+            "brier_mean": float(np.mean(sl_brs)),
+            "brier_std": float(np.std(sl_brs)),
+        }
 
     all_probe_ids = list(probe_preds_all_seeds[0].keys())
     mean_probe_preds = {
         pid: float(np.mean([seed_p[pid] for seed_p in probe_preds_all_seeds]))
         for pid in all_probe_ids
     }
-    probe_suite_mean = evaluate_probe_predictions(mean_probe_preds, protocol)
 
-    p_val_mean = np.mean(val_preds_all_seeds, axis=0)
+    # Secondary diagnostic ensemble
+    p_val_ensemble = np.mean(val_preds_all_seeds, axis=0)
+    ensemble_diagnostic = {
+        "scores": scores(y_val, p_val_ensemble),
+        "slices": compute_slices(val_df, y_val, p_val_ensemble),
+        "probes": evaluate_probe_predictions(mean_probe_preds, protocol),
+    }
+
     schema_res = {
         "schema_id": sid,
         "feature_count": len(feature_cols),
-        "mean_scores": scores(y_val, p_val_mean),
-        "mean_slices": compute_slices(val_df, y_val, p_val_mean),
+        "single_model_summary": single_model_summary,
+        "single_model_slices": single_model_slices,
         "seed_evaluations": seed_results,
-        "probe_suite_mean": probe_suite_mean,
+        "ensemble_diagnostic": ensemble_diagnostic,
     }
-    return schema_res, p_val_mean
+    return schema_res, p_val_ensemble, val_preds_all_seeds
 
 
 def _evaluate_gate_for_candidate(
     s_key: str,
-    s_scores: dict[str, Any],
-    p_val_s: np.ndarray,
-    p_val_s0: np.ndarray,
-    s0_ll: float,
-    s0_brier: float,
-    s0_ece: float,
+    results_by_schema: dict[str, Any],
+    val_preds_by_schema: dict[str, list[np.ndarray]],
     y_val: np.ndarray,
     groups_val: np.ndarray,
-    results_by_schema: dict[str, Any],
     protocol: dict,
 ) -> dict[str, Any]:
-    ci = confidence(
-        y_val,
-        p_val_s,
-        groups_val,
-        reference=p_val_s0,
-        repeats=protocol["uncertainty"]["repeats"],
-        seed=protocol["uncertainty"]["seed"],
-    )
+    s0_sm = results_by_schema["S0"]["single_model_summary"]
+    s_sm = results_by_schema[s_key]["single_model_summary"]
 
-    rel_log_loss_gain = (s0_ll - s_scores["log_loss"]) / s0_ll
-    brier_regression = s_scores["brier"] - s0_brier
-    ece_regression = s_scores["ece"] - s0_ece
-    ll_ci_upper = ci["intervals"]["log_loss_delta"][1]
+    s0_ll = s0_sm["log_loss_mean"]
+    s0_brier = s0_sm["brier_mean"]
+    s0_ece = s0_sm["ece_mean"]
 
-    s0_slices = results_by_schema["S0"]["mean_slices"]
-    s_slices = results_by_schema[s_key]["mean_slices"]
+    rel_log_loss_gain = (s0_ll - s_sm["log_loss_mean"]) / s0_ll
+    brier_regression = s_sm["brier_mean"] - s0_brier
+    ece_regression = s_sm["ece_mean"] - s0_ece
+
+    # Paired seed-matched bootstrap confidence intervals across seeds
+    s0_preds = val_preds_by_schema["S0"]
+    s_preds = val_preds_by_schema[s_key]
+    seed_cis = []
+    for p_s, p_s0 in zip(s_preds, s0_preds, strict=True):
+        ci = confidence(
+            y_val,
+            p_s,
+            groups_val,
+            reference=p_s0,
+            repeats=protocol["uncertainty"]["repeats"],
+            seed=protocol["uncertainty"]["seed"],
+        )
+        seed_cis.append(ci)
+
+    ci_uppers = [ci["intervals"]["log_loss_delta"][1] for ci in seed_cis]
+    ll_ci_upper_max = float(np.max(ci_uppers))
+    mean_ci = [
+        float(np.mean([ci["intervals"]["log_loss_delta"][0] for ci in seed_cis])),
+        float(np.mean([ci["intervals"]["log_loss_delta"][1] for ci in seed_cis])),
+    ]
+
+    s0_slices = results_by_schema["S0"]["single_model_slices"]
+    s_slices = results_by_schema[s_key]["single_model_slices"]
     slice_regressions = {}
     max_slice_ll_reg = 0.0
     max_slice_brier_reg = 0.0
 
     for sname in s0_slices:
         if sname in s_slices:
-            ll_diff = s_slices[sname]["log_loss"] - s0_slices[sname]["log_loss"]
-            brier_diff = s_slices[sname]["brier"] - s0_slices[sname]["brier"]
+            ll_diff = s_slices[sname]["log_loss_mean"] - s0_slices[sname]["log_loss_mean"]
+            brier_diff = s_slices[sname]["brier_mean"] - s0_slices[sname]["brier_mean"]
             slice_regressions[sname] = {
                 "log_loss_delta": ll_diff,
                 "brier_delta": brier_diff,
@@ -351,7 +436,7 @@ def _evaluate_gate_for_candidate(
 
     gate_rules = protocol["gate"]
     passed_rel_gain = rel_log_loss_gain >= gate_rules["min_relative_log_loss_gain"]
-    passed_ci_upper = ll_ci_upper < 0
+    passed_ci_upper = ll_ci_upper_max < 0
     passed_brier = brier_regression <= gate_rules["max_brier_regression"]
     passed_ece = ece_regression <= gate_rules["max_ece_regression"]
     passed_slice_ll = max_slice_ll_reg <= gate_rules["max_slice_log_loss_regression"]
@@ -369,12 +454,12 @@ def _evaluate_gate_for_candidate(
     return {
         "cleared": cleared,
         "relative_log_loss_gain": rel_log_loss_gain,
-        "log_loss_delta_ci_95": ci["intervals"]["log_loss_delta"],
+        "log_loss_delta_ci_95": mean_ci,
+        "log_loss_delta_ci_upper_max": ll_ci_upper_max,
         "brier_regression": brier_regression,
         "ece_regression": ece_regression,
         "max_slice_log_loss_regression": max_slice_ll_reg,
         "max_slice_brier_regression": max_slice_brier_reg,
-        "confidence": ci,
         "slice_regressions": slice_regressions,
         "checks": {
             "relative_log_loss_gain_gte_1pct": passed_rel_gain,
@@ -389,8 +474,8 @@ def _evaluate_gate_for_candidate(
 
 def _select_schema(gate_evaluations: dict[str, Any], results_by_schema: dict[str, Any]) -> str:
     if gate_evaluations["S2"]["cleared"] and gate_evaluations["S1"]["cleared"]:
-        s2_ll = results_by_schema["S2"]["mean_scores"]["log_loss"]
-        s1_ll = results_by_schema["S1"]["mean_scores"]["log_loss"]
+        s2_ll = results_by_schema["S2"]["single_model_summary"]["log_loss_mean"]
+        s1_ll = results_by_schema["S1"]["single_model_summary"]["log_loss_mean"]
         return "S2" if s2_ll < s1_ll else "S1"
     if gate_evaluations["S2"]["cleared"]:
         return "S2"
@@ -399,37 +484,85 @@ def _select_schema(gate_evaluations: dict[str, Any], results_by_schema: dict[str
     return "S0"
 
 
-def _validate_schema_row_alignment(schema_dfs: dict[str, pd.DataFrame]) -> None:
-    """Ensure all schema DataFrames are non-empty and strictly aligned by row."""
+def _validate_cross_schema_integrity(schema_dfs: dict[str, pd.DataFrame]) -> None:
+    """Ensure all schema DataFrames have unique keys, identical source rows, and prefix identity."""
     if not schema_dfs:
         raise ValueError("No schema DataFrames provided")
     base_key = "S0" if "S0" in schema_dfs else next(iter(schema_dfs))
     base_df = schema_dfs[base_key]
-    base_game_ids = base_df["game_id"].to_numpy()
-    base_plies = base_df["ply"].to_numpy()
     base_len = len(base_df)
 
+    # 1. Unique row keys (game_id, ply) and length match
     for key, df in schema_dfs.items():
-        if key == base_key:
-            continue
         if len(df) != base_len:
             raise ValueError(
                 f"Schema {key} row count ({len(df)}) does not match {base_key} ({base_len})"
             )
-        if not np.array_equal(df["game_id"].to_numpy(), base_game_ids):
-            raise ValueError(f"Schema {key} game_id sequence does not match {base_key}")
-        if not np.array_equal(df["ply"].to_numpy(), base_plies):
-            raise ValueError(f"Schema {key} ply sequence does not match {base_key}")
+        keys = list(zip(df["game_id"], df["ply"], strict=True))
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"Schema {key} contains duplicate (game_id, ply) row keys")
+
+    # 2. Identical source fields across all schemas
+    source_fields = ["game_id", "ply", "fen", "side", "dice", "result"]
+    for key, df in schema_dfs.items():
+        if key == base_key:
+            continue
+        for col in source_fields:
+            if col not in df.columns:
+                raise ValueError(f"Schema {key} missing source column {col!r}")
+            if not (df[col].to_numpy() == base_df[col].to_numpy()).all():
+                raise ValueError(f"Schema {key} source column {col!r} does not match {base_key}")
+
+    # 3. Float32 feature prefix byte-equivalence: S0 in S1, S0 in S2, S1 in S2
+    if "S0" in schema_dfs:
+        s0_cols = list(SCHEMA_CONTRACTS["kcp-13"].COLUMN_NAMES)
+        f0 = schema_dfs["S0"][s0_cols].to_numpy(dtype=np.float32)
+        if "S1" in schema_dfs:
+            f1_prefix = schema_dfs["S1"][s0_cols].to_numpy(dtype=np.float32)
+            if not np.array_equal(f0, f1_prefix):
+                raise ValueError("Schema S1 float32 prefix does not match S0")
+        if "S2" in schema_dfs:
+            f2_prefix13 = schema_dfs["S2"][s0_cols].to_numpy(dtype=np.float32)
+            if not np.array_equal(f0, f2_prefix13):
+                raise ValueError("Schema S2 float32 13-feature prefix does not match S0")
+
+    if "S1" in schema_dfs and "S2" in schema_dfs:
+        s1_cols = list(SCHEMA_CONTRACTS["kcp-mobility-27-v1"].COLUMN_NAMES)
+        f1 = schema_dfs["S1"][s1_cols].to_numpy(dtype=np.float32)
+        f2_prefix27 = schema_dfs["S2"][s1_cols].to_numpy(dtype=np.float32)
+        if not np.array_equal(f1, f2_prefix27):
+            raise ValueError("Schema S2 float32 27-feature prefix does not match S1")
+
+
+_validate_schema_row_alignment = _validate_cross_schema_integrity
+
+
+def _load_extraction_cost(path: Path | None, protocol: dict) -> dict[str, Any] | None:
+    if path is None or not path.exists():
+        return None
+    raw = json.loads(path.read_bytes())
+    if raw.get("schema") != "playground-extraction-benchmark-v1":
+        raise ValueError(f"Invalid extraction benchmark schema: {raw.get('schema')}")
+    if raw.get("engine_version") != protocol["engine_version"]:
+        eng = raw.get("engine_version")
+        expected_eng = protocol["engine_version"]
+        raise ValueError(f"Extraction benchmark engine {eng} != protocol {expected_eng}")
+    return raw
 
 
 def run_ablation(
     protocol_path: Path | None = None,
     enriched_base_dir: Path | None = None,
+    extraction_cost_path: Path | None = None,
 ) -> dict:
     if protocol_path is None:
         protocol_path = DEFAULT_PROTOCOL_PATH
     if enriched_base_dir is None:
         enriched_base_dir = ROOT / "data/enriched"
+    if extraction_cost_path is None:
+        default_ext = ROOT / "tests/fixtures/benchmark/extraction-cost-0.9.3.json"
+        if default_ext.exists():
+            extraction_cost_path = default_ext
 
     safe_protocol = _safe_protocol_path(protocol_path)
     protocol_bytes = safe_protocol.read_bytes()
@@ -437,72 +570,78 @@ def run_ablation(
     protocol_sha256 = sha256_of_bytes(protocol_bytes)
     print(f"Loaded protocol: {protocol['protocol_version']} (SHA-256: {protocol_sha256[:12]}...)")
 
+    extraction_cost = _load_extraction_cost(extraction_cost_path, protocol)
+
     schema_dfs = {}
+    input_shard_digests = {}
     for schema_key, schema_info in protocol["schemas"].items():
         sid = schema_info["schema_id"]
         shard_dir = enriched_base_dir / sid
         print(f"Loading enriched shards for {schema_key} ({sid}) from {shard_dir}...")
         df = read_enriched_shards(shard_dir, sid, protocol["engine_version"])
         schema_dfs[schema_key] = df
+        shard_files = sorted(shard_dir.glob("*.parquet"))
+        input_shard_digests[schema_key] = {
+            sf.name: sha256_of_bytes(sf.read_bytes()) for sf in shard_files
+        }
 
-    _validate_schema_row_alignment(schema_dfs)
+    _validate_cross_schema_integrity(schema_dfs)
 
     base_df = schema_dfs["S0"]
     train_mask, val_mask, val_df, y_val, groups_val, split_summary = _prepare_dataset_splits(
         base_df, protocol
     )
+    y_train = base_df.loc[train_mask, "result"].to_numpy(dtype=np.float32)
 
     results_by_schema: dict[str, dict] = {}
-    val_preds_by_schema: dict[str, np.ndarray] = {}
+    val_preds_all_by_schema: dict[str, list[np.ndarray]] = {}
 
     for s_key, s_info in protocol["schemas"].items():
-        res, preds = _train_single_schema(
+        res, _p_ens, seed_preds = _train_single_schema(
             s_key,
             s_info["schema_id"],
             schema_dfs[s_key],
             train_mask,
             val_mask,
             val_df,
+            y_train,
             y_val,
             protocol,
         )
         results_by_schema[s_key] = res
-        val_preds_by_schema[s_key] = preds
-
-    s0_ll = results_by_schema["S0"]["mean_scores"]["log_loss"]
-    s0_brier = results_by_schema["S0"]["mean_scores"]["brier"]
-    s0_ece = results_by_schema["S0"]["mean_scores"]["ece"]
-    p_val_s0 = val_preds_by_schema["S0"]
+        val_preds_all_by_schema[s_key] = seed_preds
 
     gate_evaluations = {}
     for s_key in ["S1", "S2"]:
         gate_evaluations[s_key] = _evaluate_gate_for_candidate(
             s_key,
-            results_by_schema[s_key]["mean_scores"],
-            val_preds_by_schema[s_key],
-            p_val_s0,
-            s0_ll,
-            s0_brier,
-            s0_ece,
+            results_by_schema,
+            val_preds_all_by_schema,
             y_val,
             groups_val,
-            results_by_schema,
             protocol,
         )
 
     selected_schema = _select_schema(gate_evaluations, results_by_schema)
     decision_record = {
+        "status": "provisional-development",
         "selected_schema": selected_schema,
         "selected_schema_id": protocol["schemas"][selected_schema]["schema_id"],
         "gate_results": {k: v["cleared"] for k, v in gate_evaluations.items()},
+        "private_qualification_ref": (
+            "Private Decision: Playground Feature Schema Qualification (Issue #17)"
+        ),
     }
 
     return {
         "protocol_version": protocol["protocol_version"],
         "protocol_sha256": protocol_sha256,
         "engine_version": protocol["engine_version"],
+        "status": "provisional-development",
         "split_summary": split_summary,
+        "input_shard_digests": input_shard_digests,
         "schemas": results_by_schema,
         "gate_evaluations": gate_evaluations,
+        "extraction_cost": extraction_cost,
         "decision": decision_record,
     }
