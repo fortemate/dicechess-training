@@ -2,59 +2,34 @@
 
 from __future__ import annotations
 
-import argparse
 import json
-from pathlib import Path
 
 from dicechess_training.ablation.report import render_markdown_report
-from dicechess_training.ablation.runner import run_ablation
+from dicechess_training.ablation.runner import (
+    DEFAULT_PROTOCOL_PATH,
+    ROOT,
+    run_ablation,
+)
 
-ROOT = Path(__file__).resolve().parents[3]
+OUTPUT_JSON_PATH = ROOT / "docs/ablation/ablation-report.json"
+OUTPUT_MD_PATH = ROOT / "docs/ablation/report.md"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run predeclared feature schema ablation.")
-    parser.add_argument(
-        "--protocol",
-        type=Path,
-        default=ROOT / "docs/ablation/protocol-v1.json",
-        help="Path to protocol JSON file.",
-    )
-    parser.add_argument(
-        "--enriched-dir",
-        type=Path,
-        default=ROOT / "data/enriched",
-        help="Base directory containing enriched schema shard directories.",
-    )
-    parser.add_argument(
-        "--output-json",
-        type=Path,
-        default=ROOT / "docs/ablation/ablation-report.json",
-        help="Path to write output JSON report.",
-    )
-    parser.add_argument(
-        "--output-md",
-        type=Path,
-        default=ROOT / "docs/ablation/report.md",
-        help="Path to write output Markdown report.",
-    )
-
-    args = parser.parse_args()
-
-    report = run_ablation(args.protocol, args.enriched_dir)
+    report = run_ablation(protocol_path=DEFAULT_PROTOCOL_PATH)
 
     # Save JSON report
-    args.output_json.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output_json, "w") as f:
+    OUTPUT_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
-    print(f"\nWrote JSON report to: {args.output_json}")
+    print(f"\nWrote JSON report to: {OUTPUT_JSON_PATH}")
 
     # Generate and save Markdown report
     md_content = render_markdown_report(report)
-    args.output_md.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.output_md, "w") as f:
+    OUTPUT_MD_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(OUTPUT_MD_PATH, "w", encoding="utf-8") as f:
         f.write(md_content)
-    print(f"Wrote Markdown report to: {args.output_md}")
+    print(f"Wrote Markdown report to: {OUTPUT_MD_PATH}")
 
     # Print summary
     dec_schema = report["decision"]["selected_schema"]

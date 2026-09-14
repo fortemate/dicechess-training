@@ -5,22 +5,20 @@ from __future__ import annotations
 from typing import Any
 
 
-def render_markdown_report(report: dict[str, Any]) -> str:
-    schemas = report["schemas"]
-    gates = report["gate_evaluations"]
-    decision = report["decision"]
-    split = report["split_summary"]
-
-    lines = []
-    lines.append("# Feature Schema Ablation Report (Issue #17)")
-    lines.append("")
-    lines.append(
-        "Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`),"
-    )
-    lines.append("and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.")
-    lines.append("")
-    lines.append("## 1. Executive Summary & Decision")
-    lines.append("")
+def _render_header(
+    report: dict[str, Any],
+    split: dict[str, Any],
+    decision: dict[str, Any],
+) -> list[str]:
+    lines = [
+        "# Feature Schema Ablation Report (Issue #17)",
+        "",
+        "Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), "
+        "and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.",
+        "",
+        "## 1. Executive Summary & Decision",
+        "",
+    ]
     sel_id = decision["selected_schema_id"]
     sel_name = decision["selected_schema"]
     lines.append(f"- **Selected Feature Schema**: **`{sel_id}`** ({sel_name})")
@@ -59,16 +57,17 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"> An issue will be opened on `dicechess-evaluation` to add evaluation engine "
             f"support for `{sel_id}`."
         )
-    lines.append("")
+    return lines
 
-    lines.append("## 2. Key Metrics & Gate Evaluation")
-    lines.append("")
-    lines.append(
+
+def _render_key_metrics(schemas: dict[str, Any], gates: dict[str, Any]) -> list[str]:
+    lines = [
+        "## 2. Key Metrics & Gate Evaluation",
+        "",
         "| Schema | Features | Log Loss | 95% CI vs S0 (Δ) | Brier | ECE | Rel. LL Gain | "
-        "Gate Status |"
-    )
-    lines.append("|---|---|---|---|---|---|---|---|")
-
+        "Gate Status |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
     s0_ll = schemas["S0"]["mean_scores"]["log_loss"]
     s0_brier = schemas["S0"]["mean_scores"]["brier"]
     s0_ece = schemas["S0"]["mean_scores"]["ece"]
@@ -90,35 +89,39 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"{sc['log_loss']:.4f} | {ci_str} | {sc['brier']:.4f} | {sc['ece']:.4f} | "
             f"{rel_gain:+.2f}% | {status} |"
         )
-    lines.append("")
+    return lines
 
-    lines.append("### Gate Checklist")
-    lines.append("")
-    lines.append(
-        "| Gate Rule | S1 (`kcp-mobility-27-v1`) | S2 (`kcp-mobility-pawns-31-v1`) | Requirement |"
-    )
-    lines.append("|---|---|---|---|")
-    for rule_name, req in [
+
+def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
+    lines = [
+        "### Gate Checklist",
+        "",
+        "| Gate Rule | S1 (`kcp-mobility-27-v1`) | S2 (`kcp-mobility-pawns-31-v1`) | Requirement |",
+        "|---|---|---|---|",
+    ]
+    gate_rules = [
         ("relative_log_loss_gain_gte_1pct", ">= +1.0% relative gain"),
         ("paired_ci_upper_lt_0", "Paired 95% CI upper bound < 0 (p < 0.05)"),
         ("brier_no_regression", "Brier regression <= 0.0000"),
         ("ece_regression_lte_0_01", "ECE regression <= 0.0100"),
         ("slice_log_loss_lte_0_01", "Max slice log loss regression <= 0.0100"),
         ("slice_brier_lte_0_01", "Max slice Brier regression <= 0.0100"),
-    ]:
+    ]
+    for rule_name, req in gate_rules:
         s1_ok = "PASS" if gates["S1"]["checks"][rule_name] else "FAIL"
         s2_ok = "PASS" if gates["S2"]["checks"][rule_name] else "FAIL"
         lines.append(f"| `{rule_name}` | **{s1_ok}** | **{s2_ok}** | {req} |")
-    lines.append("")
+    return lines
 
-    lines.append("## 3. Predeclared Slices Performance")
-    lines.append("")
-    lines.append(
+
+def _render_slices_table(schemas: dict[str, Any]) -> list[str]:
+    lines = [
+        "## 3. Predeclared Slices Performance",
+        "",
         "| Slice | S0 Log Loss | S1 Log Loss (Δ) | S2 Log Loss (Δ) | S0 Brier | S1 Brier (Δ) | "
-        "S2 Brier (Δ) |"
-    )
-    lines.append("|---|---|---|---|---|---|---|")
-
+        "S2 Brier (Δ) |",
+        "|---|---|---|---|---|---|---|",
+    ]
     s0_slices = schemas["S0"]["mean_slices"]
     s1_slices = schemas["S1"]["mean_slices"]
     s2_slices = schemas["S2"]["mean_slices"]
@@ -141,15 +144,17 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"{s2_s_ll:.4f} ({d2_ll:+.4f}) | {s0_s_br:.4f} | {s1_s_br:.4f} ({d1_br:+.4f}) | "
             f"{s2_s_br:.4f} ({d2_br:+.4f}) |"
         )
-    lines.append("")
+    return lines
 
-    lines.append("## 4. Calibration Analysis")
-    lines.append("")
-    lines.append(
+
+def _render_calibration_table(schemas: dict[str, Any]) -> list[str]:
+    lines = [
+        "## 4. Calibration Analysis",
+        "",
         "| Bin Range | S0 Count | S0 Pred / Obs | S1 Count | S1 Pred / Obs | "
-        "S2 Count | S2 Pred / Obs |"
-    )
-    lines.append("|---|---|---|---|---|---|---|")
+        "S2 Count | S2 Pred / Obs |",
+        "|---|---|---|---|---|---|---|",
+    ]
     s0_cal = schemas["S0"]["mean_scores"]["calibration"]
     s1_cal = schemas["S1"]["mean_scores"]["calibration"]
     s2_cal = schemas["S2"]["mean_scores"]["calibration"]
@@ -162,12 +167,16 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"| [{b0['lower']:.1f}, {b0['upper']:.1f}) | {b0['count']:,} | {po_0} | "
             f"{b1['count']:,} | {po_1} | {b2['count']:,} | {po_2} |"
         )
-    lines.append("")
+    return lines
 
-    lines.append("## 5. Probe Suite Behavior")
-    lines.append("")
-    lines.append("| Check | S0 | S1 | S2 |")
-    lines.append("|---|---|---|---|")
+
+def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
+    lines = [
+        "## 5. Probe Suite Behavior",
+        "",
+        "| Check | S0 | S1 | S2 |",
+        "|---|---|---|---|",
+    ]
     s0_pr = schemas["S0"]["probe_suite_mean"]["checks"]
     s1_pr = schemas["S1"]["probe_suite_mean"]["checks"]
     s2_pr = schemas["S2"]["probe_suite_mean"]["checks"]
@@ -177,38 +186,36 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         c1 = "PASS" if s1_pr.get(chk, False) else "FAIL"
         c2 = "PASS" if s2_pr.get(chk, False) else "FAIL"
         lines.append(f"| `{chk}` | {c0} | {c1} | {c2} |")
-    lines.append("")
+    return lines
 
-    lines.append("## 6. Feature Extraction Cost Analysis")
-    lines.append("")
-    lines.append(
+
+def _render_extraction_cost() -> list[str]:
+    return [
+        "## 6. Feature Extraction Cost Analysis",
+        "",
         "Feature extraction was benchmarked in the Scala JVM engine "
-        "(`tools/kcp13-golden` on engine 0.9.3, 50 samples per probe):"
-    )
-    lines.append("")
-    lines.append(
+        "(`tools/kcp13-golden` on engine 0.9.3, 50 samples per probe):",
+        "",
         "| Probe Position | S0 Latency (median) | S1 Latency (median) | "
-        "S2 Latency (median) | S2 Overhead |"
-    )
-    lines.append("|---|---|---|---|---|")
-    lines.append("| `start-w` (Opening) | 3,126 μs | 3,142 μs | 3,178 μs | +1.7% |")
-    lines.append("| `bare-kings` (Endgame) | 188 μs | 191 μs | 192 μs | +2.1% |")
-    lines.append("| `blocked-pawns-w` | 62 μs | 63 μs | 63 μs | +1.6% |")
-    lines.append("| `passed-pawn-w` | 88 μs | 89 μs | 90 μs | +2.2% |")
-    lines.append("")
-    lines.append("> [!NOTE]")
-    lines.append(
+        "S2 Latency (median) | S2 Overhead |",
+        "|---|---|---|---|---|",
+        "| `start-w` (Opening) | 3,126 μs | 3,142 μs | 3,178 μs | +1.7% |",
+        "| `bare-kings` (Endgame) | 188 μs | 191 μs | 192 μs | +2.1% |",
+        "| `blocked-pawns-w` | 62 μs | 63 μs | 63 μs | +1.6% |",
+        "| `passed-pawn-w` | 88 μs | 89 μs | 90 μs | +2.2% |",
+        "",
+        "> [!NOTE]",
         "> Over 98% of extraction time across all positions is consumed by the "
-        "216-outcome KCP probability search."
-    )
-    lines.append(
+        "216-outcome KCP probability search.",
         "> Pseudo-legal mobility generation (S1) and passed-pawn bitboard masks (S2) "
-        "add less than 2% latency overhead."
-    )
-    lines.append("")
+        "add less than 2% latency overhead.",
+    ]
 
-    lines.append("## 7. Next Actions")
-    lines.append("")
+
+def _render_next_actions(decision: dict[str, Any]) -> list[str]:
+    lines = ["## 7. Next Actions", ""]
+    sel_name = decision["selected_schema"]
+    sel_id = decision["selected_schema_id"]
     if sel_name == "S0":
         lines.append(
             "1. **ADR 0001 Confirmation**: Record that ablation did not justify "
@@ -230,6 +237,28 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         lines.append(
             f"3. **Model Training**: Proceed with `{sel_id}` value model training under #13."
         )
-    lines.append("")
+    return lines
 
-    return "\n".join(lines)
+
+def render_markdown_report(report: dict[str, Any]) -> str:
+    schemas = report["schemas"]
+    gates = report["gate_evaluations"]
+    decision = report["decision"]
+    split = report["split_summary"]
+
+    sections = [
+        _render_header(report, split, decision),
+        _render_key_metrics(schemas, gates),
+        _render_gate_checklist(gates),
+        _render_slices_table(schemas),
+        _render_calibration_table(schemas),
+        _render_probe_suite_table(schemas),
+        _render_extraction_cost(),
+        _render_next_actions(decision),
+    ]
+    all_lines: list[str] = []
+    for sec in sections:
+        all_lines.extend(sec)
+        all_lines.append("")
+
+    return "\n".join(all_lines).rstrip() + "\n"

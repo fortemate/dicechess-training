@@ -86,7 +86,8 @@ def test_train_model_and_predict():
 
     preds = predict(model, x_train[:5])
     assert len(preds) == 5
-    assert (preds >= 0.0).all() and (preds <= 1.0).all()
+    assert (preds >= 0.0).all()
+    assert (preds <= 1.0).all()
 
 
 def test_render_markdown_report_mock():
