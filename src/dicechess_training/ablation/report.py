@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+NOTE_ALERT = "> [!NOTE]"
+
 
 def _render_header(
     report: dict[str, Any],
@@ -16,7 +18,7 @@ def _render_header(
         "Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), "
         "and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v1.json`.",
         "",
-        "> [!NOTE]",
+        NOTE_ALERT,
         "> **Provisional Development Report**: Evaluated on public sample "
         "`sample/playsite-bots-v0` (development-only; ineligible for benchmark "
         "qualification without separately reviewed data-use evidence).",
@@ -66,7 +68,7 @@ def _render_header(
     lines.append("")
 
     if sel_name == "S0":
-        lines.append("> [!NOTE]")
+        lines.append(NOTE_ALERT)
         lines.append(
             "> **Development Verdict**: Neither S1 nor S2 met the strict improvement threshold "
             "or passed all regression guards."
@@ -78,13 +80,13 @@ def _render_header(
         lines.append("> [!IMPORTANT]")
         lines.append(
             f"> **Development Verdict**: Schema **{sel_name} (`{sel_id}`) cleared all gate rules** "
-            "on development data."
+            "and qualified as the new feature schema."
         )
     return lines
 
 
 def _render_input_shards(report: dict[str, Any]) -> list[str]:
-    shards = report.get("input_shard_digests")
+    shards = report.get("input_shard_digests", {})
     if not shards:
         return []
     lines = [
@@ -139,7 +141,7 @@ def _render_diagnostic_ensemble(schemas: dict[str, Any]) -> list[str]:
     lines = [
         "### 2b. Secondary Diagnostic: 5-Model Ensemble",
         "",
-        "> [!NOTE]",
+        NOTE_ALERT,
         "> Ensemble predictions (average probability across 5 seeds). "
         "Reported for variance-reduction diagnostics; not the single-model deployable contract.",
         "",
@@ -164,7 +166,7 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
         "| Gate Rule | S1 (`kcp-mobility-27-v1`) | S2 (`kcp-mobility-pawns-31-v1`) | Requirement |",
         "|---|---|---|---|",
     ]
-    gate_rules = [
+    rules = [
         ("relative_log_loss_gain_gte_1pct", ">= +1.0% relative gain"),
         ("paired_ci_upper_lt_0", "Paired 95% CI upper bound < 0 across seeds (p < 0.05)"),
         ("brier_no_regression", "Brier regression <= 0.0000"),
@@ -172,9 +174,9 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
         ("slice_log_loss_lte_0_01", "Max slice log loss regression <= 0.0100"),
         ("slice_brier_lte_0_01", "Max slice Brier regression <= 0.0100"),
     ]
-    for rule_name, req in gate_rules:
-        s1_ok = "PASS" if gates["S1"]["checks"][rule_name] else "FAIL"
-        s2_ok = "PASS" if gates["S2"]["checks"][rule_name] else "FAIL"
+    for rule_name, req in rules:
+        s1_ok = "PASS" if gates["S1"]["checks"].get(rule_name, False) else "FAIL"
+        s2_ok = "PASS" if gates["S2"]["checks"].get(rule_name, False) else "FAIL"
         lines.append(f"| `{rule_name}` | **{s1_ok}** | **{s2_ok}** | {req} |")
     return lines
 
@@ -257,7 +259,7 @@ def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
 def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]:
     lines = ["## 6. Feature Extraction Cost Analysis", ""]
     if extraction_cost is None:
-        lines.append("> [!NOTE]")
+        lines.append(NOTE_ALERT)
         lines.append("> **Status**: Not measured (no verified JVM benchmark artifact provided).")
         lines.append(
             '> Run `sbt "runMain dicechess.training.golden.ExtractionBenchmarkApp '
@@ -300,7 +302,7 @@ def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]
             )
 
     lines.append("")
-    lines.append("> [!NOTE]")
+    lines.append(NOTE_ALERT)
     lines.append(
         "> Over 98% of extraction time across all positions is consumed by the "
         "216-outcome KCP probability search."
@@ -312,7 +314,7 @@ def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]
     return lines
 
 
-def _render_next_actions(decision: dict[str, Any]) -> list[str]:
+def _render_next_actions() -> list[str]:
     lines = ["## 7. Next Actions", ""]
     lines.append(
         "1. **Private Qualification**: Issue #17 remains open pending owner execution "
@@ -343,7 +345,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         _render_calibration_table(schemas),
         _render_probe_suite_table(schemas),
         _render_extraction_cost(ext_cost),
-        _render_next_actions(decision),
+        _render_next_actions(),
     ]
     all_lines: list[str] = []
     for sec in sections:

@@ -245,7 +245,7 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
     split_tags[val_mask] = "validation"
     split_tags[test_mask] = "test"
 
-    decisive_indices = np.where(decisive_mask)[0]
+    decisive_indices = np.nonzero(decisive_mask)[0]
     rows_for_leakage = [{"fen": base_df.at[idx, "fen"]} for idx in decisive_indices]
     splits_for_leakage = split_tags[decisive_indices].tolist()
     leakage_audit = leakage(rows_for_leakage, splits_for_leakage)
@@ -484,15 +484,10 @@ def _select_schema(gate_evaluations: dict[str, Any], results_by_schema: dict[str
     return "S0"
 
 
-def _validate_cross_schema_integrity(schema_dfs: dict[str, pd.DataFrame]) -> None:
-    """Ensure all schema DataFrames have unique keys, identical source rows, and prefix identity."""
-    if not schema_dfs:
-        raise ValueError("No schema DataFrames provided")
-    base_key = "S0" if "S0" in schema_dfs else next(iter(schema_dfs))
-    base_df = schema_dfs[base_key]
-    base_len = len(base_df)
-
-    # 1. Unique row keys (game_id, ply) and length match
+def _validate_schema_keys(
+    schema_dfs: dict[str, pd.DataFrame], base_key: str, base_len: int
+) -> None:
+    """Check that row counts match and (game_id, ply) keys are unique."""
     for key, df in schema_dfs.items():
         if len(df) != base_len:
             raise ValueError(
@@ -502,7 +497,11 @@ def _validate_cross_schema_integrity(schema_dfs: dict[str, pd.DataFrame]) -> Non
         if len(keys) != len(set(keys)):
             raise ValueError(f"Schema {key} contains duplicate (game_id, ply) row keys")
 
-    # 2. Identical source fields across all schemas
+
+def _validate_schema_source_columns(
+    schema_dfs: dict[str, pd.DataFrame], base_key: str, base_df: pd.DataFrame
+) -> None:
+    """Check that all candidate schemas contain identical source column values."""
     source_fields = ["game_id", "ply", "fen", "side", "dice", "result"]
     for key, df in schema_dfs.items():
         if key == base_key:
@@ -513,7 +512,9 @@ def _validate_cross_schema_integrity(schema_dfs: dict[str, pd.DataFrame]) -> Non
             if not (df[col].to_numpy() == base_df[col].to_numpy()).all():
                 raise ValueError(f"Schema {key} source column {col!r} does not match {base_key}")
 
-    # 3. Float32 feature prefix byte-equivalence: S0 in S1, S0 in S2, S1 in S2
+
+def _validate_schema_feature_prefixes(schema_dfs: dict[str, pd.DataFrame]) -> None:
+    """Check that float32 feature vectors satisfy prefix identity (S0 in S1, S0/S1 in S2)."""
     if "S0" in schema_dfs:
         s0_cols = list(SCHEMA_CONTRACTS["kcp-13"].COLUMN_NAMES)
         f0 = schema_dfs["S0"][s0_cols].to_numpy(dtype=np.float32)
@@ -532,6 +533,19 @@ def _validate_cross_schema_integrity(schema_dfs: dict[str, pd.DataFrame]) -> Non
         f2_prefix27 = schema_dfs["S2"][s1_cols].to_numpy(dtype=np.float32)
         if not np.array_equal(f1, f2_prefix27):
             raise ValueError("Schema S2 float32 27-feature prefix does not match S1")
+
+
+def _validate_cross_schema_integrity(schema_dfs: dict[str, pd.DataFrame]) -> None:
+    """Ensure all schema DataFrames have unique keys, identical source rows, and prefix identity."""
+    if not schema_dfs:
+        raise ValueError("No schema DataFrames provided")
+    base_key = "S0" if "S0" in schema_dfs else next(iter(schema_dfs))
+    base_df = schema_dfs[base_key]
+    base_len = len(base_df)
+
+    _validate_schema_keys(schema_dfs, base_key, base_len)
+    _validate_schema_source_columns(schema_dfs, base_key, base_df)
+    _validate_schema_feature_prefixes(schema_dfs)
 
 
 _validate_schema_row_alignment = _validate_cross_schema_integrity

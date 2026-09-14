@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 from pathlib import Path
 
 from dicechess_training.ablation.report import render_markdown_report
@@ -16,14 +17,33 @@ from dicechess_training.ablation.runner import (
 DEFAULT_OUTPUT_DIR = ROOT / "out/ablation"
 
 
+def _safe_write_path(path: Path) -> Path:
+    """Validate and resolve target path to prevent path traversal."""
+    resolved = path.resolve()
+    base_repo = ROOT.resolve()
+    base_tmp = Path(tempfile.gettempdir()).resolve()
+    base_cwd = Path.cwd().resolve()
+    if not (
+        resolved.is_relative_to(base_repo)
+        or resolved.is_relative_to(base_tmp)
+        or resolved.is_relative_to(base_cwd)
+    ):
+        raise ValueError(f"Path traversal detected: {resolved} is outside allowed boundaries")
+    return resolved
+
+
 def _write_exclusive(path: Path, content: str, overwrite: bool = False) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists() and not overwrite:
+    safe_path = _safe_write_path(path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
+    mode = "w" if overwrite else "x"
+    try:
+        with safe_path.open(mode, encoding="utf-8") as f:
+            f.write(content)
+    except FileExistsError:
         raise FileExistsError(
-            f"Destination file already exists: {path}. "
+            f"Destination file already exists: {safe_path}. "
             "Use --overwrite to replace existing evidence."
-        )
-    path.write_text(content, encoding="utf-8")
+        ) from None
 
 
 def main(args: list[str] | None = None) -> None:
@@ -75,14 +95,20 @@ def main(args: list[str] | None = None) -> None:
 
     parsed = parser.parse_args(args)
 
+    protocol_path = _safe_write_path(parsed.protocol)
+    data_dir = _safe_write_path(parsed.data_dir)
+    ext_cost_path = _safe_write_path(parsed.extraction_cost) if parsed.extraction_cost else None
+
     report = run_ablation(
-        protocol_path=parsed.protocol,
-        enriched_base_dir=parsed.data_dir,
-        extraction_cost_path=parsed.extraction_cost,
+        protocol_path=protocol_path,
+        enriched_base_dir=data_dir,
+        extraction_cost_path=ext_cost_path,
     )
 
-    out_json = parsed.output_json or (parsed.output_dir / "ablation-report.json")
-    out_md = parsed.output_md or (parsed.output_dir / "report.md")
+    target_json = parsed.output_json or (parsed.output_dir / "ablation-report.json")
+    target_md = parsed.output_md or (parsed.output_dir / "report.md")
+    out_json = _safe_write_path(target_json)
+    out_md = _safe_write_path(target_md)
 
     # Save JSON report exclusively
     _write_exclusive(out_json, json.dumps(report, indent=2), overwrite=parsed.overwrite)

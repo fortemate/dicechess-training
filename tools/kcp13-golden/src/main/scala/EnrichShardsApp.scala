@@ -108,9 +108,7 @@ object EnrichShardsApp:
         count += 1L
       count
 
-  private def enrichShard(
-      shardPath: Path,
-      outFile: Path,
+  final case class EnrichContext(
       schemaId: String,
       engineVersion: String,
       columns: List[String],
@@ -118,6 +116,12 @@ object EnrichShardsApp:
       schema: Schema,
       conf: Configuration,
       chunkSize: Int
+  )
+
+  private def enrichShard(
+      shardPath: Path,
+      outFile: Path,
+      ctx: EnrichContext
   ): Long =
     val tmpFile = outFile.resolveSibling(s".${outFile.getFileName}.tmp")
     Files.deleteIfExists(tmpFile)
@@ -125,16 +129,16 @@ object EnrichShardsApp:
     val tmpHPath = new HPath(tmpFile.toAbsolutePath.toString)
 
     val extraMeta: Map[String, String] = Map(
-      "feature_schema"            -> schemaId,
-      "engine_version"            -> engineVersion,
+      "feature_schema"            -> ctx.schemaId,
+      "engine_version"            -> ctx.engineVersion,
       "dicechess_training_schema" -> "v0-enriched",
-      "columns"                   -> columns.mkString(",")
+      "columns"                   -> ctx.columns.mkString(",")
     )
 
-    val reader = AvroParquetReader.builder[GenericRecord](inHPath).withConf(conf).build()
+    val reader = AvroParquetReader.builder[GenericRecord](inHPath).withConf(ctx.conf).build()
     val writer = AvroParquetWriter.builder[GenericRecord](tmpHPath)
-      .withSchema(schema)
-      .withConf(conf)
+      .withSchema(ctx.schema)
+      .withConf(ctx.conf)
       .withCompressionCodec(CompressionCodecName.SNAPPY)
       .withWriteMode(Mode.OVERWRITE)
       .withExtraMetaData(extraMeta.asJava)
@@ -144,7 +148,7 @@ object EnrichShardsApp:
     var succeeded = false
     try
       var record = reader.read()
-      val chunk = new ArrayList[RawRow](chunkSize)
+      val chunk = new ArrayList[RawRow](ctx.chunkSize)
       while record != null do
         chunk.add(RawRow(
           record.get("game_id").toString,
@@ -154,11 +158,11 @@ object EnrichShardsApp:
           record.get("side").toString,
           record.get("result").asInstanceOf[java.lang.Float].floatValue()
         ))
-        if chunk.size() >= chunkSize then
-          shardRows += writeBatch(chunk, extractor, columns, schema, writer)
+        if chunk.size() >= ctx.chunkSize then
+          shardRows += writeBatch(chunk, ctx.extractor, ctx.columns, ctx.schema, writer)
         record = reader.read()
 
-      shardRows += writeBatch(chunk, extractor, columns, schema, writer)
+      shardRows += writeBatch(chunk, ctx.extractor, ctx.columns, ctx.schema, writer)
       succeeded = true
     finally
       reader.close()
@@ -197,11 +201,12 @@ object EnrichShardsApp:
 
     val startTime = System.currentTimeMillis()
     val chunkSize = 2048
+    val ctx = EnrichContext(schemaId, engineVersion, columns, extractor, schema, conf, chunkSize)
 
     var totalRows = 0L
     shardPaths.foreach { shardPath =>
       val outFile = outputDir.resolve(shardPath.getFileName)
-      totalRows += enrichShard(shardPath, outFile, schemaId, engineVersion, columns, extractor, schema, conf, chunkSize)
+      totalRows += enrichShard(shardPath, outFile, ctx)
     }
 
     val elapsed = (System.currentTimeMillis() - startTime) / 1000.0
