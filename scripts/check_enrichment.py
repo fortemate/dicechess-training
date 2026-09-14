@@ -55,7 +55,7 @@ def main() -> None:
         raw.mkdir()
         write_shard(rows, str(raw / "synthetic.parquet"))
         commands = [f'runMain {MAIN} "{raw}" "{base / sid}" {sid}' for sid in SCHEMA_CONTRACTS]
-        run_producer(commands)
+        run_producer(["test", *commands])
         for sid, contract in SCHEMA_CONTRACTS.items():
             actual = read_enriched_shards(base / sid, sid, ENGINE).set_index("game_id")
             golden = contract.load_golden(contract.golden_path(ENGINE))

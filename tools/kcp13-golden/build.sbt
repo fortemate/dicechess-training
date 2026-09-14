@@ -12,7 +12,8 @@ lazy val root = (project in file("."))
       "com.fortemate"     %% "dicechess-engine" % engineVersion,
       "org.apache.parquet" % "parquet-avro"     % "1.14.4",
       "org.apache.hadoop"  % "hadoop-client"    % "3.4.1",
-      "org.slf4j"          % "slf4j-nop"        % "2.0.16"
+      "org.slf4j"          % "slf4j-nop"        % "2.0.16",
+      "org.scalameta"     %% "munit"            % "1.3.0" % Test
     ),
     fork                := true,
     javaOptions         += s"-Dengine.version=$engineVersion"
