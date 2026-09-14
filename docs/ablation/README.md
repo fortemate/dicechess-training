@@ -126,3 +126,16 @@ Output paths retain their separate location checks and exclusive creation policy
 Generated reports identify their actual inputs through shard digests rather than
 assuming that every run uses the public sample. Every selection, including S1/S2
 success, remains provisional until separate owner qualification.
+
+### Parallel shard enrichment
+
+The JVM producer evaluates each bounded chunk using an ordered parallel-stream
+collection before writing records sequentially. Calling `iterator()` directly
+on the mapped parallel stream would instead evaluate the mapping sequentially.
+Only one chunk of feature vectors is materialized at a time, and source row order
+and atomic shard publication are preserved. Extraction failures still reject the shard.
+
+`mise run check:enrichment` runs the JVM concurrency/order regression tests before
+the JVM-to-Python golden and rejection checks. The concurrency test uses its own
+bounded pool and requires overlapping extractor calls; it does not rely on a
+wall-clock speed threshold or the host's default processor count.

@@ -70,6 +70,25 @@ object EnrichShardsApp:
       case other =>
         sys.error(s"unsupported schema '$other' (expected 'kcp-13', 'kcp-mobility-27-v1', or 'kcp-mobility-pawns-31-v1')")
 
+  // Materialize only the bounded chunk: iterator traversal would run map sequentially.
+  // Ordered collection finishes parallel extraction before the single writer consumes rows.
+  private[golden] def enrichRows(
+      rows: ArrayList[RawRow],
+      extractor: (dicechess.engine.domain.GameState, Color) => Array[Float]
+  ): java.util.List[EnrichedRow] =
+    rows.parallelStream().map { raw =>
+      val state = FenParser.parse(padFen(raw.fen)).fold(
+        err => sys.error(s"FEN error in game ${raw.gameId} ply ${raw.ply}: $err"),
+        identity
+      )
+      val color = raw.side match
+        case "w" => Color.White
+        case "b" => Color.Black
+        case other => sys.error(s"Invalid side '$other' in game ${raw.gameId} ply ${raw.ply}")
+      require(state.activeColor == color, s"side/FEN mismatch in game ${raw.gameId} ply ${raw.ply}")
+      EnrichedRow(raw, extractor(state, color))
+    }.toList()
+
   private def writeBatch(
       chunk: ArrayList[RawRow],
       extractor: (dicechess.engine.domain.GameState, Color) => Array[Float],
@@ -81,18 +100,7 @@ object EnrichShardsApp:
     else
       val rawList = new ArrayList(chunk)
       chunk.clear()
-      val enriched = rawList.parallelStream().map { raw =>
-        val state = FenParser.parse(padFen(raw.fen)).fold(
-          err => sys.error(s"FEN error in game ${raw.gameId} ply ${raw.ply}: $err"),
-          identity
-        )
-        val color = raw.side match
-          case "w" => Color.White
-          case "b" => Color.Black
-          case other => sys.error(s"Invalid side '$other' in game ${raw.gameId} ply ${raw.ply}")
-        require(state.activeColor == color, s"side/FEN mismatch in game ${raw.gameId} ply ${raw.ply}")
-        EnrichedRow(raw, extractor(state, color))
-      }.iterator()
+      val enriched = enrichRows(rawList, extractor).iterator()
 
       var count = 0L
       while enriched.hasNext do
