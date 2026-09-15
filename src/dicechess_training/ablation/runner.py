@@ -1,7 +1,7 @@
 """Offline feature schema ablation runner (Issue #17).
 
 Evaluates S0 (kcp-13), S1 (kcp-mobility-27-v1), and S2 (kcp-mobility-pawns-31-v1)
-under amended protocol v2 in docs/ablation/protocol-v2.json.
+under protocol v3, with historical v1/v2 training behavior preserved.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from dicechess_training.contracts import (
 from dicechess_training.schema import read_enriched_shards
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PROTOCOL_PATH = ROOT / "docs/ablation/protocol-v2.json"
+DEFAULT_PROTOCOL_PATH = ROOT / "docs/ablation/protocol-v3.json"
 
 
 def sha256_of_bytes(data: bytes) -> str:
@@ -63,6 +63,10 @@ class ValueMLP(nn.Module):
         layers.append(nn.Sigmoid())
         self.net = nn.Sequential(*layers)
 
+    def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
+        """Unbounded training scores; keep the probability-facing checkpoint layout."""
+        return self.net[:-1](x)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
 
@@ -74,6 +78,11 @@ def train_model(
     config: dict,
     seed: int,
 ) -> ValueMLP:
+    loss_name = config.get("loss", "bce")
+    if loss_name not in ("bce", "bce-with-logits"):
+        raise ValueError(f"unsupported training loss: {loss_name!r}")
+    use_logits = loss_name == "bce-with-logits"
+
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -93,7 +102,7 @@ def train_model(
         lr=config["learning_rate"],
         weight_decay=0.0,
     )
-    criterion = nn.BCELoss()
+    criterion = nn.BCEWithLogitsLoss() if use_logits else nn.BCELoss()
 
     raw_epochs = config.get("epochs", 5)
     epochs = int(raw_epochs) if isinstance(raw_epochs, (int, str)) else 5
@@ -104,7 +113,7 @@ def train_model(
     for _ in range(epochs):
         for batch_x, batch_y in loader:
             optimizer.zero_grad()
-            pred = model(batch_x)
+            pred = model.forward_logits(batch_x) if use_logits else model(batch_x)
             loss = criterion(pred, batch_y)
             loss.backward()
             optimizer.step()
