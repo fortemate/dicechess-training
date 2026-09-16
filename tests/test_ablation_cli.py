@@ -94,3 +94,47 @@ def test_every_selected_schema_remains_provisional(key, sid):
     assert "qualified as the new feature schema" not in text
     assert "sample/playsite-bots-v0" not in text
     assert "synthetic-protocol" in text
+
+
+def test_cli_fails_closed_when_nothing_is_admissible(tmp_path, monkeypatch, capsys):
+    """An inadmissible run still writes its evidence, then exits non-zero (#27)."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    protocol = workspace / "protocol.json"
+    protocol.write_text("{}")
+    cost = workspace / "cost.json"
+    cost.write_text("{}")
+    monkeypatch.setattr(cli, "ROOT", workspace)
+    monkeypatch.chdir(workspace)
+    monkeypatch.setattr(
+        cli,
+        "run_ablation",
+        lambda **_: {
+            "status": "inadmissible-no-selection",
+            "decision": {
+                "selected_schema": None,
+                "selected_schema_id": None,
+                "gate_results": {"S1": False, "S2": False},
+                "inadmissible_reason": "every schema scored worse than the reference",
+            },
+        },
+    )
+    monkeypatch.setattr(cli, "render_markdown_report", lambda report: report["status"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        cli.main(
+            [
+                "--protocol",
+                str(protocol),
+                "--data-dir",
+                str(workspace),
+                "--extraction-cost",
+                str(cost),
+                "--output-dir",
+                str(workspace / "out/ablation"),
+            ]
+        )
+
+    assert exit_info.value.code == 1
+    assert "every schema scored worse than the reference" in capsys.readouterr().out
+    assert (workspace / "out/ablation/report.md").read_text() == "inadmissible-no-selection"

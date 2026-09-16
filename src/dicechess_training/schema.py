@@ -16,6 +16,7 @@ against the real analytics export before the public sample lands (issue #4).
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -113,6 +114,17 @@ def read_shard(path: str) -> pd.DataFrame:
     return df
 
 
+# The metadata a shard's identity rests on: schema, engine build and the semantics of its rows.
+SEMANTIC_METADATA_KEYS = (
+    "dicechess_training_schema",
+    "feature_schema",
+    "engine_version",
+    "ruleset",
+    "perspective",
+    "columns",
+)
+
+
 def _validate_shard_metadata(
     path: str | Path,
     metadata: dict,
@@ -171,6 +183,37 @@ def _validate_feature_columns(
         vals = df[col_name].to_numpy(dtype=np.float32)
         if not np.isfinite(vals).all():
             raise ValueError(f"{path}: column {col_name!r} contains null or non-finite values")
+
+
+def shard_content_digest(path: str | Path) -> str:
+    """SHA-256 over a shard's canonicalised contents, stable across producer runs.
+
+    The file digest of an enriched shard identifies one artifact but cannot verify a re-run: the
+    Parquet writer records the per-column encoding set in its footer in an order that varies
+    between JVM sessions, so two byte-different files can hold identical data (#27). This digest
+    covers the semantic metadata and the column values in a fixed order instead, which is what a
+    reproduction gate needs to compare.
+    """
+    table = pq.read_table(str(path))
+    metadata = table.schema.metadata or {}
+    hasher = hashlib.sha256()
+    for key in sorted(SEMANTIC_METADATA_KEYS):
+        value = metadata.get(key.encode())
+        hasher.update(key.encode())
+        hasher.update(b"\x00" if value is None else value)
+        hasher.update(b"\x1e")
+    order = pa.compute.sort_indices(
+        table, sort_keys=[("game_id", "ascending"), ("ply", "ascending")]
+    )
+    canonical = table.take(order)
+    for name in sorted(canonical.schema.names):
+        hasher.update(name.encode())
+        hasher.update(b"\x1f")
+        column = canonical.column(name).combine_chunks()
+        for buffer in column.buffers():
+            hasher.update(b"\x00" if buffer is None else buffer)
+        hasher.update(b"\x1e")
+    return hasher.hexdigest()
 
 
 def read_enriched_shard(

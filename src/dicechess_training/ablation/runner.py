@@ -26,10 +26,10 @@ from dicechess_training.contracts import (
     SCHEMA_CONTRACTS,
     kcp13,
 )
-from dicechess_training.schema import read_enriched_shards
+from dicechess_training.schema import read_enriched_shards, shard_content_digest
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_PROTOCOL_PATH = ROOT / "docs/ablation/protocol-v3.json"
+DEFAULT_PROTOCOL_PATH = ROOT / "docs/ablation/protocol-v4.json"
 
 
 def sha256_of_bytes(data: bytes) -> str:
@@ -47,9 +47,24 @@ def _safe_protocol_path(p: Path) -> Path:
 
 
 class ValueMLP(nn.Module):
-    """Candidate evaluation model: identical MLP capacity across all schemas."""
+    """Candidate evaluation model: identical MLP capacity across all schemas.
 
-    def __init__(self, input_dim: int, hidden_dims: list[int] | None = None):
+    The model consumes **raw** schema features. When the protocol asks for
+    standardisation the training statistics are carried inside the model as persistent
+    buffers and applied as a constant affine transform before the first layer, so the
+    scaler travels with the checkpoint and with the exported graph and the serving
+    contract of ADR 0001 keeps taking raw features (#27). Without those statistics no
+    buffer is registered at all, which keeps the checkpoint layout of protocols v1-v3
+    byte-identical.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dims: list[int] | None = None,
+        feature_mean: np.ndarray | None = None,
+        feature_scale: np.ndarray | None = None,
+    ):
         super().__init__()
         if hidden_dims is None:
             hidden_dims = [64, 64]
@@ -62,22 +77,79 @@ class ValueMLP(nn.Module):
         layers.append(nn.Linear(prev_dim, 1))
         layers.append(nn.Sigmoid())
         self.net = nn.Sequential(*layers)
+        if (feature_mean is None) != (feature_scale is None):
+            raise ValueError("feature_mean and feature_scale must be given together")
+        self.standardised = feature_mean is not None
+        if self.standardised:
+            mean = np.asarray(feature_mean, dtype=np.float32).reshape(-1)
+            scale = np.asarray(feature_scale, dtype=np.float32).reshape(-1)
+            if mean.shape != (input_dim,) or scale.shape != (input_dim,):
+                raise ValueError(
+                    f"standardisation statistics must have shape ({input_dim},), "
+                    f"got {mean.shape} and {scale.shape}"
+                )
+            if not np.all(np.isfinite(mean)) or not np.all(np.isfinite(scale)):
+                raise ValueError("standardisation statistics must be finite")
+            if np.any(scale <= 0.0):
+                raise ValueError("standardisation scale must be positive")
+            self.register_buffer("feature_mean", torch.tensor(mean))
+            self.register_buffer("feature_scale", torch.tensor(scale))
+
+    def _standardise(self, x: torch.Tensor) -> torch.Tensor:
+        if not self.standardised:
+            return x
+        return (x - self.feature_mean) / self.feature_scale
 
     def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
         """Unbounded training scores; keep the probability-facing checkpoint layout."""
-        return self.net[:-1](x)
+        return self.net[:-1](self._standardise(x))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
+        return self.net(self._standardise(x))
 
 
-def train_model(
+def standardisation_statistics(
+    x_train: np.ndarray, mode: str | None
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Training-partition mean and scale for `mode`, or (None, None) when disabled.
+
+    Constant columns keep a scale of 1.0 so a feature that never varies in the training
+    partition is centred rather than amplified into noise.
+    """
+    if mode in (None, "none"):
+        return None, None
+    if mode != "train-statistics":
+        raise ValueError(f"unsupported feature standardisation: {mode!r}")
+    if x_train.ndim != 2 or len(x_train) == 0:
+        raise ValueError("standardisation needs a non-empty 2-D training matrix")
+    mean = x_train.mean(axis=0, dtype=np.float64)
+    scale = x_train.std(axis=0, dtype=np.float64)
+    scale[~np.isfinite(scale) | (scale <= 0.0)] = 1.0
+    return mean.astype(np.float32), scale.astype(np.float32)
+
+
+def _resolve_epochs(config: dict) -> int:
+    raw_epochs = config.get("epochs", 5)
+    epochs = int(raw_epochs) if isinstance(raw_epochs, (int, str)) else 5
+    if not 1 <= epochs <= 100:
+        raise ValueError(f"epochs must be in [1, 100], got {epochs}")
+    return epochs
+
+
+def _fit_epochs(
     x_train: np.ndarray,
     y_train: np.ndarray,
     input_dim: int,
     config: dict,
     seed: int,
-) -> ValueMLP:
+    epochs: int,
+    checkpoints: frozenset[int] | None = None,
+):
+    """Train for `epochs` and yield `(epoch, model)` after each epoch in `checkpoints`.
+
+    One pass serves both plain training and budget selection, so a candidate budget never
+    costs an independent training run and the sequence of updates is identical either way.
+    """
     loss_name = config.get("loss", "bce")
     if loss_name not in ("bce", "bce-with-logits"):
         raise ValueError(f"unsupported training loss: {loss_name!r}")
@@ -86,7 +158,8 @@ def train_model(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    model = ValueMLP(input_dim, config["hidden_dims"])
+    mean, scale = standardisation_statistics(x_train, config.get("feature_standardisation"))
+    model = ValueMLP(input_dim, config["hidden_dims"], mean, scale)
     dataset = TensorDataset(
         torch.tensor(x_train, dtype=torch.float32),
         torch.tensor(y_train, dtype=torch.float32).unsqueeze(1),
@@ -104,22 +177,74 @@ def train_model(
     )
     criterion = nn.BCEWithLogitsLoss() if use_logits else nn.BCELoss()
 
-    raw_epochs = config.get("epochs", 5)
-    epochs = int(raw_epochs) if isinstance(raw_epochs, (int, str)) else 5
-    if not 1 <= epochs <= 100:
-        raise ValueError(f"epochs must be in [1, 100], got {epochs}")
-
+    wanted = frozenset({epochs}) if checkpoints is None else checkpoints
     model.train()
-    for _ in range(epochs):
+    for epoch in range(1, epochs + 1):
         for batch_x, batch_y in loader:
             optimizer.zero_grad()
             pred = model.forward_logits(batch_x) if use_logits else model(batch_x)
             loss = criterion(pred, batch_y)
             loss.backward()
             optimizer.step()
-
+        if epoch in wanted:
+            model.eval()
+            yield epoch, model
+            model.train()
     model.eval()
-    return model
+
+
+def train_model(
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    input_dim: int,
+    config: dict,
+    seed: int,
+    epochs: int | None = None,
+) -> ValueMLP:
+    budget = _resolve_epochs(config) if epochs is None else epochs
+    if not 1 <= budget <= 100:
+        raise ValueError(f"epochs must be in [1, 100], got {budget}")
+    trained = None
+    for _, model in _fit_epochs(x_train, y_train, input_dim, config, seed, budget):
+        trained = model
+    if trained is None:  # pragma: no cover - budget is validated above
+        raise ValueError("training produced no model")
+    trained.eval()
+    return trained
+
+
+def select_epoch_budget(
+    x_fit: np.ndarray,
+    y_fit: np.ndarray,
+    x_inner: np.ndarray,
+    y_inner: np.ndarray,
+    input_dim: int,
+    config: dict,
+    seed: int,
+) -> dict[str, Any]:
+    """Pick the epoch count by log loss on an inner tuning split carved out of train.
+
+    The outer validation partition is never touched here: it stays a reporting and gating
+    surface, so a schema cannot buy its budget with the numbers it is judged on (#27).
+    """
+    selection = config["epoch_selection"]
+    candidates = sorted({int(c) for c in selection["candidates"]})
+    if not candidates or candidates[0] < 1 or candidates[-1] > 100:
+        raise ValueError(f"epoch_selection.candidates must lie in [1, 100], got {candidates}")
+    if len(x_inner) == 0:
+        raise ValueError("epoch selection needs a non-empty inner tuning split")
+
+    scored = []
+    for epoch, model in _fit_epochs(
+        x_fit, y_fit, input_dim, config, seed, candidates[-1], frozenset(candidates)
+    ):
+        scored.append((epoch, float(losses(y_inner, predict(model, x_inner))[0].mean())))
+    best_epoch, best_loss = min(scored, key=lambda item: (item[1], item[0]))
+    return {
+        "selected_epochs": int(best_epoch),
+        "inner_log_loss": best_loss,
+        "candidates": [{"epochs": e, "inner_log_loss": ll} for e, ll in scored],
+    }
 
 
 def predict(model: ValueMLP, x: np.ndarray) -> np.ndarray:
@@ -241,6 +366,20 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
     val_mask = decisive_mask & (split_col >= train_cutoff) & (split_col < val_cutoff)
     test_mask = decisive_mask & (split_col >= val_cutoff)
 
+    # Inner tuning split for budget selection (#27): the last games of the train partition by
+    # the same deterministic hash. It is carved out of train, never out of validation, so the
+    # reporting and gating surface stays untouched by model selection.
+    selection_cfg = protocol.get("model", {}).get("epoch_selection")
+    inner_cutoff = selection_cfg.get("inner_cutoff") if selection_cfg else None
+    if inner_cutoff is not None:
+        if not 0 < inner_cutoff < train_cutoff:
+            raise ValueError(
+                f"epoch_selection.inner_cutoff must lie in (0, {train_cutoff}), got {inner_cutoff}"
+            )
+        inner_tuning_mask = (split_col[train_mask] >= inner_cutoff).to_numpy()
+    else:
+        inner_tuning_mask = np.zeros(int(train_mask.sum()), dtype=bool)
+
     val_df = base_df[val_mask].reset_index(drop=True)
     y_val = val_df["result"].to_numpy(dtype=float)
     groups_val = val_df["game_id"].to_numpy()
@@ -279,8 +418,21 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
         "test_games": int(len(set(base_df.loc[test_mask, "game_id"]))),
         "leakage": leakage_audit,
         "unseen_val_positions": unseen_val_count,
+        "inner_tuning_positions": int(inner_tuning_mask.sum()),
+        "inner_tuning_games": int(
+            len(set(base_df.loc[train_mask, "game_id"].to_numpy()[inner_tuning_mask]))
+        ),
     }
-    return train_mask, val_mask, val_df, y_val, groups_val, split_summary, unseen_val_mask
+    return (
+        train_mask,
+        val_mask,
+        val_df,
+        y_val,
+        groups_val,
+        split_summary,
+        unseen_val_mask,
+        inner_tuning_mask,
+    )
 
 
 def _train_single_schema(
@@ -294,6 +446,7 @@ def _train_single_schema(
     y_val: np.ndarray,
     unseen_val_mask: np.ndarray,
     protocol: dict,
+    inner_tuning_mask: np.ndarray | None = None,
 ) -> tuple[dict[str, Any], np.ndarray, list[np.ndarray]]:
     contract = SCHEMA_CONTRACTS[sid]
     feature_cols = list(contract.COLUMN_NAMES)
@@ -303,16 +456,34 @@ def _train_single_schema(
     x_train = df_s.loc[train_mask, feature_cols].to_numpy(dtype=np.float32)
     x_val = df_s.loc[val_mask, feature_cols].to_numpy(dtype=np.float32)
 
+    select_budget = bool(model_cfg.get("epoch_selection")) and inner_tuning_mask is not None
+    if select_budget:
+        if inner_tuning_mask.shape != (len(x_train),):
+            raise ValueError("inner tuning mask must align with the training partition")
+        x_fit, y_fit = x_train[~inner_tuning_mask], y_train[~inner_tuning_mask]
+        x_inner, y_inner = x_train[inner_tuning_mask], y_train[inner_tuning_mask]
+
     seed_results = []
     val_preds_all_seeds = []
     probe_preds_all_seeds: list[dict[str, float]] = []
+    budget_records: list[dict[str, Any]] = []
 
     has_unseen = bool(unseen_val_mask.sum() > 0)
     y_val_unseen = y_val[unseen_val_mask] if has_unseen else None
 
     print(f"\nTraining and evaluating {s_key} ({sid}, {len(feature_cols)} features)...")
     for seed in seeds:
-        model = train_model(x_train, y_train, len(feature_cols), model_cfg, seed)
+        if select_budget:
+            # Choose the budget on the inner split, then refit on the whole train partition so
+            # the reported model still sees every training row.
+            chosen = select_epoch_budget(
+                x_fit, y_fit, x_inner, y_inner, len(feature_cols), model_cfg, seed
+            )
+            budget_records.append({"seed": seed, **chosen})
+            epochs = chosen["selected_epochs"]
+        else:
+            epochs = None
+        model = train_model(x_train, y_train, len(feature_cols), model_cfg, seed, epochs)
         p_val = predict(model, x_val)
         val_preds_all_seeds.append(p_val)
 
@@ -398,6 +569,17 @@ def _train_single_schema(
     schema_res = {
         "schema_id": sid,
         "feature_count": len(feature_cols),
+        "training": {
+            "feature_standardisation": model_cfg.get("feature_standardisation") or "none",
+            "epoch_selection": (
+                {
+                    "method": model_cfg["epoch_selection"].get("method", "inner-tuning-split"),
+                    "per_seed": budget_records,
+                }
+                if select_budget
+                else {"method": "fixed", "epochs": _resolve_epochs(model_cfg)}
+            ),
+        },
         "single_model_summary": single_model_summary,
         "single_model_unseen": single_model_unseen,
         "single_model_slices": single_model_slices,
@@ -603,6 +785,58 @@ def _evaluate_extraction_cost_for_candidate(
     }
 
 
+def no_information_reference(
+    y_train: np.ndarray,
+    y_val: np.ndarray,
+    unseen_val_mask: np.ndarray,
+    protocol: dict,
+) -> dict[str, Any] | None:
+    """Score the constant predictor the benchmark of #13 uses as its default reference.
+
+    Absent from protocols v1-v3, which compared the schemas only against each other: a run in
+    which every arm is worse than predicting the base rate still produced a confident winner.
+    """
+    admissibility = protocol.get("admissibility")
+    if not admissibility:
+        return None
+    reference = admissibility.get("reference", "constant-train-base-rate")
+    if reference != "constant-train-base-rate":
+        raise ValueError(f"unsupported admissibility reference: {reference!r}")
+    metric = admissibility.get("metric", "log_loss")
+    if metric not in ("log_loss", "brier"):
+        raise ValueError(f"unsupported admissibility metric: {metric!r}")
+
+    base_rate = float(np.asarray(y_train, dtype=float).mean())
+    prediction = np.full(len(y_val), base_rate, dtype=float)
+    record = {
+        "reference": reference,
+        "metric": metric,
+        "prediction": base_rate,
+        "scores": scores(y_val, prediction),
+    }
+    if unseen_val_mask.sum() > 0:
+        record["unseen_scores"] = scores(y_val[unseen_val_mask], prediction[unseen_val_mask])
+    return record
+
+
+def _admissibility_for_schema(
+    summary: dict[str, Any], no_info: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Does this schema's mean single model beat the no-information reference?"""
+    if no_info is None:
+        return None
+    metric = no_info["metric"]
+    candidate = float(summary[f"{metric}_mean"])
+    reference = float(no_info["scores"][metric])
+    return {
+        "metric": metric,
+        "candidate": candidate,
+        "reference": reference,
+        "margin": reference - candidate,
+        "admissible": bool(candidate < reference),
+    }
+
+
 def _evaluate_gate_for_candidate(
     s_key: str,
     results_by_schema: dict[str, Any],
@@ -612,6 +846,7 @@ def _evaluate_gate_for_candidate(
     unseen_val_mask: np.ndarray,
     extraction_cost: dict[str, Any] | None,
     protocol: dict,
+    no_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     s0_sm = results_by_schema["S0"]["single_model_summary"]
     s_sm = results_by_schema[s_key]["single_model_summary"]
@@ -670,6 +905,11 @@ def _evaluate_gate_for_candidate(
     passed_unseen = bool(unseen_eval["passed"])
     passed_cost = bool(cost_eval["cost_cleared"])
 
+    # Admissibility floor (#27): a candidate that loses to the constant predictor cannot be
+    # selected however favourable its relative comparison with S0 looks.
+    admissibility = _admissibility_for_schema(s_sm, no_info)
+    passed_admissible = True if admissibility is None else bool(admissibility["admissible"])
+
     cleared = (
         passed_rel_gain
         and passed_ci_upper
@@ -679,6 +919,7 @@ def _evaluate_gate_for_candidate(
         and passed_slice_brier
         and passed_unseen
         and passed_cost
+        and passed_admissible
     )
 
     return {
@@ -694,6 +935,7 @@ def _evaluate_gate_for_candidate(
         "slice_regressions": slice_regs,
         "unseen_evaluation": unseen_eval,
         "extraction_cost_evaluation": cost_eval,
+        "admissibility": admissibility,
         "checks": {
             "relative_log_loss_gain_gte_1pct": passed_rel_gain,
             "paired_ci_upper_lt_0": passed_ci_upper,
@@ -706,11 +948,22 @@ def _evaluate_gate_for_candidate(
             "unseen_brier_no_regression": bool(unseen_eval["passed_brier"]),
             "extraction_cost_evidence_valid": bool(cost_eval["evidence_valid"]),
             "extraction_cost_lte_tolerance": passed_cost,
+            **({} if admissibility is None else {"beats_no_information": passed_admissible}),
         },
     }
 
 
-def _select_schema(gate_evaluations: dict[str, Any], results_by_schema: dict[str, Any]) -> str:
+def _select_schema(
+    gate_evaluations: dict[str, Any],
+    results_by_schema: dict[str, Any],
+    no_info: dict[str, Any] | None = None,
+) -> str | None:
+    """Selected schema, or `None` when even the baseline fails the admissibility floor.
+
+    The relative gate decides between the candidates exactly as protocol v2 froze it. The floor
+    only removes arms that are worse than predicting the base rate, the baseline included: a run
+    in which S0 is inadmissible has measured nothing and must not hand a schema to training.
+    """
     if gate_evaluations["S2"]["cleared"] and gate_evaluations["S1"]["cleared"]:
         s2_ll = results_by_schema["S2"]["single_model_summary"]["log_loss_mean"]
         s1_ll = results_by_schema["S1"]["single_model_summary"]["log_loss_mean"]
@@ -719,6 +972,11 @@ def _select_schema(gate_evaluations: dict[str, Any], results_by_schema: dict[str
         return "S2"
     if gate_evaluations["S1"]["cleared"]:
         return "S1"
+    s0_admissibility = _admissibility_for_schema(
+        results_by_schema["S0"]["single_model_summary"], no_info
+    )
+    if s0_admissibility is not None and not s0_admissibility["admissible"]:
+        return None
     return "S0"
 
 
@@ -821,6 +1079,7 @@ def run_ablation(
 
     schema_dfs = {}
     input_shard_digests = {}
+    input_shard_content_digests = {}
     for schema_key, schema_info in protocol["schemas"].items():
         sid = schema_info["schema_id"]
         shard_dir = enriched_base_dir / sid
@@ -831,13 +1090,24 @@ def run_ablation(
         input_shard_digests[schema_key] = {
             sf.name: sha256_of_bytes(sf.read_bytes()) for sf in shard_files
         }
+        # File digests identify one producer run; content digests are what a re-run can match.
+        input_shard_content_digests[schema_key] = {
+            sf.name: shard_content_digest(sf) for sf in shard_files
+        }
 
     _validate_cross_schema_integrity(schema_dfs)
 
     base_df = schema_dfs["S0"]
-    train_mask, val_mask, val_df, y_val, groups_val, split_summary, unseen_val_mask = (
-        _prepare_dataset_splits(base_df, protocol)
-    )
+    (
+        train_mask,
+        val_mask,
+        val_df,
+        y_val,
+        groups_val,
+        split_summary,
+        unseen_val_mask,
+        inner_tuning_mask,
+    ) = _prepare_dataset_splits(base_df, protocol)
     y_train = base_df.loc[train_mask, "result"].to_numpy(dtype=np.float32)
 
     results_by_schema: dict[str, dict] = {}
@@ -855,9 +1125,26 @@ def run_ablation(
             y_val,
             unseen_val_mask,
             protocol,
+            inner_tuning_mask,
         )
         results_by_schema[s_key] = res
         val_preds_all_by_schema[s_key] = seed_preds
+
+    no_info = no_information_reference(y_train, y_val, unseen_val_mask, protocol)
+    if no_info is not None:
+        for res in results_by_schema.values():
+            res["admissibility"] = _admissibility_for_schema(res["single_model_summary"], no_info)
+        print(
+            f"\nNo-information reference ({no_info['reference']} = {no_info['prediction']:.4f}): "
+            f"{no_info['metric']} = {no_info['scores'][no_info['metric']]:.4f}"
+        )
+        for s_key, res in results_by_schema.items():
+            adm = res["admissibility"]
+            verdict = "admissible" if adm["admissible"] else "INADMISSIBLE"
+            print(
+                f"  {s_key} ({res['schema_id']}): {adm['metric']} = {adm['candidate']:.4f} "
+                f"({verdict}, margin {adm['margin']:+.4f})"
+            )
 
     gate_evaluations = {}
     for s_key in ["S1", "S2"]:
@@ -870,26 +1157,47 @@ def run_ablation(
             unseen_val_mask,
             extraction_cost,
             protocol,
+            no_info,
         )
 
-    selected_schema = _select_schema(gate_evaluations, results_by_schema)
+    selected_schema = _select_schema(gate_evaluations, results_by_schema, no_info)
     decision_record = {
-        "status": "provisional-development",
+        "status": (
+            "provisional-development"
+            if selected_schema is not None
+            else "inadmissible-no-selection"
+        ),
         "selected_schema": selected_schema,
-        "selected_schema_id": protocol["schemas"][selected_schema]["schema_id"],
+        "selected_schema_id": (
+            protocol["schemas"][selected_schema]["schema_id"]
+            if selected_schema is not None
+            else None
+        ),
         "gate_results": {k: v["cleared"] for k, v in gate_evaluations.items()},
         "private_qualification_ref": (
             "Private Decision: Playground Feature Schema Qualification (Issue #17)"
         ),
     }
 
+    if selected_schema is None:
+        decision_record["inadmissible_reason"] = (
+            "every schema, the baseline included, scored worse than the no-information "
+            "reference on the primary metric; the run measured nothing selectable"
+        )
+
     return {
         "protocol_version": protocol["protocol_version"],
         "protocol_sha256": protocol_sha256,
         "engine_version": protocol["engine_version"],
-        "status": "provisional-development",
+        "status": (
+            "provisional-development"
+            if selected_schema is not None
+            else "inadmissible-no-selection"
+        ),
         "split_summary": split_summary,
+        "no_information_reference": no_info,
         "input_shard_digests": input_shard_digests,
+        "input_shard_content_digests": input_shard_content_digests,
         "schemas": results_by_schema,
         "gate_evaluations": gate_evaluations,
         "extraction_cost": extraction_cost,
