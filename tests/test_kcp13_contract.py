@@ -9,6 +9,7 @@ the evaluator enforces before it mounts a model.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import onnx
@@ -284,3 +285,50 @@ def test_build_manifest_binds_the_digest_and_validates(tmp_path):
     path.write_bytes(path.read_bytes() + b"\0")
     with pytest.raises(kcp13.ContractError, match="SHA-256 mismatch"):
         kcp13.verify_model_digest(path, manifest)
+
+
+def _golden_files() -> list[Path]:
+    return sorted(kcp13.GOLDEN_DIR.glob("golden-engine-*.json"))
+
+
+def _engine_of(path: Path) -> str:
+    return path.name.removeprefix("golden-engine-").removesuffix(".json")
+
+
+def _release(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+@pytest.mark.parametrize("path", _golden_files(), ids=_engine_of)
+def test_every_golden_declares_the_engine_named_by_its_file(path):
+    corpus = kcp13.load_golden(path)
+    engine = _engine_of(path)
+    assert corpus.engine_version == engine
+    assert corpus.engine_artifact == f"com.fortemate:dicechess-engine_3:{engine}"
+
+
+def test_goldens_agree_bit_for_bit_on_every_shared_probe():
+    """Every engine release replays the corpus exactly; a drifting extractor fails here first."""
+    corpora = {_engine_of(path): kcp13.load_golden(path) for path in _golden_files()}
+    assert {"0.9.2", "0.9.3", "0.12.0"} <= corpora.keys()
+    newest = max(corpora, key=_release)
+    reference = corpora[newest].by_id()
+    for engine, corpus in corpora.items():
+        if engine == newest:
+            continue
+        probes = corpus.by_id()
+        shared = sorted(probes.keys() & reference.keys())
+        assert shared, f"golden {engine} shares no probe with {newest}"
+        for probe_id in shared:
+            probe, expected = probes[probe_id], reference[probe_id]
+            assert probe.fen == expected.fen and probe.side == expected.side
+            assert probe.features.tobytes() == expected.features.tobytes(), (
+                f"engine {engine} differs from {newest} on probe {probe_id}"
+            )
+
+
+def test_the_newest_golden_covers_every_committed_probe():
+    newest = max((_engine_of(path) for path in _golden_files()), key=_release)
+    corpus = kcp13.load_golden(kcp13.golden_path(newest))
+    rows = (kcp13.GOLDEN_DIR / "probes.tsv").read_text().splitlines()[1:]
+    assert [row.split("\t")[0] for row in rows] == [probe.id for probe in corpus.probes]

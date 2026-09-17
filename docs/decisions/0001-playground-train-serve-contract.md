@@ -68,6 +68,15 @@ replayed against the released engines **0.4.0, 0.7.2 and 0.9.2** and produced by
 vectors for all 23 probes. The private analytics enrichment pins engine 0.9.1 and the evaluator
 0.9.2, both inside that range.
 
+Re-verified on 2026-09-17 under [Issue #30](https://github.com/fortemate/dicechess-training/issues/30):
+the corpus, now 27 probes, replays byte-identically on **0.9.3** and on **0.12.0**, the release line
+that carried the open-core split of engine ADR 009. That split moved `FenParser`, `GameState` and
+`TurnGenerator` into `com.fortemate:dicechess-rules_3`, while `KcpFeatures` stayed in
+`com.fortemate:dicechess-engine_3` because it reaches `RichFeatures` and through it the evaluator — so
+a consumer of the feature contract still depends on the engine artifact, not on the rules artifact
+alone. `tests/test_kcp13_contract.py` asserts the agreement between every committed golden instead of
+recording it in prose.
+
 ## Inventory: model roles
 
 | Role | Input object | Perspective | Dice | Target | Servable through `/evaluate/position` today? |
@@ -183,7 +192,8 @@ Accepted, with the constraints below.
    4-/6-field and en-passant canonicalisation, material imbalance, king- and queen-capture
    threats with exact analytic expectations, endgames, two public-sample middlegames, and seven
    colour-swapped twins) and the JVM-generated `golden-engine-0.9.2.json` are the contract fixture
-   for both sides. `tools/kcp13-golden` regenerates it from a released engine; the Python tests in
+   for both sides — the corpus as of this record; see *Amendment: Engine range and corpus replay*
+   for the 27-probe corpus and the goldens committed since. `tools/kcp13-golden` regenerates it from a released engine; the Python tests in
    `tests/test_kcp13_contract.py` verify layout, perspective invariants, canonicalisation and the
    analytic capture-probability values (`91/216` for a single-face capture, `16/216` for a
    two-queen-move capture). Adding a probe or changing the engine version regenerates the file;
@@ -196,7 +206,8 @@ Accepted, with the constraints below.
    natively and its Torch↔ONNX parity is exact to float32; a GBDT is admissible only if its export
    meets the same contract and parity, and is then a comparison, not the default.
 5. **Manifest.** Built with `kcp13.build_manifest` from the exact ONNX bytes; `engineCompatibility`
-   is `>=0.4.0 <0.10.0`, the range replayed byte-identically by the golden corpus. Widening the
+   is `>=0.4.0 <0.10.0` (widened to `>=0.4.0 <0.13.0` by *Amendment: Engine range and corpus
+   replay*), the range replayed byte-identically by the golden corpus. Widening the
    range requires replaying the corpus (and, for a data release, the enrichment differential over
    the public sample) on the new engine release first. `provenance` records at least the training
    data digest(s), the enrichment engine version, the training git commit, the config digest, the
@@ -265,4 +276,25 @@ Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), th
 6. **Active Baseline**: Baseline **S0 (`kcp-13`)** remains the active train-serve contract for ongoing development and tooling under [Issue #13](https://github.com/fortemate/dicechess-training/issues/13).
 7. **Issue State**: [Issue #17](https://github.com/fortemate/dicechess-training/issues/17) remains open pending completion of private corpus qualification and data eligibility review.
 
+## Amendment: Engine range and corpus replay (Issue #30, 2026-09-17)
 
+1. **Corpus.** The shared fixture is `tests/fixtures/kcp13/probes.tsv` with **27 probes** — the 23 of
+   Decision 3 plus `blocked-pawns-w`, `passed-pawn-w` and their colour-swapped twins, added for the
+   feature ablation — and three JVM-generated goldens: `golden-engine-0.9.2.json` (23 probes, the
+   engine the evaluator pins today), `golden-engine-0.9.3.json` (27 probes, the ablation and
+   enrichment engine) and `golden-engine-0.12.0.json` (27 probes, the current engine release).
+2. **Replay evidence.** `kcp-13` extraction is unchanged across the released range: every probe that
+   two goldens share carries bit-identical vectors, and the 0.12.0 file differs from the 0.9.3 one
+   only in the recorded version string. `tests/test_kcp13_contract.py` enforces this, so an engine
+   whose extraction drifts fails the suite instead of quietly redefining the served contract.
+3. **Engine range.** Decision 5's `engineCompatibility` for `kcp-13` widens from `>=0.4.0 <0.10.0` to
+   **`>=0.4.0 <0.13.0`**: replayed on 0.4.0, 0.7.2, 0.9.2, 0.9.3 and 0.12.0, with the upper bound left
+   exclusive at the first unreplayed minor. Widening it further keeps the Decision 5 rule — replay the
+   corpus on the new release first.
+4. **Order of operations.** `dicechess-evaluation` validates a mounted model package against its own
+   engine version and refuses the package at startup when the manifest range excludes that version. A
+   manifest issued with the narrower range must therefore be re-issued with the widened one **before**
+   that service's engine pin moves, or the service starts without a model.
+5. **Unchanged.** The ablation stays pinned to engine 0.9.3 (`docs/ablation/protocol-v4.json`,
+   `scripts/check_enrichment.py`); nothing here changes the selected schema, the tensor contract, the
+   manifest rules or the promotion gate.
