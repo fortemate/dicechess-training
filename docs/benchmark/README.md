@@ -193,6 +193,31 @@ integer `seed`, `perspective=side-to-move`. `train_identity(manifest, rows)` pro
 training identity fields. The config and source snapshot remain available to the reviewer outside
 Git. Calibration must be inside ONNX; a manifest-only temperature other than 1 is rejected.
 
+### Producing a candidate package
+
+`dicechess_training.candidate` builds such a directory instead of assembling it by hand:
+
+```bash
+uv run python -m dicechess_training.candidate \
+  --data <dataset-directory> --output <candidate-directory> \
+  --seed 11 --model-id <identifier> --report <private-summary.json>
+```
+
+It admits the dataset through `load_dataset` before training, splits with the benchmark's own
+`assignments`, trains on the train partition only, selects the epoch budget on an inner split
+carved out of that partition (groups whose split value is at least 7000), folds the training
+statistics into the exported graph as constants, and fills the provenance block with digests
+computed from the artifacts — `training_data_sha256` and `training_groups_sha256` come from
+`train_identity`, so `check_training_identity` passes by construction rather than by hand.
+
+Before anything is written it runs the checks the benchmark will run (`validate_manifest`,
+`verify_model_digest`, `validate_onnx_contract`, `check_training_identity`) plus Torch-versus-
+onnxruntime parity on the golden matrix and held-out rows at 1e-6; on any failure the output
+directory stays empty. It refuses to overwrite an existing package. `model-card.md` is written
+next to the artifacts with the fields that can be read from them; the private rows of the card
+stay the owner's to complete outside Git. Like the benchmark entry point, stdout carries only
+the JSON summary — digests and counts, never a dataset path or row content.
+
 The seal has schema `playground-seal-v1`, `implementation_sha256`, `benchmark_sha256`, `development_dataset_sha256`,
 `final_dataset_sha256`, `candidate_manifest_sha256`, `accepted_references` (digest list),
 `promotion_reference` (an accepted digest, or `no-information` only with no accepted models),
