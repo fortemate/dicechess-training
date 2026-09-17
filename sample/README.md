@@ -53,7 +53,7 @@ The full-size 774→256→256→1 net does **worse** here — it memorizes 40k p
 epochs and comes out above the baseline, systematically overconfident (predicting 0.96 where
 the true rate is 0.80). That is not a bug to fix in the architecture; it is the program's
 premise in miniature: at this data scale **the labels bind, not the model**. Deeper, exact
-labels are what the hackathon's label factory manufactures.
+labels are what the depth-3 label factory manufactures.
 
 ## Regenerating or extending
 
