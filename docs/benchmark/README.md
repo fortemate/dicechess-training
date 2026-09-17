@@ -208,6 +208,26 @@ integer `seed`, `perspective=side-to-move`. `train_identity(manifest, rows)` pro
 training identity fields. The config and source snapshot remain available to the reviewer outside
 Git. Calibration must be inside ONNX; a manifest-only temperature other than 1 is rejected.
 
+### Packaging a benchmark dataset
+
+`dicechess_training.dataset` packages enriched Parquet shards into an admitted `playground-rows-v1`
+bundle (`manifest.json`, `rows.json`, `license.txt`):
+
+```bash
+uv run python -m dicechess_training.dataset \
+  --shards <path-to-enriched-shards> \
+  --output <dataset-directory> \
+  --kind owner-controlled \
+  --engine-version 0.12.0 \
+  [--max-games N] \
+  [--report <private-summary.json>]
+```
+
+It validates canonical FEN, placement, perspective, material blocks, and game-level split
+invariants across every row, checks that the engine version has a committed golden fixture,
+computes provenance digests, and verifies admissibility through `benchmark.core.load_dataset`
+before atomically publishing the bundle.
+
 ### Producing a candidate package
 
 `dicechess_training.candidate` builds such a directory instead of assembling it by hand:
