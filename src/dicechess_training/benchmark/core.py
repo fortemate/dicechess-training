@@ -187,7 +187,10 @@ def load_candidate(directory, data_manifest, protocol):
         require_sha(provenance[key])
     require(provenance["benchmark_sha256"] == digest(protocol), "candidate protocol mismatch")
     require(provenance["engine_version"] == data_manifest["engine_version"], "extractor mismatch")
-    require(isinstance(provenance["seed"], int), "missing training seed")
+    require(
+        isinstance(provenance["seed"], (int, str)) and str(provenance["seed"]).isdigit(),
+        "missing training seed",
+    )
     require(provenance["perspective"] == "side-to-move", "candidate perspective mismatch")
     # Calibration must live in the graph. A manifest-only adjustment would diverge from predict.
     require(
