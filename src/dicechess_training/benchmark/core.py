@@ -118,10 +118,21 @@ def load_dataset(directory):
     )
     require(manifest["feature_schema"] == kcp13.SCHEMA_ID, "unsupported features")
     require(manifest["columns"] == list(kcp13.COLUMN_NAMES), "wrong feature order")
-    require(manifest["engine_version"] == kcp13.GOLDEN_ENGINE_VERSION, "unverified engine")
+    engine_version = manifest["engine_version"]
+    # The version is interpolated into a fixture file name, so its shape is checked before it
+    # ever reaches the filesystem: a manifest is data, and data does not get to choose a path.
     require(
-        manifest["golden_sha256"] == kcp13.sha256_of(kcp13.golden_path()), "golden digest mismatch"
+        isinstance(engine_version, str)
+        and re.fullmatch(r"\d+\.\d+\.\d+", engine_version, flags=re.ASCII) is not None,
+        "invalid engine version",
     )
+    # Admission follows the evidence rather than a single pinned release: an engine is verified
+    # when its golden is committed here, and `tests/test_kcp13_contract.py` proves that every
+    # committed golden agrees with the others on every probe they share. An engine with no
+    # golden stays refused, so this widens what is proven, not what is trusted.
+    golden = kcp13.golden_path(engine_version)
+    require(golden.is_file(), "unverified engine: no committed golden corpus for it")
+    require(manifest["golden_sha256"] == kcp13.sha256_of(golden), "golden digest mismatch")
     rows = read_json(directory / "rows.json")
     require(isinstance(rows, list) and bool(rows), "empty dataset")
     ids = set()

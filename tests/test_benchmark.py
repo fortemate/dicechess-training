@@ -578,3 +578,48 @@ def test_concurrency_workload_cannot_change_after_sealing():
     seal = {"concurrency_workload_sha256": "c" * 64}
     with pytest.raises(ValueError, match="serving workload mismatch"):
         core.serving_check(evidence, "a" * 64, seal)
+
+
+def restamp_engine(directory, engine):
+    """Re-stamp a dataset for another engine, keeping the same rows.
+
+    The rows are legitimate for any engine whose golden agrees with the corpus: the vectors are
+    the same bytes, which is what `tests/test_kcp13_contract.py` asserts across every committed
+    golden.
+    """
+    manifest = core.read_json(directory / "manifest.json")
+    manifest["engine_version"] = engine
+    golden = kcp13.GOLDEN_DIR / f"golden-engine-{engine}.json"
+    if golden.is_file():
+        manifest["golden_sha256"] = kcp13.sha256_of(golden)
+    save_data(directory, manifest, core.read_json(directory / "rows.json"))
+    return directory
+
+
+def test_dataset_is_admitted_for_any_engine_with_a_committed_golden(tmp_path):
+    data = restamp_engine(copy_data(tmp_path, "newer-engine"), "0.12.0")
+    manifest, rows = core.load_dataset(data)
+    assert manifest["engine_version"] == "0.12.0"
+    assert rows
+
+
+def test_dataset_is_refused_for_an_engine_without_a_committed_golden(tmp_path):
+    data = restamp_engine(copy_data(tmp_path, "unknown-engine"), "0.13.0")
+    with pytest.raises(ValueError, match="no committed golden"):
+        core.load_dataset(data)
+
+
+@pytest.mark.parametrize("version", ["0.9", "latest", "../../../etc/passwd", "0.9.2 "])
+def test_dataset_is_refused_for_a_malformed_engine_version(tmp_path, version):
+    data = restamp_engine(copy_data(tmp_path, "malformed-" + str(abs(hash(version)))), version)
+    with pytest.raises(ValueError, match="invalid engine version"):
+        core.load_dataset(data)
+
+
+def test_a_golden_digest_that_does_not_match_its_engine_is_refused(tmp_path):
+    data = restamp_engine(copy_data(tmp_path, "wrong-golden"), "0.12.0")
+    manifest = core.read_json(data / "manifest.json")
+    manifest["golden_sha256"] = kcp13.sha256_of(kcp13.golden_path("0.9.2"))
+    save_data(data, manifest, core.read_json(data / "rows.json"))
+    with pytest.raises(ValueError, match="golden digest mismatch"):
+        core.load_dataset(data)

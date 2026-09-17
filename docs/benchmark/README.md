@@ -34,7 +34,7 @@ A dataset directory contains exactly the following required inputs (extra files 
 
 - `manifest.json`: `schema=playground-rows-v1`, semantic `version`, `kind` (`synthetic`,
   `public-licensed`, or `owner-controlled`), `target=decisive-game-outcome`,
-  `perspective=side-to-move`, `feature_schema=kcp-13`, exact `columns`, `engine_version=0.9.2`,
+  `perspective=side-to-move`, `feature_schema=kcp-13`, exact `columns`, `engine_version` (see below),
   `rows_sha256`, `source_sha256`, `golden_sha256`, `license`, `license_evidence_sha256`.
 - `rows.json`: array of objects with unique `id`, `group_id`, `game_id`, optional `root_id`,
   engine-canonical `fen`, `side` (`w`/`b`), nonnegative integer `ply`, `result` (0/0.5/1),
@@ -45,9 +45,24 @@ A dataset directory contains exactly the following required inputs (extra files 
 
 `source_sha256` binds the producer's immutable input/reproduction record. The data owner retains
 that record for review; the public report contains none of its content. `golden_sha256` must match
-the committed JVM-generated fixture, and `rows_sha256` binds every row and feature. A different
-engine or schema requires an independently reviewed protocol/contract update; #17's S1/S2 cannot
-be served or silently qualified as S0 merely because they share its prefix.
+the committed JVM-generated fixture for the dataset's own `engine_version`, and `rows_sha256` binds
+every row and feature. A different schema requires an independently reviewed protocol/contract
+update; #17's S1/S2 cannot be served or silently qualified as S0 merely because they share its
+prefix.
+
+**Engine admission (Issue #33).** A dataset is admitted when its `engine_version` is a
+`MAJOR.MINOR.PATCH` string for which a golden corpus is committed in `tests/fixtures/kcp13/`, and
+its `golden_sha256` matches that file. An engine with no committed golden is refused, so admission
+follows evidence rather than trust: `tests/test_kcp13_contract.py` asserts that every committed
+golden agrees with every other on each probe they share, bit for bit, and Issue #30 recorded the
+replay across 0.4.0, 0.7.2, 0.9.2, 0.9.3 and 0.12.0. The version's shape is validated before it is
+used to name a file, because a manifest is data and data does not choose paths.
+
+This replaced a single pinned release (`0.9.2`), which refused a corpus enriched by the engine the
+ablation prescribes and the evaluator serves, for a difference that does not exist. Nothing else
+moves: the probe suite still runs on the default committed corpus, so the gate surface is
+unchanged, and no threshold, metric or slice is touched. `implementation_sha256` changes with this
+edit, so a seal preregistered before it must be re-issued.
 
 The public fixture in `tests/fixtures/benchmark` contains only authored synthetic positions from
 the golden corpus (all `sample-*` probes are excluded) with artificial alternating binary labels.
