@@ -12,25 +12,22 @@ them, designed to scale from a single workstation to an HPC cluster.
 > publicly visible games for research; links to that service are references, not claims of
 > ownership or partnership.
 
-> **Status: scaffold under active extraction.** This repository is being built ahead of the
-> [European AI Hackathon](https://www.openhackathons.org/s/siteevent/a0CUP00003yKxcX2AS/se000475)
-> (EuroHPC / Open Hackathons, October 6–29, 2026). September roadmap, prepared entirely
-> without cluster access:
+> **Status: active development.** Pipeline roadmap:
 >
 > - [ ] Transposition table + enabling depth-3 search on the engine's already-landed
->       Star1/Star2 pruning, gated by a depth-3 vs depth-2 arena experiment — mid-September 2026
+>       Star1/Star2 pruning, gated by a depth-3 vs depth-2 arena experiment
 > - [x] First PyTorch → ONNX training stack, validated end-to-end at toy scale
 >       ([#3](https://github.com/fortemate/dicechess-training/issues/3))
 > - [x] Training data schema v0: provenance-first Parquet shards, rawboard-768 + dice encoding
 >       ([#2](https://github.com/fortemate/dicechess-training/issues/2))
-> - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot — end of September 2026
+> - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot
 > - [x] Public bot-vs-bot sample dataset collected from publicly observable games on an
 >       independent platform
 >       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
-> - [ ] CPU label-factory v0 — before the event
+> - [ ] CPU label-factory v0 ([#7](https://github.com/fortemate/dicechess-training/issues/7))
 > - [ ] First real playground evaluation model ([#12](https://github.com/fortemate/dicechess-training/issues/12)):
 >       contract mechanics in [ADR 0001](docs/decisions/0001-playground-train-serve-contract.md), feature schema
->       chosen by the predeclared ablation in [#17](https://github.com/fortemate/dicechess-training/issues/17)
+>       selected as S0 `kcp-13` by the predeclared ablation in [#17](https://github.com/fortemate/dicechess-training/issues/17)
 
 ## Getting started
 
@@ -127,27 +124,24 @@ Evaluation combines holdout agreement with the depth-3 teacher (MSE, rank correl
 log-loss/calibration) with head-to-head arena matches at fixed time controls, and ultimately
 rated games on the public Glicko-2 bot ladder.
 
-## Hackathon goals (October 2026)
+## Scaling and training goals
 
-**Primary** — run the label factory at cluster scale (target: 100M+ depth-3-labeled
-positions) and train both networks on it, with labeling throughput and scaling measured and
-profiled with the mentors.
+**Primary** — run the label factory at scale (target: 100M+ depth-3-labeled positions)
+and train both networks on it, with labeling throughput and scaling measured and profiled.
 
-**Stretch**
+**Distributed sweeps & optimization**
 
-- Multi-GPU / multi-node training (PyTorch DDP) used for wide hyperparameter and
-  architecture sweeps of both nets.
+- Multi-GPU training (PyTorch DDP, e.g. via Kaggle / cloud GPU instances) used for wide
+  hyperparameter and architecture sweeps of both networks ([#25](https://github.com/fortemate/dicechess-training/issues/25)).
 - Profile and optimize the CPU-expand / GPU-evaluate batching pipeline and the training data
-  loader (NVIDIA Nsight Systems on the GPU side, async-profiler on the JVM side).
+  loader.
 
-**Post-event** — retrain the production evaluation model on the manufactured dataset and
-validate it in controlled arenas and, where service rules permit, on independent public play
-services.
+**Model qualification** — train and qualify evaluation models on the manufactured dataset and
+validate them in controlled arenas and on independent public play services.
 
-The hackathon's public artifacts land in this repository: the pipeline code, the labeled
-dataset, and the benchmark and scaling results. The production bots' tournament-tuned
-weights, opening books, and configurations are outside its scope — the same open-core
-boundary described below.
+Public artifacts land in this repository: the pipeline code, the sample and benchmark fixtures,
+and open benchmark results. The production bots' tournament-tuned weights, opening books,
+and configurations are outside its scope — the same open-core boundary described below.
 
 ## Workload shape
 

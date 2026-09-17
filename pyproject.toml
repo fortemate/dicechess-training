@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 # Linux resolves torch from the CPU-only index: dev boxes and CI have no CUDA,
-# and the PyPI build drags in gigabytes of accelerator packages. The hackathon
-# cluster gets its own accelerator build (CUDA or ROCm) in October.
+# and the PyPI build drags in gigabytes of accelerator packages. Accelerated
+# environments (CUDA or ROCm) resolve an accelerator torch build as needed.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
