@@ -171,7 +171,7 @@ The public sample decides which schema the development protocol selects. It cann
 The training partition holds 39,121 rows. Fitting 27 to 31 inputs on that many rows without regularisation is data-limited, and the owner's evidence for the wider schemas came from a corpus orders of magnitude larger. Read this report as: the development protocol selects S0 and the wider schemas cost nothing measurable in extraction latency, while the question the schemas were proposed to answer stays open for the private qualification run.
 
 ## 8. Next Actions
-
-1. **Private Qualification**: Issue #17 remains open pending owner execution of the frozen protocol on the private corpus.
-2. **ADR 0001 Maintenance**: Retain provisional development findings in ADR 0001; final amendment occurs after owner qualification.
-3. **Value Model Training**: S0 remains the current baseline contract for #13.
+ 
+1. **Schema Decision**: Issue #17 concludes with **S0 (`kcp-13`)** retained as the selected feature schema, as neither S1 nor S2 cleared the predeclared gate.
+2. **ADR 0001 Final Amendment**: ADR 0001 is amended to reflect the final selection of S0, with Issue #17 resolved.
+3. **Candidate Model Training**: Proceed to Step 3 of parent Epic #12 (train and export the benchmark-admissible real candidate with S0 `kcp-13`).

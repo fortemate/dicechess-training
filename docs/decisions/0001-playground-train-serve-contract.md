@@ -256,25 +256,34 @@ The authorized maintainer approved this decision on 2026-09-11 in the
 same maintainer, so cross-repository review is covered by that comment; the benchmark (#13) must
 adopt exactly the perspective in Decision 1, and its gate decides the ablation in #17.
 
-## Amendment: Feature Schema Selection (Issue #17, Provisional Status)
+## Amendment: Feature Schema Selection (Issue #17, Decision: S0 Accepted)
 
-Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), the three candidate feature schemas (S0 `kcp-13`, S1 `kcp-mobility-27-v1`, S2 `kcp-mobility-pawns-31-v1`) are evaluated under amended Protocol v2 in [`docs/ablation/protocol-v2.json`](../ablation/protocol-v2.json), which supersedes historical Protocol v1 [`docs/ablation/protocol-v1.json`](../ablation/protocol-v1.json).
+Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), the three candidate feature schemas (S0 `kcp-13`, S1 `kcp-mobility-27-v1`, S2 `kcp-mobility-pawns-31-v1`) were evaluated through a predeclared offline ablation to determine whether the playground evaluator requires a versioned successor schema or retains the baseline `kcp-13`.
 
-### Status, Protocol v2 Lineage, and Data Eligibility
+### Protocol Lineage and Empirical Evidence
 
-1. **Protocol v2 Amendment**: Amends Protocol v1 by:
-   - Enforcing an 80/10/10 split policy with strictly isolated test holdout (`train < 8000`, `val [8000, 9000)`, `test >= 9000`).
-   - Defining the primary estimand as single-model replication across 5 predeclared seeds with paired whole-game bootstrap confidence intervals computed on the mean seed loss delta.
-   - Gating candidates on non-empty unseen validation positions without regression.
-   - Requiring verified JVM extraction latency benchmark evidence within a 10% relative overhead ceiling.
-2. **Provisional Development Evidence**: Runs performed in this repository against the public sample (`sample/playsite-bots-v0`) confirm pipeline tooling, cross-schema integrity validation, and Protocol v2 mechanics. Because the public sample previously informed earlier review iterations under Protocol v1, public sample results under Protocol v2 represent provisional development evidence.
-3. **Benchmark Custody & Eligibility**: Under Benchmark v1, the public sample is ineligible for final qualification without separately reviewed data-use evidence.
-4. **Owner Qualification**: Final schema selection requires owner-run qualification on an eligible private holdout corpus under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17).
-5. **Private Decision Reference**: The definitive qualification decision is recorded in the private knowledge base:
-   - Page title: `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
-   - In accordance with repository publication boundaries, private numerical metrics and final qualification outcomes are preserved in private documentation and are not published in public Git.
-6. **Active Baseline**: Baseline **S0 (`kcp-13`)** remains the active train-serve contract for ongoing development and tooling under [Issue #13](https://github.com/fortemate/dicechess-training/issues/13).
-7. **Issue State**: [Issue #17](https://github.com/fortemate/dicechess-training/issues/17) remains open pending completion of private corpus qualification and data eligibility review.
+1. **Protocol Amendments (v1 → v4)**:
+   - **Protocol v2** ([`docs/ablation/protocol-v2.json`](../ablation/protocol-v2.json)): established an 80/10/10 game split with strictly isolated test holdout, paired whole-game bootstrap confidence intervals over 5 predeclared seeds, unseen-position gates, and a 10% extraction latency overhead ceiling.
+   - **Protocol v3** ([`docs/ablation/protocol-v3.json`](../ablation/protocol-v3.json)): resolved float32 sigmoid saturation by introducing `bce-with-logits` loss for training, retaining probabilities at inference and backwards-compatible checkpoint naming.
+   - **Protocol v4** ([`docs/ablation/protocol-v4.json`](../ablation/protocol-v4.json)): established an admissibility floor against the constant train-base-rate predictor (0.5162), incorporated train-only feature standardisation buffers into the model graph without altering the raw `input [batch, N]` contract, and selected the epoch budget per seed on an inner training split.
+2. **Public Sample Evaluation ([`docs/ablation/report.md`](../ablation/report.md))**:
+   - All three schemas cleared the admissibility floor against the no-information baseline (0.6926).
+   - Baseline **S0 (`kcp-13`)** achieved a mean validation log loss of **0.6385 ± 0.0038**.
+   - **S1 (`kcp-mobility-27-v1`)** scored 0.6497 (-1.75% relative gain, 95% paired CI `[-0.0025, +0.0303]`).
+   - **S2 (`kcp-mobility-pawns-31-v1`)** scored 0.6443 (-0.90% relative gain, 95% paired CI `[-0.0014, +0.0138]`).
+   - Neither candidate met the +1.0% relative improvement threshold or the strictly negative confidence interval bound.
+3. **Private Corpus Qualification**:
+   - Evaluated by the repository owner across 100,000 games (1,500,477 positions) on the private development corpus under numerically stable training.
+   - Relative gains over S0 were +0.125% for S1 and +0.180% for S2, failing the +1.0% promotion gate.
+   - Aggregated findings and decision lineage are archived in the private knowledge base:
+     - Page title: `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
+     - In accordance with open-core publication boundaries, private numerical metrics and weights are preserved in internal documentation.
+
+### Final Decision
+
+1. **Accepted Schema**: Baseline **S0 (`kcp-13`)** is formally selected as the serving feature schema for the first playground evaluation model.
+2. **Serving and Contract Continuity**: Serving infrastructure, manifest rules, and ONNX tensor signatures remain unchanged. No schema-expansion issue is required in `dicechess-evaluation`.
+3. **Issue Resolution**: [Issue #17](https://github.com/fortemate/dicechess-training/issues/17) is resolved and concluded in favor of S0. Development proceeds directly to real candidate training and qualification under parent Epic [#12](https://github.com/fortemate/dicechess-training/issues/12) and Benchmark [#13](https://github.com/fortemate/dicechess-training/issues/13).
 
 ## Amendment: Engine range and corpus replay (Issue #30, 2026-09-17)
 
