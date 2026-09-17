@@ -37,6 +37,10 @@ def export_candidate(model: ValueMLP, schema_id: str, path: str | Path) -> Path:
         dynamic_shapes=({0: torch.export.Dim.DYNAMIC},),
         opset_version=MAX_OPSET,
         dynamo=True,
+        # Weights stay inside the file. The exporter defaults to a sidecar `.onnx.data`, which
+        # the serving contract cannot carry: the evaluator mounts one artifact and binds one
+        # SHA-256 to it, so externalised weights would travel unchecked or not at all.
+        external_data=False,
     )
     return destination
 
