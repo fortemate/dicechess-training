@@ -1,8 +1,8 @@
 # Playground Feature Schema Ablation Protocol
 
-Status: **AMENDED (Protocol v3)**. The default is `docs/ablation/protocol-v3.json`.
-Historical `protocol-v1.json` and `protocol-v2.json` remain unchanged and can be
-selected explicitly with `--protocol`.
+Status: **AMENDED (Protocol v4)**. The default is `docs/ablation/protocol-v4.json`.
+Historical `protocol-v1.json`, `protocol-v2.json` and `protocol-v3.json` remain
+unchanged and can be selected explicitly with `--protocol`.
 
 ## Context & Protocol Lineage
 
@@ -20,6 +20,12 @@ The evaluation service serves `standard-kcp` over the `kcp-13` feature schema. O
   2. **Primary Estimand Bootstrap**: Formally evaluates single-model replication across 5 predeclared random seeds (`[11, 23, 47, 89, 131]`) and computes paired 95% group-bootstrap confidence intervals directly on the mean seed loss delta for each resampled whole-game draw.
   3. **Unseen-Position Gating**: Requires non-empty unseen validation positions and gates against regressions on unseen positions (`position_key` not seen in train).
   4. **Extraction Cost Enforcement**: Integrates verified JVM benchmark evidence into the candidate selection gate (mean probe latency overhead <= 10.0% relative to S0; missing or over-budget evidence blocks qualification).
+- **Protocol v3 Amendment (`playground-feature-ablation-v3`)**: Trains on logits with `BCEWithLogitsLoss` so a saturated sigmoid cannot block the corrective gradient; features, capacity and evaluation are unchanged.
+- **Protocol v4 Amendment (`playground-feature-ablation-v4`)**: The validity amendment of
+  [Issue #27](https://github.com/fortemate/dicechess-training/issues/27). Adds an admissibility
+  floor against the no-information reference, standardises features on training statistics, and
+  selects the epoch budget on an inner tuning split. Schemas, split policy, seeds, metrics,
+  slices, probes, uncertainty and every gate threshold are inherited from v3 unchanged.
 
 ## Candidate Schemas
 
@@ -70,6 +76,50 @@ The evaluation service serves `standard-kcp` over the `kcp-13` feature schema. O
   - Passed pawn advancement (`passed-pawn-w`)
   - Mover-canonical twin equality across all probes
 - **Feature Extraction Latency**: Evaluated via verified JVM benchmark tool (`ExtractionBenchmarkApp`) capturing runtime, OS, and JVM engine provenance (`tests/fixtures/benchmark/extraction-cost-0.9.3.json`).
+
+## Admissibility floor (Protocol v4)
+
+The gate of protocol v2 compares the candidate schemas with S0 and with nothing else. A run whose
+models are all worse than predicting the base rate therefore still produced a confident winner:
+that is what the protocol-v2 report did, with every arm between 0.80 and 1.13 validation log loss
+against 0.6926 for the constant predictor
+([evidence](https://github.com/fortemate/dicechess-training/issues/17#issuecomment-5670027600)).
+
+Protocol v4 scores the reference the benchmark of Issue #13 already uses — a constant equal to the
+training base rate — and records it in both report formats. A schema whose mean single model does
+not beat it is **inadmissible**: its gate fails, and it cannot be selected. When even S0 is
+inadmissible the run selects nothing, the decision records `inadmissible-no-selection`, and the CLI
+writes its reports and then exits non-zero, so a pipeline cannot read "no selection" as a pass.
+
+The floor is a validity check on each arm on its own. It does not touch the relative
+S1/S2-versus-S0 thresholds frozen in v2.
+
+## Feature standardisation and the serving contract (Protocol v4)
+
+Protocol v4 fits mean and scale on the **training partition only** and carries them inside the
+model as persistent buffers applied before the first layer. Three consequences matter:
+
+- the model consumes **raw** schema features, so `input [batch, N]` -> `output [batch, 1]` from
+  ADR 0001 is unchanged and the evaluator needs no new step;
+- the scaler travels with the checkpoint and with the exported graph
+  (`dicechess_training.ablation.export.export_candidate`), so a candidate cannot be served
+  without it. `export.probe_parity` checks the exported graph against the Python pipeline on the
+  engine's golden probes, and the contract validator checks names, shapes, dtype and opset;
+- a constant training column keeps a scale of 1.0, so a feature that never varies is centred
+  rather than amplified into noise.
+
+Protocols without `model.feature_standardisation` train on raw columns exactly as before and
+register no buffers, which keeps their checkpoint layout byte-identical.
+
+## Epoch budget (Protocol v4)
+
+Protocols v1-v3 fix five epochs. Under v4 the budget is chosen per seed from
+`model.epoch_selection.candidates` by log loss on an **inner tuning split** carved out of the
+training partition (`inner_cutoff` on the same deterministic game hash), after which the model is
+refitted on the whole training partition with the chosen count. The validation partition is never
+used to choose the budget: it stays a reporting and gating surface. One training pass serves all
+candidates by scoring at each candidate epoch, so selection costs one extra fit per seed rather
+than one per candidate.
 
 ## Numerically stable training (Protocol v3)
 
@@ -130,6 +180,13 @@ features merely to bypass validation. Existing historical reports retain their
 original input digests. New runs must record the newly generated shard digests and
 write results to an ignored/private output destination.
 
+Shard provenance is recorded twice. The **file digest** identifies the artifact a run read. The
+**content digest** (`dicechess_training.schema.shard_content_digest`) covers the semantic metadata
+and the column values in a canonical order and is what an independent reproduction compares: the
+Parquet writer records its per-column encoding set in the footer in an order that varies between
+producer sessions, so two byte-different files can hold identical rows. Reproducing a report is
+expected to match the content digests, not the file digests.
+
 Extraction-cost evidence must contain the complete probe set from the golden
 corpus for the protocol's engine version, with matching FENs and candidate schema
 identities. Each latency statistic must be numeric, finite and positive, with
@@ -139,6 +196,25 @@ partial or incompatible evidence. The mean relative overhead uses compensated
 summation so a candidate exactly at the declared ceiling is not rejected due to
 accumulated rounding error. These validations do not change the protocol v2
 selection threshold or turn development measurements into final qualification.
+
+### Reproducing the public-sample report
+
+The runner reads one directory per schema, each named by its **schema identifier**, so the
+enrichment step writes `<data-dir>/<schema-id>/`:
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # Hadoop rejects newer JDKs
+cd tools/kcp13-golden
+for schema in kcp-13 kcp-mobility-27-v1 kcp-mobility-pawns-31-v1; do
+  sbt -batch -Dengine.version=0.9.3 \
+    "runMain dicechess.training.golden.EnrichShardsApp ../../sample/playsite-bots-v0 ../../data/enriched/$schema $schema"
+done
+cd ../..
+uv run python -m dicechess_training.ablation --data-dir data/enriched --output-dir out/ablation
+```
+
+A reproduction is expected to match the report's content digests, its metrics and its decision;
+the file digests belong to the producer run that made them.
 
 Run `mise run check` for Python checks and `mise run check:enrichment` for the
 JVM → Parquet → Python contract smoke. The latter requires **JDK 21** and sbt;

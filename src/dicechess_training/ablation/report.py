@@ -38,7 +38,13 @@ def _render_header(
     ]
     sel_id = decision["selected_schema_id"]
     sel_name = decision["selected_schema"]
-    lines.append(f"- **Selected Feature Schema**: **`{sel_id}`** ({sel_name})")
+    if sel_name is None:
+        lines.append(
+            "- **Selected Feature Schema**: **none** — "
+            + decision.get("inadmissible_reason", "no schema cleared the admissibility floor")
+        )
+    else:
+        lines.append(f"- **Selected Feature Schema**: **`{sel_id}`** ({sel_name})")
     lines.append(
         f"- **Protocol Version**: `{report['protocol_version']}` "
         f"(SHA-256: `{report['protocol_sha256'][:16]}...`)"
@@ -66,7 +72,17 @@ def _render_header(
         )
     lines.append("")
 
-    if sel_name == "S0":
+    if sel_name is None:
+        lines.append("> [!CAUTION]")
+        lines.append(
+            "> **Development Verdict**: no schema was selected. "
+            + decision.get("inadmissible_reason", "no schema cleared the admissibility floor")
+        )
+        lines.append(
+            "> This run selects nothing and hands nothing to training; its numbers are evidence "
+            "about the run, not about the schemas."
+        )
+    elif sel_name == "S0":
         lines.append(NOTE_ALERT)
         lines.append(
             "> **Development Verdict**: Neither wider candidate cleared all development gates."
@@ -88,15 +104,78 @@ def _render_input_shards(report: dict[str, Any]) -> list[str]:
     shards = report.get("input_shard_digests", {})
     if not shards:
         return []
+    content = report.get("input_shard_content_digests", {})
     lines = [
         "### Input Shard Provenance",
         "",
-        "| Schema | Shard File | SHA-256 Digest |",
-        "|---|---|---|",
+        "The file digest identifies the artifact this run read. The content digest covers the "
+        "semantic metadata and the column values in a canonical order, and is what an independent "
+        "re-run compares: the Parquet writer orders its footer encoding sets differently between "
+        "producer sessions, so identical data can land in byte-different files.",
+        "",
+        "| Schema | Shard File | File SHA-256 | Content SHA-256 |",
+        "|---|---|---|---|",
     ]
     for skey, files in sorted(shards.items()):
         for fname, digest_val in sorted(files.items()):
-            lines.append(f"| **{skey}** | `{fname}` | `{digest_val[:16]}...` |")
+            content_val = content.get(skey, {}).get(fname)
+            content_cell = f"`{content_val[:16]}...`" if content_val else "—"
+            lines.append(f"| **{skey}** | `{fname}` | `{digest_val[:16]}...` | {content_cell} |")
+    return lines
+
+
+def _render_admissibility(report: dict[str, Any], schemas: dict[str, Any]) -> list[str]:
+    """The no-information floor and every schema's verdict against it."""
+    no_info = report.get("no_information_reference")
+    if not no_info:
+        return []
+    metric = no_info["metric"]
+    ref_scores = no_info["scores"]
+    lines = [
+        "## 1b. Admissibility Against the No-Information Reference",
+        "",
+        f"The benchmark's default reference is a constant predictor. A schema whose mean single "
+        f"model scores no better than it has measured nothing and cannot be selected, whatever "
+        f"its relative comparison with S0 shows. Reference: "
+        f"`{no_info['reference']}` = {no_info['prediction']:.4f}.",
+        "",
+        f"| Predictor | {metric.replace('_', ' ').title()} | Brier | ECE | Verdict |",
+        "|---|---|---|---|---|",
+        f"| No-information reference | {ref_scores[metric]:.4f} | {ref_scores['brier']:.4f} | "
+        f"{ref_scores['ece']:.4f} | Reference |",
+    ]
+    for skey in ("S0", "S1", "S2"):
+        info = schemas.get(skey)
+        if not info:
+            continue
+        adm = info.get("admissibility")
+        sm = info["single_model_summary"]
+        verdict = "—"
+        if adm:
+            verdict = (
+                f"**admissible** ({adm['margin']:+.4f})"
+                if adm["admissible"]
+                else f"**INADMISSIBLE** ({adm['margin']:+.4f})"
+            )
+        lines.append(
+            f"| {skey} (`{info['schema_id']}`) | {sm[f'{metric}_mean']:.4f} | "
+            f"{sm['brier_mean']:.4f} | {sm['ece_mean']:.4f} | {verdict} |"
+        )
+    training = schemas.get("S0", {}).get("training")
+    if training:
+        budget = training["epoch_selection"]
+        if budget["method"] == "fixed":
+            budget_text = f"fixed at {budget['epochs']} epochs"
+        else:
+            per_seed = ", ".join(
+                f"seed {rec['seed']}: {rec['selected_epochs']}" for rec in budget["per_seed"]
+            )
+            budget_text = f"selected on the inner tuning split ({per_seed})"
+        lines += [
+            "",
+            f"Recipe: feature standardisation `{training['feature_standardisation']}`, "
+            f"epoch budget {budget_text}.",
+        ]
     return lines
 
 
@@ -186,6 +265,13 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
             "Mean JVM extraction latency overhead <= 10.0% relative to S0",
         ),
     ]
+    if "beats_no_information" in gates["S1"]["checks"]:
+        rules.append(
+            (
+                "beats_no_information",
+                "Better than the no-information reference on the primary metric",
+            )
+        )
     for rule_name, req in rules:
         s1_ok = "PASS" if gates["S1"]["checks"].get(rule_name, False) else "FAIL"
         s2_ok = "PASS" if gates["S2"]["checks"].get(rule_name, False) else "FAIL"
@@ -359,6 +445,63 @@ def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]
     return lines
 
 
+def _render_interpretation(
+    schemas: dict[str, Any], gates: dict[str, Any], split: dict
+) -> list[str]:
+    """What this corpus can and cannot answer, in intervals rather than a bare verdict."""
+    lines = [
+        "## 7b. What This Corpus Can Settle",
+        "",
+        "The public sample decides which schema the development protocol selects. It cannot "
+        "settle whether the wider schemas help on the private corpus, and a failed gate here is "
+        "not evidence that they do not:",
+        "",
+    ]
+    train_rows = split.get("train_positions", 0)
+    for skey in ("S1", "S2"):
+        info = schemas.get(skey)
+        gate = gates.get(skey)
+        if not info or not gate:
+            continue
+        ci = gate["log_loss_delta_ci_95"]
+        if not ci:
+            lines.append(
+                f"- **{skey}** (`{info['schema_id']}`, {info['feature_count']} features): the "
+                f"paired interval is unavailable (too few groups to resample), so this corpus "
+                f"cannot compare the two schemas at all."
+            )
+            continue
+        if ci[1] < 0:
+            reading = (
+                "The interval lies entirely below zero, so on this corpus the schema reaches a "
+                "lower log loss than S0."
+            )
+        elif ci[0] > 0:
+            reading = (
+                "The interval lies entirely above zero, so on this corpus the schema reaches a "
+                "higher log loss than S0."
+            )
+        else:
+            reading = (
+                "The interval spans zero, so this corpus separates the two schemas from each "
+                "other no better than it separates them from noise."
+            )
+        lines.append(
+            f"- **{skey}** (`{info['schema_id']}`, {info['feature_count']} features): paired "
+            f"mean-seed log-loss delta against S0 is [{ci[0]:+.4f}, {ci[1]:+.4f}]. {reading}"
+        )
+    lines += [
+        "",
+        f"The training partition holds {train_rows:,} rows. Fitting 27 to 31 inputs on that many "
+        "rows without regularisation is data-limited, and the owner's evidence for the wider "
+        "schemas came from a corpus orders of magnitude larger. Read this report as: the "
+        "development protocol selects S0 and the wider schemas cost nothing measurable in "
+        "extraction latency, while the question the schemas were proposed to answer stays open "
+        "for the private qualification run.",
+    ]
+    return lines
+
+
 def _render_next_actions() -> list[str]:
     lines = ["## 8. Next Actions", ""]
     lines.append(
@@ -382,6 +525,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
 
     sections = [
         _render_header(report, split, decision),
+        _render_admissibility(report, schemas),
         _render_input_shards(report),
         _render_key_metrics(schemas, gates),
         _render_unseen_table(schemas, gates),
@@ -391,6 +535,7 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         _render_calibration_table(schemas),
         _render_probe_suite_table(schemas),
         _render_extraction_cost(ext_cost),
+        _render_interpretation(schemas, gates, split),
         _render_next_actions(),
     ]
     all_lines: list[str] = []

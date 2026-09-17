@@ -58,10 +58,23 @@ def _make_dummy_schema_df(
 
 def test_protocol_definition():
     assert DEFAULT_PROTOCOL_PATH.exists()
-    protocol_v3 = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
+    protocol_v4 = json.loads(DEFAULT_PROTOCOL_PATH.read_bytes())
+    assert protocol_v4["protocol_version"] == "playground-feature-ablation-v4"
+    assert protocol_v4["amends"] == "playground-feature-ablation-v3"
+    protocol_v3 = json.loads((ROOT / "docs/ablation/protocol-v3.json").read_bytes())
     assert protocol_v3["protocol_version"] == "playground-feature-ablation-v3"
     assert protocol_v3["amends"] == "playground-feature-ablation-v2"
     assert protocol_v3["model"]["loss"] == "bce-with-logits"
+
+    # v4 adds the validity amendment of #27 and changes nothing the gate is judged on.
+    assert protocol_v4["model"]["feature_standardisation"] == "train-statistics"
+    assert protocol_v4["model"]["epoch_selection"]["method"] == "inner-tuning-split"
+    assert protocol_v4["admissibility"]["reference"] == "constant-train-base-rate"
+    added = {"feature_standardisation", "epoch_selection"}
+    assert {k: v for k, v in protocol_v4["model"].items() if k not in added} == protocol_v3["model"]
+    for key in ("split", "seeds", "gate", "schemas", "estimand", "metrics", "slices", "probes"):
+        assert protocol_v4[key] == protocol_v3[key]
+    assert "admissibility" not in protocol_v3
     protocol_v2 = json.loads((ROOT / "docs/ablation/protocol-v2.json").read_bytes())
     assert "loss" not in protocol_v2["model"]
     assert {k: v for k, v in protocol_v3["model"].items() if k != "loss"} == protocol_v2["model"]
@@ -437,9 +450,13 @@ def test_prepare_dataset_splits_80_10_10_and_leakage_audit():
         groups_val,
         summary,
         unseen_val_mask,
+        inner_tuning_mask,
     ) = _prepare_dataset_splits(df, protocol)
 
     # 1. Verification of masks
+    assert not inner_tuning_mask.any()  # no epoch_selection declared: no inner tuning split
+    assert inner_tuning_mask.shape == (int(train_mask.sum()),)
+    assert summary["inner_tuning_positions"] == 0
     assert train_mask.sum() == 1  # only decisive game_1 row
     assert val_mask.sum() == 2  # game_0 rows (hash 8185)
     assert summary["test_positions"] == 1  # game_4 row (hash 9151) excluded from val

@@ -123,8 +123,14 @@ def main(args: list[str] | None = None) -> None:
     # Print summary
     dec_schema = report["decision"]["selected_schema"]
     dec_id = report["decision"]["selected_schema_id"]
-    print(f"DECISION: Selected schema {dec_schema} ({dec_id})")
     print(f"Gate Results: {report['decision']['gate_results']}")
+    if dec_schema is None:
+        print(f"DECISION: none — {report['decision']['inadmissible_reason']}")
+        print("=" * 60 + "\n")
+        # The reports above are written first: the evidence of a failed run is kept, and the
+        # command still fails so no pipeline reads "no selection" as a silent pass.
+        raise SystemExit(1)
+    print(f"DECISION: Selected schema {dec_schema} ({dec_id})")
     print("=" * 60 + "\n")
 
 
