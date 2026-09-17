@@ -232,9 +232,9 @@ def build_candidate(
         "benchmark_sha256": benchmark_core.digest(protocol),
         "code_sha256": _code_digest(),
         "engine_version": data_manifest["engine_version"],
-        "seed": int(config.seed),
+        "seed": str(config.seed),
         "perspective": "side-to-move",
-        "selected_epochs": int(selection["selected_epochs"]),
+        "selected_epochs": str(selection["selected_epochs"]),
         "feature_schema": kcp13.SCHEMA_ID,
     }
 

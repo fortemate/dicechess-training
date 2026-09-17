@@ -87,7 +87,8 @@ def test_provenance_carries_every_digest_the_benchmark_requires(package):
     assert (
         provenance["engine_version"] == core.read_json(FIXTURE / "manifest.json")["engine_version"]
     )
-    assert isinstance(provenance["seed"], int)
+    assert str(provenance["seed"]).isdigit()
+    assert all(isinstance(v, str) for v in provenance.values())
 
 
 def test_parity_is_within_the_contract_tolerance(package):
