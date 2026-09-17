@@ -15,6 +15,7 @@ import pytest
 from dicechess_training.benchmark import core
 from dicechess_training.benchmark.splits import split_for
 from dicechess_training.candidate import CandidateConfig, build_candidate
+from dicechess_training.candidate import build as build_module
 from dicechess_training.candidate.__main__ import main
 from dicechess_training.candidate.build import (
     MANIFEST_FILE,
@@ -203,3 +204,67 @@ def test_cli_fails_closed_without_leaking_input(tmp_path, capsys):
         "schema": "playground-error-v1",
         "error": "candidate-build-failed",
     }
+
+
+def test_the_public_summary_names_no_model_identity(tmp_path, capsys):
+    code = main(
+        [
+            "--data",
+            str(FIXTURE),
+            "--output",
+            str(tmp_path / "identity"),
+            "--seed",
+            "5",
+            "--model-id",
+            "private-model-name",
+        ]
+    )
+    assert code == 0
+    printed = capsys.readouterr().out
+    assert "private-model-name" not in printed
+    assert "model_id" not in json.loads(printed)
+    # It stays where the owner needs it: in the package the benchmark reads.
+    manifest = core.read_json(tmp_path / "identity" / MANIFEST_FILE)
+    assert manifest["modelId"] == "private-model-name"
+
+
+def test_a_taken_report_path_publishes_no_package(tmp_path, capsys):
+    report = tmp_path / "report.json"
+    report.write_text("existing", encoding="utf-8")
+    output = tmp_path / "blocked"
+    code = main(
+        [
+            "--data",
+            str(FIXTURE),
+            "--output",
+            str(output),
+            "--seed",
+            "7",
+            "--model-id",
+            "blocked-candidate",
+            "--report",
+            str(report),
+        ]
+    )
+    assert code == 2
+    assert json.loads(capsys.readouterr().out)["error"] == "candidate-build-failed"
+    assert report.read_text(encoding="utf-8") == "existing"
+    assert not output.exists() or not any(output.iterdir())
+
+
+def test_a_failure_while_publishing_leaves_no_partial_package(tmp_path, monkeypatch):
+    real_replace = build_module.os.replace
+    calls = {"n": 0}
+
+    def flaky_replace(src, dst):
+        calls["n"] += 1
+        if calls["n"] == 2:  # the manifest, after the model has already been published
+            raise OSError("publication interrupted")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(build_module.os, "replace", flaky_replace)
+    output = tmp_path / "interrupted"
+    with pytest.raises(OSError, match="publication interrupted"):
+        build_candidate(FIXTURE, output, CandidateConfig(seed=11, model_id="interrupted"))
+    assert calls["n"] == 2
+    assert not any(output.iterdir())

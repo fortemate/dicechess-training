@@ -213,10 +213,13 @@ computed from the artifacts — `training_data_sha256` and `training_groups_sha2
 Before anything is written it runs the checks the benchmark will run (`validate_manifest`,
 `verify_model_digest`, `validate_onnx_contract`, `check_training_identity`) plus Torch-versus-
 onnxruntime parity on the golden matrix and held-out rows at 1e-6; on any failure the output
-directory stays empty. It refuses to overwrite an existing package. `model-card.md` is written
-next to the artifacts with the fields that can be read from them; the private rows of the card
-stay the owner's to complete outside Git. Like the benchmark entry point, stdout carries only
-the JSON summary — digests and counts, never a dataset path or row content.
+directory stays empty: the three files are staged beside the destination and published by
+rename, so an interrupted publication removes what it already moved. `--report` is claimed
+before the build for the same reason — a report path that turns out to be taken must not leave
+a package behind. It refuses to overwrite an existing package. `model-card.md` is written next
+to the artifacts with the fields that can be read from them; the private rows of the card stay
+the owner's to complete outside Git. Like the benchmark entry point, stdout carries only the
+JSON summary — digests and counts, never a dataset path, a model identity or row content.
 
 The seal has schema `playground-seal-v1`, `implementation_sha256`, `benchmark_sha256`, `development_dataset_sha256`,
 `final_dataset_sha256`, `candidate_manifest_sha256`, `accepted_references` (digest list),

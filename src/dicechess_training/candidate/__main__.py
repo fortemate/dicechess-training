@@ -18,9 +18,10 @@ class SafeParser(argparse.ArgumentParser):
 
 def _public_summary(summary: dict) -> dict:
     """Digests and counts only: no dataset path, row content or output location."""
+    # The model identity stays in the package manifest: the card template counts model
+    # identities among the fields that do not belong in a shareable summary.
     return {
         "schema": "playground-candidate-v1",
-        "model_id": summary["model_id"],
         "model_sha256": summary["manifest"]["modelSha256"],
         "engine_compatibility": summary["manifest"]["engineCompatibility"],
         "provenance": summary["provenance"],
@@ -38,8 +39,15 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--report")
+    reserved = None
     try:
         args = parser.parse_args(argv)
+        # The report destination is claimed before the build: discovering that it is taken
+        # afterwards would leave a package behind that this command reported as failed.
+        report_path = Path(args.report) if args.report else None
+        if report_path is not None:
+            report_path.open("x", encoding="utf-8").close()
+            reserved = report_path
         # The ONNX exporter writes progress to stdout; this entry point promises JSON there,
         # so library chatter is redirected to stderr for the duration of the build.
         with contextlib.redirect_stdout(sys.stderr):
@@ -49,14 +57,15 @@ def main(argv=None):
         result = (
             json.dumps(_public_summary(summary), indent=2, sort_keys=True, allow_nan=False) + "\n"
         )
-        if args.report:
-            with Path(args.report).open("x", encoding="utf-8") as report:
-                report.write(result)
+        if report_path is not None:
+            report_path.write_text(result, encoding="utf-8")
         else:
             print(result, end="")
         return 0
     except Exception:
         # Includes runtime/IO errors: third-party exception text may carry private paths.
+        if reserved is not None:
+            reserved.unlink(missing_ok=True)
         print(json.dumps({"schema": "playground-error-v1", "error": "candidate-build-failed"}))
         return 2
 

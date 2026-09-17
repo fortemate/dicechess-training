@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -237,8 +238,16 @@ def build_candidate(
         "feature_schema": kcp13.SCHEMA_ID,
     }
 
-    with tempfile.TemporaryDirectory() as staging:
-        staged_model = Path(staging) / MODEL_FILE
+    destination = Path(output_dir)
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in (MODEL_FILE, MANIFEST_FILE, MODEL_CARD_FILE):
+        _require(not (destination / name).exists(), f"{name} already exists in the output")
+
+    # Staged beside the destination rather than in the system temp directory, so publication is
+    # a same-filesystem rename per file and a failed build cannot leave a half-written package.
+    staging = Path(tempfile.mkdtemp(dir=destination.parent, prefix=".candidate-staging-"))
+    try:
+        staged_model = staging / MODEL_FILE
         export_candidate(model, kcp13.SCHEMA_ID, staged_model)
         manifest = kcp13.build_manifest(
             staged_model,
@@ -270,15 +279,23 @@ def build_candidate(
             "dataset_version": data_manifest["version"],
         }
 
-        destination = Path(output_dir)
-        destination.mkdir(parents=True, exist_ok=True)
-        for name in (MODEL_FILE, MANIFEST_FILE, MODEL_CARD_FILE):
-            _require(not (destination / name).exists(), f"{name} already exists in the output")
-        shutil.move(str(staged_model), destination / MODEL_FILE)
-        (destination / MANIFEST_FILE).write_text(
+        (staging / MANIFEST_FILE).write_text(
             json.dumps(manifest, indent=2, sort_keys=True, allow_nan=False) + "\n",
             encoding="utf-8",
         )
-        (destination / MODEL_CARD_FILE).write_text(_model_card(summary), encoding="utf-8")
+        (staging / MODEL_CARD_FILE).write_text(_model_card(summary), encoding="utf-8")
+
+        published: list[Path] = []
+        try:
+            for name in (MODEL_FILE, MANIFEST_FILE, MODEL_CARD_FILE):
+                os.replace(staging / name, destination / name)
+                published.append(destination / name)
+        except OSError:
+            # A package missing one of its three files is worse than no package at all.
+            for path in published:
+                path.unlink(missing_ok=True)
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
     return summary
