@@ -16,6 +16,26 @@ class SafeParser(argparse.ArgumentParser):
         raise ValueError("invalid CLI arguments")
 
 
+def _input_directory(raw: str) -> Path:
+    """Resolve a CLI-supplied input location, in the spirit of `ablation.paths`."""
+    resolved = Path(raw).resolve()
+    if not resolved.is_dir():
+        raise ValueError("input directory does not exist")
+    return resolved
+
+
+def _output_location(raw: str) -> Path:
+    """Resolve a CLI-supplied output location and refuse a symlink standing in for it.
+
+    The operator may write wherever their audit store lives, so this normalises the path and
+    rejects a link in its place rather than confining the tool to one directory.
+    """
+    path = Path(raw)
+    if path.is_symlink():
+        raise ValueError("output path must not be a symlink")
+    return path.resolve()
+
+
 def _public_summary(summary: dict) -> dict:
     """Digests and counts only: no dataset path, row content or output location."""
     # The model identity stays in the package manifest: the card template counts model
@@ -44,7 +64,9 @@ def main(argv=None):
         args = parser.parse_args(argv)
         # The report destination is claimed before the build: discovering that it is taken
         # afterwards would leave a package behind that this command reported as failed.
-        report_path = Path(args.report) if args.report else None
+        data_dir = _input_directory(args.data)
+        output_dir = _output_location(args.output)
+        report_path = _output_location(args.report) if args.report else None
         if report_path is not None:
             report_path.open("x", encoding="utf-8").close()
             reserved = report_path
@@ -52,7 +74,7 @@ def main(argv=None):
         # so library chatter is redirected to stderr for the duration of the build.
         with contextlib.redirect_stdout(sys.stderr):
             summary = build_candidate(
-                args.data, args.output, CandidateConfig(seed=args.seed, model_id=args.model_id)
+                data_dir, output_dir, CandidateConfig(seed=args.seed, model_id=args.model_id)
             )
         result = (
             json.dumps(_public_summary(summary), indent=2, sort_keys=True, allow_nan=False) + "\n"

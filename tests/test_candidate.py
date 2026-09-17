@@ -118,28 +118,25 @@ def test_a_second_build_refuses_to_overwrite_a_package(package, tmp_path):
     directory, _ = package
     target = tmp_path / "again"
     shutil.copytree(directory, target)
+    config = CandidateConfig(seed=11, model_id="second")
     with pytest.raises(CandidateError, match="already exists"):
-        build_candidate(FIXTURE, target, CandidateConfig(seed=11, model_id="second"))
+        build_candidate(FIXTURE, target, config)
 
 
 def test_calibration_in_the_manifest_is_refused(tmp_path):
+    config = CandidateConfig(seed=11, model_id="c", calibration={"temperature": 2.0})
+    output = tmp_path / "calibrated"
     with pytest.raises(CandidateError, match="embedded in the graph"):
-        build_candidate(
-            FIXTURE,
-            tmp_path / "calibrated",
-            CandidateConfig(seed=11, model_id="c", calibration={"temperature": 2.0}),
-        )
-    assert not (tmp_path / "calibrated").exists() or not any((tmp_path / "calibrated").iterdir())
+        build_candidate(FIXTURE, output, config)
+    assert not output.exists() or not any(output.iterdir())
 
 
 def test_a_range_excluding_the_dataset_engine_is_refused(tmp_path):
+    config = CandidateConfig(seed=11, model_id="c", engine_compatibility=">=0.13.0")
+    output = tmp_path / "narrow"
     with pytest.raises((CandidateError, kcp13.ContractError)):
-        build_candidate(
-            FIXTURE,
-            tmp_path / "narrow",
-            CandidateConfig(seed=11, model_id="c", engine_compatibility=">=0.13.0"),
-        )
-    assert not (tmp_path / "narrow").exists() or not any((tmp_path / "narrow").iterdir())
+        build_candidate(FIXTURE, output, config)
+    assert not output.exists() or not any(output.iterdir())
 
 
 def test_a_dataset_the_benchmark_refuses_never_trains(tmp_path):
@@ -148,9 +145,11 @@ def test_a_dataset_the_benchmark_refuses_never_trains(tmp_path):
     manifest = core.read_json(corrupt / "manifest.json")
     manifest["engine_version"] = "0.0.1"
     (corrupt / "manifest.json").write_text(json.dumps(manifest))
-    with pytest.raises(Exception, match="unverified engine"):
-        build_candidate(corrupt, tmp_path / "out", CandidateConfig(seed=11, model_id="c"))
-    assert not (tmp_path / "out").exists()
+    config = CandidateConfig(seed=11, model_id="c")
+    output = tmp_path / "out"
+    with pytest.raises(ValueError, match="unverified engine"):
+        build_candidate(corrupt, output, config)
+    assert not output.exists()
 
 
 def test_a_tampered_model_loses_benchmark_admission(package, tmp_path):
@@ -160,8 +159,9 @@ def test_a_tampered_model_loses_benchmark_admission(package, tmp_path):
     with (tampered / MODEL_FILE).open("ab") as model:
         model.write(b"\0")
     data_manifest, _ = core.load_dataset(FIXTURE)
+    protocol = core.load_protocol()
     with pytest.raises(kcp13.ContractError, match="SHA-256 mismatch"):
-        core.load_candidate(tampered, data_manifest, core.load_protocol())
+        core.load_candidate(tampered, data_manifest, protocol)
 
 
 def test_cli_reports_digests_only(tmp_path, capsys):
@@ -179,7 +179,8 @@ def test_cli_reports_digests_only(tmp_path, capsys):
     )
     assert code == 0
     printed = capsys.readouterr().out
-    assert str(FIXTURE) not in printed and str(tmp_path) not in printed
+    assert str(FIXTURE) not in printed
+    assert str(tmp_path) not in printed
     report = json.loads(printed)
     assert report["schema"] == "playground-candidate-v1"
     assert len(report["model_sha256"]) == 64
@@ -264,7 +265,8 @@ def test_a_failure_while_publishing_leaves_no_partial_package(tmp_path, monkeypa
 
     monkeypatch.setattr(build_module.os, "replace", flaky_replace)
     output = tmp_path / "interrupted"
+    config = CandidateConfig(seed=11, model_id="interrupted")
     with pytest.raises(OSError, match="publication interrupted"):
-        build_candidate(FIXTURE, output, CandidateConfig(seed=11, model_id="interrupted"))
+        build_candidate(FIXTURE, output, config)
     assert calls["n"] == 2
     assert not any(output.iterdir())
