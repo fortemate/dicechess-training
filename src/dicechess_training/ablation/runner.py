@@ -1180,9 +1180,15 @@ def run_ablation(
     }
 
     if selected_schema is None:
+        inadmissible = sorted(
+            key
+            for key, res in results_by_schema.items()
+            if res.get("admissibility") and not res["admissibility"]["admissible"]
+        )
         decision_record["inadmissible_reason"] = (
-            "every schema, the baseline included, scored worse than the no-information "
-            "reference on the primary metric; the run measured nothing selectable"
+            "the baseline S0 scored worse than the no-information reference on the primary "
+            f"metric (inadmissible: {', '.join(inadmissible)}), and no candidate cleared the "
+            "gate, so the run has nothing selectable"
         )
 
     return {

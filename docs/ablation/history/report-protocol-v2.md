@@ -5,7 +5,7 @@
 > feature columns with `BCELoss` on a saturating sigmoid. Under the no-information floor added in
 > protocol v4 (Issue #27) none of its three arms is admissible: every schema scored a worse
 > validation log loss than the constant train-base-rate predictor (0.6926), and the baseline's
-> seed spread (±0.4615) was far larger than the +1 % relative threshold the gate had to resolve.
+> seed spread (±0.4588) was far larger than the +1 % relative threshold the gate had to resolve.
 > Its selection of S0 is not evidence. The current report is [../report.md](../report.md).
 
 Predeclared offline ablation evaluating **S0** (`kcp-13`), **S1** (`kcp-mobility-27-v1`), and **S2** (`kcp-mobility-pawns-31-v1`) under `docs/ablation/protocol-v2.json` (amends `protocol-v1.json`).

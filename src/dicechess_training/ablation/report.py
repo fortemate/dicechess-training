@@ -72,7 +72,17 @@ def _render_header(
         )
     lines.append("")
 
-    if sel_name == "S0":
+    if sel_name is None:
+        lines.append("> [!CAUTION]")
+        lines.append(
+            "> **Development Verdict**: no schema was selected. "
+            + decision.get("inadmissible_reason", "no schema cleared the admissibility floor")
+        )
+        lines.append(
+            "> This run selects nothing and hands nothing to training; its numbers are evidence "
+            "about the run, not about the schemas."
+        )
+    elif sel_name == "S0":
         lines.append(NOTE_ALERT)
         lines.append(
             "> **Development Verdict**: Neither wider candidate cleared all development gates."
@@ -454,12 +464,31 @@ def _render_interpretation(
         if not info or not gate:
             continue
         ci = gate["log_loss_delta_ci_95"]
-        ci_text = f"[{ci[0]:+.4f}, {ci[1]:+.4f}]" if ci else "unavailable"
+        if not ci:
+            lines.append(
+                f"- **{skey}** (`{info['schema_id']}`, {info['feature_count']} features): the "
+                f"paired interval is unavailable (too few groups to resample), so this corpus "
+                f"cannot compare the two schemas at all."
+            )
+            continue
+        if ci[1] < 0:
+            reading = (
+                "The interval lies entirely below zero, so on this corpus the schema reaches a "
+                "lower log loss than S0."
+            )
+        elif ci[0] > 0:
+            reading = (
+                "The interval lies entirely above zero, so on this corpus the schema reaches a "
+                "higher log loss than S0."
+            )
+        else:
+            reading = (
+                "The interval spans zero, so this corpus separates the two schemas from each "
+                "other no better than it separates them from noise."
+            )
         lines.append(
             f"- **{skey}** (`{info['schema_id']}`, {info['feature_count']} features): paired "
-            f"mean-seed log-loss delta against S0 is {ci_text}. The interval spans zero, so this "
-            f"corpus separates the two schemas from each other no better than it separates them "
-            f"from noise."
+            f"mean-seed log-loss delta against S0 is [{ci[0]:+.4f}, {ci[1]:+.4f}]. {reading}"
         )
     lines += [
         "",

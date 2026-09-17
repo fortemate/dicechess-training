@@ -279,3 +279,103 @@ def test_content_digest_ignores_footer_layout_but_not_data_or_semantics(tmp_path
         table.replace_schema_metadata({**metadata, b"engine_version": b"0.9.4"}), changed_engine
     )
     assert shard_content_digest(changed_engine) != shard_content_digest(first)
+
+
+# --- rendering a run that selected nothing ---------------------------------------------------
+
+
+def _minimal_report(selected: str | None, ci_by_schema: dict[str, list[float] | None]) -> dict:
+    schemas = {
+        key: {
+            "schema_id": sid,
+            "feature_count": count,
+            "single_model_summary": {
+                "log_loss_mean": 0.6,
+                "log_loss_std": 0.01,
+                "brier_mean": 0.22,
+                "brier_std": 0.001,
+                "ece_mean": 0.03,
+                "ece_std": 0.002,
+            },
+        }
+        for key, sid, count in (
+            ("S0", "kcp-13", 13),
+            ("S1", "kcp-mobility-27-v1", 27),
+            ("S2", "kcp-mobility-pawns-31-v1", 31),
+        )
+    }
+    gates = {
+        key: {
+            "cleared": False,
+            "log_loss_delta_ci_95": ci_by_schema[key],
+            "relative_log_loss_gain": -0.01,
+            "checks": {},
+        }
+        for key in ("S1", "S2")
+    }
+    decision = {
+        "selected_schema": selected,
+        "selected_schema_id": None if selected is None else schemas[selected]["schema_id"],
+        "gate_results": {"S1": False, "S2": False},
+    }
+    if selected is None:
+        decision["inadmissible_reason"] = "the baseline S0 scored worse than the reference"
+    return {
+        "protocol_version": "test",
+        "protocol_sha256": "0" * 64,
+        "engine_version": "0.9.3",
+        "schemas": schemas,
+        "gate_evaluations": gates,
+        "decision": decision,
+        "split_summary": {
+            "total_positions": 10,
+            "decisive_positions": 10,
+            "train_positions": 8,
+            "val_positions": 1,
+            "test_positions": 1,
+            "train_games": 8,
+            "val_games": 1,
+            "test_games": 1,
+        },
+    }
+
+
+@pytest.mark.parametrize("selected", [None, "S0", "S1"])
+def test_the_header_verdict_matches_the_decision(selected):
+    from dicechess_training.ablation.report import _render_header
+
+    report = _minimal_report(selected, {"S1": [-0.01, 0.02], "S2": [-0.01, 0.02]})
+    rendered = "\n".join(_render_header(report, report["split_summary"], report["decision"]))
+    if selected is None:
+        assert "no schema was selected" in rendered
+        assert "the baseline S0 scored worse than the reference" in rendered
+        assert "cleared all gate rules" not in rendered
+        assert "None" not in rendered
+    elif selected == "S0":
+        assert "Neither wider candidate cleared" in rendered
+        assert "no schema was selected" not in rendered
+    else:
+        assert "cleared all gate rules" in rendered
+        assert "kcp-mobility-27-v1" in rendered
+
+
+@pytest.mark.parametrize(
+    "ci,expected",
+    [
+        ([-0.05, -0.01], "entirely below zero"),
+        ([0.01, 0.05], "entirely above zero"),
+        ([-0.01, 0.05], "spans zero"),
+        (None, "unavailable"),
+    ],
+)
+def test_the_interval_reading_follows_the_interval(ci, expected):
+    from dicechess_training.ablation.report import _render_interpretation
+
+    report = _minimal_report("S0", {"S1": ci, "S2": ci})
+    lines = _render_interpretation(
+        report["schemas"], report["gate_evaluations"], report["split_summary"]
+    )
+    rendered = "\n".join(lines)
+    assert expected in rendered
+    if ci is None:
+        assert "spans zero" not in rendered
