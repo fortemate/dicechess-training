@@ -118,13 +118,17 @@ def test_a_bundle_whose_rows_do_not_match_its_manifest_is_refused(bundle):
 
 
 def test_a_published_copy_that_differs_is_refused(bundle):
+    client = FakeHub(corrupt="rows.json")
+
     with pytest.raises(hub.HubError, match="differs from the bundle: rows.json"):
-        hub.publish_bundle(REPO, bundle, DESTINATION, runner=FakeHub(corrupt="rows.json"))
+        hub.publish_bundle(REPO, bundle, DESTINATION, runner=client)
 
 
 def test_a_published_copy_that_is_incomplete_is_refused(bundle):
+    client = FakeHub(omit="license.txt")
+
     with pytest.raises(hub.HubError, match="missing license.txt"):
-        hub.publish_bundle(REPO, bundle, DESTINATION, runner=FakeHub(omit="license.txt"))
+        hub.publish_bundle(REPO, bundle, DESTINATION, runner=client)
 
 
 def test_publishing_the_same_bundle_twice_verifies_both_times(bundle):
