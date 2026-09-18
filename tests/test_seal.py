@@ -288,7 +288,8 @@ def test_cli_reports_the_digest_to_retain_and_names_no_artifact(
     assert "retain" in printed
     # Limits and identities stay in the file the owner keeps, never in what the command prints.
     text = json.dumps(printed)
-    assert "512" not in text and "seal-test-candidate" not in text
+    assert "512" not in text
+    assert "seal-test-candidate" not in text
 
 
 def test_cli_writes_nothing_when_it_refuses(tmp_path, bundles, candidate, capsys):
