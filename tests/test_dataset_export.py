@@ -194,3 +194,189 @@ def test_cli_export_success(tmp_path, capsys):
 
 def test_cli_refuses_invalid_arguments():
     assert main([]) != 0
+
+
+# --- Sealed-bundle position exclusion (#42) ---------------------------------------------------
+
+# Distinct placements so a shard can carry genuinely different positions. The king walk keeps the
+# material block identical across them, which is what the exporter cross-checks.
+_PLACEMENTS = [
+    "4k3/8/8/8/8/8/8/4K3",
+    "4k3/8/8/8/8/8/8/K7",
+    "4k3/8/8/8/8/8/8/7K",
+    "3k4/8/8/8/8/8/8/4K3",
+]
+
+
+def _positional_shard(path: Path, games: list[str], placements: list[str]) -> Path:
+    """One shard where game `g` visits `placements` in order, so positions are controllable."""
+    fields = list(COLUMNS.items()) + [(col, pa.float32()) for col in kcp13.COLUMN_NAMES]
+    rows_data = []
+    for g_index, gid in enumerate(games):
+        for ply, placement in enumerate(placements):
+            side = "w" if ply % 2 == 0 else "b"
+            fen = f"{placement} {side} - -"
+            feats = list(kcp13.material_block(fen, side)) + [0.0] * (len(kcp13.COLUMN_NAMES) - 7)
+            rows_data.append(
+                [gid, ply, fen, "PPP", side, np.float32(1.0 if g_index % 2 == 0 else 0.0)]
+                + [np.float32(f) for f in feats]
+            )
+    arrays = [pa.array([r[i] for r in rows_data], type=f[1]) for i, f in enumerate(fields)]
+    metadata = {
+        b"feature_schema": kcp13.SCHEMA_ID.encode(),
+        b"engine_version": b"0.12.0",
+        b"ruleset": kcp13.RULESET_VERSION.encode(),
+        b"perspective": kcp13.PERSPECTIVE.encode(),
+        b"columns": ",".join(kcp13.COLUMN_NAMES).encode(),
+    }
+    pq.write_table(
+        pa.Table.from_arrays(arrays, schema=pa.schema(fields, metadata=metadata)), str(path)
+    )
+    return path
+
+
+@pytest.fixture
+def development(tmp_path):
+    """A bundle whose games visit the first two placements — the 'shared openings'."""
+    shards = tmp_path / "dev-shards"
+    shards.mkdir()
+    _positional_shard(shards / "s.parquet", [f"dev-{i:03d}" for i in range(6)], _PLACEMENTS[:2])
+    directory = tmp_path / "dev"
+    build_dataset(shards, directory, DatasetConfig(engine_version="0.12.0"))
+    return directory
+
+
+@pytest.fixture
+def final_shards(tmp_path):
+    """Different games, overlapping on the first two placements and novel on the last two."""
+    shards = tmp_path / "final-shards"
+    shards.mkdir()
+    _positional_shard(shards / "s.parquet", [f"fin-{i:03d}" for i in range(6)], _PLACEMENTS)
+    return shards
+
+
+def test_exclusion_drops_exactly_the_repeated_positions(tmp_path, development, final_shards):
+    directory = tmp_path / "sealed"
+    summary = build_dataset(
+        final_shards,
+        directory,
+        DatasetConfig(engine_version="0.12.0", exclude_positions_from=development),
+    )
+    # Six games x four plies, of which the first two plies of each repeat development.
+    assert summary["rows"] == 12
+    assert summary["excluded_positions"]["removed_rows"] == 12
+    _, dev_rows = benchmark_core.load_dataset(development)
+    _, sealed_rows = benchmark_core.load_dataset(directory)
+    dev_keys = {benchmark_core.position_key(r) for r in dev_rows}
+    assert not {benchmark_core.position_key(r) for r in sealed_rows} & dev_keys
+
+
+def test_the_sealed_bundle_satisfies_the_check_that_gates_it(tmp_path, development, final_shards):
+    """The exporter's own filter and `prepare_final`'s refusal must agree."""
+    directory = tmp_path / "sealed"
+    build_dataset(
+        final_shards,
+        directory,
+        DatasetConfig(engine_version="0.12.0", exclude_positions_from=development),
+    )
+    _, dev_rows = benchmark_core.load_dataset(development)
+    _, sealed_rows = benchmark_core.load_dataset(directory)
+    benchmark_core.check_sealed_disjointness(sealed_rows, dev_rows)
+    seen = {benchmark_core.position_key(r) for r in dev_rows}
+    assert len(seen & {benchmark_core.position_key(r) for r in sealed_rows}) == 0
+
+
+def test_the_manifest_binds_the_exclusion(tmp_path, development, final_shards):
+    directory = tmp_path / "sealed"
+    build_dataset(
+        final_shards,
+        directory,
+        DatasetConfig(engine_version="0.12.0", exclude_positions_from=development),
+    )
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    dev_manifest, _ = benchmark_core.load_dataset(development)
+    assert manifest["excluded_positions_source_sha256"] == benchmark_core.digest(dev_manifest)
+    assert manifest["excluded_positions_rows"] == 12
+
+
+def test_an_unfiltered_export_keeps_the_manifest_it_always_wrote(tmp_path, final_shards):
+    """Published dataset digests must still reproduce, so the new keys appear only when used."""
+    plain = tmp_path / "plain"
+    build_dataset(final_shards, plain, DatasetConfig(engine_version="0.12.0"))
+    manifest = json.loads((plain / "manifest.json").read_text(encoding="utf-8"))
+    assert "excluded_positions_source_sha256" not in manifest
+    assert "excluded_positions_rows" not in manifest
+    assert set(manifest) == {
+        "schema",
+        "version",
+        "perspective",
+        "target",
+        "kind",
+        "license",
+        "license_evidence_sha256",
+        "rows_sha256",
+        "source_sha256",
+        "golden_sha256",
+        "feature_schema",
+        "engine_version",
+        "columns",
+    }
+
+
+def test_excluding_everything_publishes_nothing(tmp_path, development):
+    shards = tmp_path / "same-shards"
+    shards.mkdir()
+    _positional_shard(shards / "s.parquet", [f"other-{i:03d}" for i in range(4)], _PLACEMENTS[:2])
+    directory = tmp_path / "sealed"
+    with pytest.raises(DatasetError, match="every row was excluded"):
+        build_dataset(
+            shards,
+            directory,
+            DatasetConfig(engine_version="0.12.0", exclude_positions_from=development),
+        )
+    assert not directory.exists()
+
+
+def test_an_inadmissible_exclusion_source_publishes_nothing(tmp_path, final_shards):
+    bogus = tmp_path / "bogus"
+    bogus.mkdir()
+    (bogus / "manifest.json").write_text('{"schema": "not-a-dataset"}', encoding="utf-8")
+    directory = tmp_path / "sealed"
+    with pytest.raises(DatasetError, match="not an admissible dataset"):
+        build_dataset(
+            final_shards,
+            directory,
+            DatasetConfig(engine_version="0.12.0", exclude_positions_from=bogus),
+        )
+    assert not directory.exists()
+    with pytest.raises(DatasetError, match="not a dataset directory"):
+        build_dataset(
+            final_shards,
+            directory,
+            DatasetConfig(engine_version="0.12.0", exclude_positions_from=tmp_path / "missing"),
+        )
+
+
+def test_cli_exposes_the_exclusion_and_reports_what_it_removed(tmp_path, development, final_shards):
+    directory = tmp_path / "sealed"
+    report = tmp_path / "report.json"
+    assert (
+        main(
+            [
+                "--shards",
+                str(final_shards),
+                "--output",
+                str(directory),
+                "--engine-version",
+                "0.12.0",
+                "--exclude-positions-from",
+                str(development),
+                "--report",
+                str(report),
+            ]
+        )
+        == 0
+    )
+    summary = json.loads(report.read_text(encoding="utf-8"))
+    assert summary["rows"] == 12
+    assert summary["excluded_positions"]["removed_rows"] == 12

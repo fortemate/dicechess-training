@@ -32,7 +32,7 @@ def _output_location(raw: str) -> Path:
 
 def _public_summary(summary: dict) -> dict:
     """Sanitized summary: counts, schema, and digests only."""
-    return {
+    public = {
         "schema": summary["schema"],
         "version": summary["version"],
         "kind": summary["kind"],
@@ -44,6 +44,11 @@ def _public_summary(summary: dict) -> dict:
         "golden_sha256": summary["golden_sha256"],
         "source_sha256": summary["source_sha256"],
     }
+    # Reported only when something was withheld, so the absence of the field means no filtering
+    # rather than a filter whose result went unmentioned.
+    if summary.get("excluded_positions") is not None:
+        public["excluded_positions"] = summary["excluded_positions"]
+    return public
 
 
 def main(argv=None):
@@ -66,6 +71,10 @@ def main(argv=None):
     )
     parser.add_argument("--license-file", help="Path to custom license text")
     parser.add_argument("--max-games", type=int, help="Optional game limit")
+    parser.add_argument(
+        "--exclude-positions-from",
+        help="Existing bundle whose exact positions this one may not repeat (sealed bundles)",
+    )
     parser.add_argument("--version", default="1.0.0", help="Semantic version")
     parser.add_argument("--source-sha256", help="Precomputed source SHA-256")
     parser.add_argument("--report", help="Path to write JSON summary")
@@ -88,6 +97,11 @@ def main(argv=None):
             engine_version=args.engine_version,
             max_games=args.max_games,
             source_sha256=args.source_sha256,
+            exclude_positions_from=(
+                _input_location(args.exclude_positions_from)
+                if args.exclude_positions_from
+                else None
+            ),
         )
 
         with contextlib.redirect_stdout(sys.stderr):

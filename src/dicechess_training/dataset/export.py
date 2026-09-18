@@ -26,7 +26,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 
 from dicechess_training.benchmark import core as benchmark_core
-from dicechess_training.benchmark.splits import assignments
+from dicechess_training.benchmark.splits import assignments, position_key
 from dicechess_training.contracts import kcp13
 from dicechess_training.schema import (
     read_enriched_shard,
@@ -69,6 +69,13 @@ class DatasetConfig:
     feature_schema: str = kcp13.SCHEMA_ID
     max_games: int | None = None
     source_sha256: str | None = None
+    #: An existing bundle whose exact positions must not appear in this one. Sealed final
+    #: qualification refuses any exact-position overlap with development, and openings are shared
+    #: across games, so a bundle drawn from disjoint games still collides on its early plies —
+    #: every game contains the initial position. Leave unset for a development bundle: an export
+    #: without exclusion writes the same manifest it always did, so published digests still
+    #: reproduce.
+    exclude_positions_from: Path | str | None = None
 
 
 def _detect_engine_version(shard_path: Path) -> str:
@@ -242,6 +249,28 @@ def build_dataset(
             }
         )
 
+    # Exclude positions the sealed bundle may not repeat. The key comes from the benchmark itself,
+    # so this tool and `prepare_final` cannot disagree about what counts as the same position, and
+    # the source is admitted by the benchmark's own loader before a single row is dropped.
+    exclusion: dict[str, Any] | None = None
+    if cfg.exclude_positions_from is not None:
+        source_dir = Path(cfg.exclude_positions_from).resolve()
+        _require(source_dir.is_dir(), "exclusion source is not a dataset directory")
+        try:
+            excluded_manifest, excluded_rows = benchmark_core.load_dataset(source_dir)
+        except Exception as e:
+            raise DatasetError(f"exclusion source is not an admissible dataset: {e}") from e
+        # Draw rows are audited too: a position is excluded because it was seen, not because it
+        # was scored, and the draw exclusion is applied downstream by the benchmark.
+        seen = {position_key(row) for row in excluded_rows}
+        kept = [row for row in rows if position_key(row) not in seen]
+        exclusion = {
+            "source_sha256": benchmark_core.digest(excluded_manifest),
+            "removed_rows": len(rows) - len(kept),
+        }
+        rows = kept
+        _require(bool(rows), "every row was excluded; nothing left to package")
+
     # Check game-level split assignments consistency
     assignments(rows)
 
@@ -302,6 +331,12 @@ def build_dataset(
             "engine_version": engine_ver,
             "columns": feature_cols,
         }
+        if exclusion is not None:
+            # Only present when rows were actually withheld, so the dataset identity the seal binds
+            # cannot be the same for a filtered and an unfiltered bundle — and an unfiltered export
+            # keeps the manifest it has always written.
+            manifest["excluded_positions_source_sha256"] = exclusion["source_sha256"]
+            manifest["excluded_positions_rows"] = exclusion["removed_rows"]
         manifest_path = staging_dir / MANIFEST_FILE
         manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -326,6 +361,7 @@ def build_dataset(
             "golden_sha256": golden_sha256,
             "source_sha256": source_sha256,
             "license_evidence_sha256": license_evidence_sha256,
+            "excluded_positions": exclusion,
         }
     except Exception:
         if staging_dir.exists():
