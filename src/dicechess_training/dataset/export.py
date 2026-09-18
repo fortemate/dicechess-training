@@ -332,9 +332,12 @@ def build_dataset(
             "columns": feature_cols,
         }
         if exclusion is not None:
-            # Only present when rows were actually withheld, so the dataset identity the seal binds
-            # cannot be the same for a filtered and an unfiltered bundle — and an unfiltered export
-            # keeps the manifest it has always written.
+            # Written whenever an exclusion source was applied, including when it matched nothing.
+            # Recording the construction rather than its yield is the point: a bundle that was
+            # filtered and happened to overlap nowhere must not be indistinguishable from one that
+            # was never filtered, or the metadata cannot answer the only question an auditor asks
+            # of it. An export without the option adds neither key, so manifests published before
+            # this option existed still reproduce.
             manifest["excluded_positions_source_sha256"] = exclusion["source_sha256"]
             manifest["excluded_positions_rows"] = exclusion["removed_rows"]
         manifest_path = staging_dir / MANIFEST_FILE

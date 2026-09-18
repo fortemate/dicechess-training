@@ -380,3 +380,39 @@ def test_cli_exposes_the_exclusion_and_reports_what_it_removed(tmp_path, develop
     summary = json.loads(report.read_text(encoding="utf-8"))
     assert summary["rows"] == 12
     assert summary["excluded_positions"]["removed_rows"] == 12
+
+
+def test_a_source_that_matches_nothing_is_still_recorded(tmp_path, final_shards):
+    """Filtered-with-no-overlap must not look like never-filtered.
+
+    The metadata exists to answer one question — was this bundle constructed against development?
+    — so it records the construction, not its yield. Recording only non-empty removals would make
+    a bundle that overlapped nowhere indistinguishable from one nobody ever filtered.
+    """
+    unrelated_shards = tmp_path / "unrelated-shards"
+    unrelated_shards.mkdir()
+    _positional_shard(unrelated_shards / "s.parquet", ["unrelated-000"], _PLACEMENTS[2:])
+    unrelated = tmp_path / "unrelated"
+    build_dataset(unrelated_shards, unrelated, DatasetConfig(engine_version="0.12.0"))
+
+    # Overlapping placements only; the source above carries the other two, so nothing matches.
+    shards = tmp_path / "novel-shards"
+    shards.mkdir()
+    _positional_shard(shards / "s.parquet", [f"novel-{i:03d}" for i in range(4)], _PLACEMENTS[:2])
+    directory = tmp_path / "sealed"
+    summary = build_dataset(
+        shards, directory, DatasetConfig(engine_version="0.12.0", exclude_positions_from=unrelated)
+    )
+
+    assert summary["excluded_positions"]["removed_rows"] == 0
+    assert summary["rows"] == 8
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    unrelated_manifest, _ = benchmark_core.load_dataset(unrelated)
+    assert manifest["excluded_positions_rows"] == 0
+    assert manifest["excluded_positions_source_sha256"] == benchmark_core.digest(unrelated_manifest)
+
+    # And the identity differs from the same rows exported without the option, which is the point.
+    plain = tmp_path / "plain"
+    plain_summary = build_dataset(shards, plain, DatasetConfig(engine_version="0.12.0"))
+    assert plain_summary["rows_sha256"] == summary["rows_sha256"]
+    assert plain_summary["manifest_sha256"] != summary["manifest_sha256"]

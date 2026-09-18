@@ -44,8 +44,8 @@ def _public_summary(summary: dict) -> dict:
         "golden_sha256": summary["golden_sha256"],
         "source_sha256": summary["source_sha256"],
     }
-    # Reported only when something was withheld, so the absence of the field means no filtering
-    # rather than a filter whose result went unmentioned.
+    # Reported whenever an exclusion source was applied, so its absence means the export was not
+    # filtered at all — never a filter whose result went unmentioned.
     if summary.get("excluded_positions") is not None:
         public["excluded_positions"] = summary["excluded_positions"]
     return public

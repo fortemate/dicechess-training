@@ -96,8 +96,10 @@ the initial position. The custodian therefore exports the bundle with
 already occurs in development, using the benchmark's own position key so the exporter and
 `prepare_final` cannot disagree. The exclusion is recorded in the sealed manifest
 (`excluded_positions_source_sha256`, `excluded_positions_rows`), so the dataset identity the seal
-binds distinguishes a filtered bundle from an unfiltered one; a bundle exported without the option
-keeps the manifest it has always written. This is construction before results, not the forbidden
+binds distinguishes a filtered bundle from an unfiltered one. Both keys are written whenever a
+source was applied, including when it matched nothing: the record answers whether the bundle was
+constructed against development, which a zero-removal export would otherwise leave unanswerable.
+A bundle exported without the option keeps the manifest it has always written. This is construction before results, not the forbidden
 redraw after them. Note the consequence and state it in the model card: the filter removes shared
 openings preferentially, so a sealed bundle is weighted towards the middlegame and endgame, and the
 opening slice may fall below `min_slice_groups` and report as uncovered rather than as passed.
