@@ -309,6 +309,22 @@ The seal has schema `playground-seal-v1`, `implementation_sha256`, `benchmark_sh
 compact separators and UTF-8; file/evidence/model byte digests use SHA-256 of exact bytes. Retain
 the canonical dataset manifest digest as the final dataset identity; it binds the row-byte digest.
 
+`python -m dicechess_training.seal` issues it rather than leaving five digests to be copied by
+hand. It derives the implementation, protocol, development, final and candidate digests from the
+artifacts, computes the accepted reference inventory from the references supplied, and takes only
+the two values the owner froze beforehand: the concurrency workload digest and the serving limits.
+
+It also refuses at issue time everything qualification would refuse later — a final bundle that is
+not owner-controlled or that repeats a development position, a candidate or reference not trained
+on the development bundle, a comparator naming `no-information` once a model has been accepted. A
+hand-written seal passes all of those and is rejected only when the final command runs, which is
+the worst ordering for a holdout that can be opened once.
+
+The command prints the seal's own SHA-256 and nothing else that identifies anything. Record that
+value in the append-only register **now**: qualification takes the retained digest, never one
+recomputed from the file at the time it is checked. Issuing a seal is not preregistration on its
+own — the register entry is.
+
 ```bash
 uv run python -m dicechess_training.benchmark \
   --mode final --data <sealed-final-directory> --development-data <development-directory> \

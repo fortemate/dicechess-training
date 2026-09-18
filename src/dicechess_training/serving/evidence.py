@@ -22,8 +22,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
-import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -39,6 +37,7 @@ from dicechess_training.candidate.build import (
     train_candidate,
 )
 from dicechess_training.contracts import kcp13
+from dicechess_training.publish import stage, write_once
 
 EVIDENCE_SCHEMA = "playground-serving-evidence-v1"
 OBSERVATIONS_SCHEMA = "playground-serving-observations-v1"
@@ -277,42 +276,6 @@ def _piece_safety(model_path: Path, matched_alternatives_reviewed: bool) -> dict
     }
 
 
-def _stage(destination: Path, text: str, stack: contextlib.ExitStack) -> Path:
-    """Write `text` to a staging file beside `destination`, cleaned up when the stack unwinds.
-
-    Beside it, not in one shared directory, for two reasons. The staged name is fixed rather than
-    borrowed from the destination, so two destinations that happen to share a basename cannot
-    become the same staged file. And publication below links rather than renames, which cannot
-    cross a filesystem boundary — staging next to the destination guarantees it never has to.
-    """
-    directory = Path(tempfile.mkdtemp(dir=destination.parent, prefix=".serving-staging-"))
-    stack.callback(shutil.rmtree, directory, ignore_errors=True)
-    staged = directory / "document.json"
-    staged.write_text(text, encoding="utf-8")
-    return staged
-
-
-def _publish(pairs: list[tuple[Path, Path]]) -> None:
-    """Publish staged documents write-once, or publish none of them.
-
-    `os.link` fails if the destination exists, and it does so atomically — unlike a check followed
-    by a rename, which two invocations can both pass before either writes. It also makes cleanup
-    exact: a destination this call linked is one no other call could have linked, so unlinking it
-    on failure cannot remove a document somebody else published.
-    """
-    published: list[Path] = []
-    try:
-        for staged, destination in pairs:
-            os.link(staged, destination)
-            published.append(destination)
-    except OSError:
-        # Raw observations whose document was never published would read as evidence of a run that
-        # did not produce one.
-        for destination in published:
-            destination.unlink(missing_ok=True)
-        raise
-
-
 def load_observations(path: str | Path) -> dict[str, Any]:
     """Read the owner's service observations.
 
@@ -405,7 +368,7 @@ def build_evidence(
     # The raw file is serialised first because the evidence has to carry its digest, and a digest
     # of something that was never written is the one thing this document may not contain.
     with contextlib.ExitStack() as stack:
-        staged_raw = _stage(
+        staged_raw = stage(
             raw_evidence_path,
             json.dumps(raw, indent=2, sort_keys=True, allow_nan=False) + "\n",
             stack,
@@ -422,12 +385,12 @@ def build_evidence(
                 "rss_mb": float(observations["measurements"]["rss_mb"]),
             },
         }
-        staged_evidence = _stage(
+        staged_evidence = stage(
             evidence_path,
             json.dumps(evidence, indent=2, sort_keys=True, allow_nan=False) + "\n",
             stack,
         )
-        _publish([(staged_raw, raw_evidence_path), (staged_evidence, evidence_path)])
+        write_once([(staged_raw, raw_evidence_path), (staged_evidence, evidence_path)])
     return {
         "evidence": evidence,
         "failed_checks": sorted(name for name, passed in checks.items() if not passed),
