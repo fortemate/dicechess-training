@@ -378,8 +378,9 @@ def test_the_engines_committed_manifests_validate(name):
 )
 def test_the_engines_manifests_are_refused_only_for_the_field_the_engine_does_not_read(name):
     """Documents the one divergence, so it cannot drift into an unnoticed difference."""
+    manifest = _engine_fixture(name)
     with pytest.raises(kcp13.ContractError, match="evaluationProfile"):
-        kcp13.validate_manifest(_engine_fixture(name), ENGINE_VERSION)
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
 
 
 @pytest.mark.parametrize("field", ["modelRole", "perspective"])
@@ -457,8 +458,9 @@ def test_the_role_decides_the_version_a_package_declares(tmp_path):
 def test_building_an_unknown_role_is_refused(tmp_path):
     model = tmp_path / "model.onnx"
     model.write_bytes(b"digest only")
+    role = "leaf-evaluator"
     with pytest.raises(kcp13.ContractError, match="unknown modelRole"):
-        kcp13.build_manifest(model, "m", ">=0.12.0 <1.0.0", model_role="leaf-evaluator")
+        kcp13.build_manifest(model, "m", ">=0.12.0 <1.0.0", model_role=role)
 
 
 def test_a_built_manifest_validates_for_every_role(tmp_path):
