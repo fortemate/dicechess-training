@@ -67,15 +67,25 @@ def _write(path, document):
     return path
 
 
-def _run(tmp_path, candidate_dir, observations, name="run"):
+def _staged(tmp_path, observations, name="run"):
+    """Write the observations file. Setup, never the call under test."""
+    return _write(tmp_path / f"{name}-observations.json", observations)
+
+
+def _build(tmp_path, candidate_dir, observations_path, name="run"):
+    """The single call a refusal test puts inside `pytest.raises`."""
     return build_evidence(
         candidate_dir,
         FIXTURE,
         [FIXTURE],
-        _write(tmp_path / f"{name}-observations.json", observations),
+        observations_path,
         tmp_path / f"{name}-evidence.json",
         tmp_path / f"{name}-raw.json",
     )
+
+
+def _run(tmp_path, candidate_dir, observations, name="run"):
+    return _build(tmp_path, candidate_dir, _staged(tmp_path, observations, name), name)
 
 
 def test_a_faithful_service_produces_a_document_every_check_passes(tmp_path, candidate):
@@ -148,29 +158,33 @@ def test_an_absent_attestation_refuses_the_document(tmp_path, candidate, missing
     """Absent is not false. The tool may not decide a question nobody asked the evaluator."""
     attested = _observations(candidate)["attested"]
     del attested[missing]
+    observations = _staged(tmp_path, _observations(candidate, attested=attested), missing)
     with pytest.raises(ServingEvidenceError, match="only a reviewed evaluator can supply"):
-        _run(tmp_path, candidate, _observations(candidate, attested=attested), name=missing)
+        _build(tmp_path, candidate, observations, missing)
     assert not (tmp_path / f"{missing}-evidence.json").exists()
     assert not (tmp_path / f"{missing}-raw.json").exists()
 
 
 def test_a_missing_measurement_refuses_the_document(tmp_path, candidate):
+    observations = _staged(tmp_path, _observations(candidate, measurements={"rss_mb": 1.0}))
     with pytest.raises(ServingEvidenceError, match="measurement is missing"):
-        _run(tmp_path, candidate, _observations(candidate, measurements={"rss_mb": 1.0}))
+        _build(tmp_path, candidate, observations)
 
 
 def test_a_service_that_skipped_a_probe_refuses_the_document(tmp_path, candidate):
     responses = _service_responses(candidate)
     responses.pop(next(iter(responses)))
+    observations = _staged(tmp_path, _observations(candidate, jvm_golden_probabilities=responses))
     with pytest.raises(ServingEvidenceError, match="did not answer every authored golden probe"):
-        _run(tmp_path, candidate, _observations(candidate, jvm_golden_probabilities=responses))
+        _build(tmp_path, candidate, observations)
 
 
 def test_a_service_answering_an_unknown_probe_refuses_the_document(tmp_path, candidate):
     responses = _service_responses(candidate)
     responses["invented-probe"] = 0.5
+    observations = _staged(tmp_path, _observations(candidate, jvm_golden_probabilities=responses))
     with pytest.raises(ServingEvidenceError, match="corpus does not contain"):
-        _run(tmp_path, candidate, _observations(candidate, jvm_golden_probabilities=responses))
+        _build(tmp_path, candidate, observations)
 
 
 def test_a_service_outside_the_parity_tolerance_fails_that_check(tmp_path, candidate):
@@ -181,13 +195,15 @@ def test_a_service_outside_the_parity_tolerance_fails_that_check(tmp_path, candi
 
 
 def test_an_unusable_workload_digest_refuses_the_document(tmp_path, candidate):
+    observations = _staged(tmp_path, _observations(candidate, concurrency_workload_sha256="nope"))
     with pytest.raises(ServingEvidenceError):
-        _run(tmp_path, candidate, _observations(candidate, concurrency_workload_sha256="nope"))
+        _build(tmp_path, candidate, observations)
 
 
 def test_an_unknown_observations_schema_refuses_the_document(tmp_path, candidate):
+    observations = _staged(tmp_path, _observations(candidate, schema="something-else"))
     with pytest.raises(ServingEvidenceError, match="unsupported observations schema"):
-        _run(tmp_path, candidate, _observations(candidate, schema="something-else"))
+        _build(tmp_path, candidate, observations)
 
 
 def _repackage(directory, candidate, mutate):
@@ -341,32 +357,26 @@ def test_a_boolean_is_not_accepted_where_a_number_is_required(tmp_path, candidat
     """`isinstance(True, int)` is true in Python, so `true` would have been written out as 1.0."""
     responses = _service_responses(candidate)
     responses[next(iter(responses))] = True
+    observations = _staged(tmp_path, _observations(candidate, jvm_golden_probabilities=responses))
     with pytest.raises(ServingEvidenceError, match="not a finite number"):
-        _run(tmp_path, candidate, _observations(candidate, jvm_golden_probabilities=responses))
+        _build(tmp_path, candidate, observations)
 
+    measured = _staged(
+        tmp_path,
+        _observations(candidate, measurements={"latency_p95_ms": True, "rss_mb": 420.0}),
+        "bool-measurement",
+    )
     with pytest.raises(ServingEvidenceError, match="measurement is missing or unusable"):
-        _run(
-            tmp_path,
-            candidate,
-            _observations(candidate, measurements={"latency_p95_ms": True, "rss_mb": 420.0}),
-            name="bool-measurement",
-        )
+        _build(tmp_path, candidate, measured, "bool-measurement")
 
 
 def test_a_non_finite_measurement_is_refused(tmp_path, candidate):
     observations = _observations(candidate)
     observations["measurements"] = {"latency_p95_ms": float("inf"), "rss_mb": 420.0}
     # `json.dumps` writes Infinity by default, which `json.loads` reads back as a float.
-    (tmp_path / "inf-observations.json").write_text(json.dumps(observations), encoding="utf-8")
+    staged = _write(tmp_path / "inf-observations.json", observations)
     with pytest.raises(ServingEvidenceError, match="measurement is missing or unusable"):
-        build_evidence(
-            candidate,
-            FIXTURE,
-            [FIXTURE],
-            tmp_path / "inf-observations.json",
-            tmp_path / "inf-evidence.json",
-            tmp_path / "inf-raw.json",
-        )
+        _build(tmp_path, candidate, staged, "inf")
 
 
 def test_an_existing_output_is_never_overwritten(tmp_path, candidate):
@@ -374,14 +384,16 @@ def test_an_existing_output_is_never_overwritten(tmp_path, candidate):
         directory = tmp_path / occupied.split(".")[0]
         directory.mkdir()
         (directory / occupied).write_text("previous run", encoding="utf-8")
+        observations = _staged(directory, _observations(candidate))
         with pytest.raises(ServingEvidenceError, match="already exists"):
-            _run(directory, candidate, _observations(candidate))
+            _build(directory, candidate, observations)
         assert (directory / occupied).read_text(encoding="utf-8") == "previous run"
 
 
 def test_a_refused_run_leaves_no_staging_directory_behind(tmp_path, candidate):
     attested = _observations(candidate)["attested"]
     del attested["concurrency"]
+    observations = _staged(tmp_path, _observations(candidate, attested=attested), "aborted")
     with pytest.raises(ServingEvidenceError):
-        _run(tmp_path, candidate, _observations(candidate, attested=attested), name="aborted")
+        _build(tmp_path, candidate, observations, "aborted")
     assert sorted(p.name for p in tmp_path.iterdir()) == ["aborted-observations.json"]
