@@ -22,7 +22,6 @@ from dicechess_training.serving.evidence import (
     JVM_PARITY_TOLERANCE,
     OBSERVATIONS_SCHEMA,
     PROBE_SUITE,
-    _publish,
     authored_probes,
     raw_outputs,
 )
@@ -433,21 +432,3 @@ def test_writing_both_documents_to_one_location_is_refused(tmp_path, candidate):
     with pytest.raises(ServingEvidenceError, match="same location"):
         build_evidence(candidate, FIXTURE, [FIXTURE], observations, destination, destination)
     assert not destination.exists()
-
-
-def test_publication_refuses_a_destination_taken_after_the_check(tmp_path):
-    """`os.link` is the guarantee: a check followed by a rename is a race, a link is not."""
-    staging = tmp_path / "staging"
-    staging.mkdir()
-    first, second = staging / "a.json", staging / "b.json"
-    first.write_text("first", encoding="utf-8")
-    second.write_text("second", encoding="utf-8")
-    taken = tmp_path / "taken.json"
-    taken.write_text("published by someone else", encoding="utf-8")
-    published = tmp_path / "published.json"
-
-    with pytest.raises(FileExistsError):
-        _publish([(first, published), (second, taken)])
-    # The document this call did publish is withdrawn; the other call's is untouched.
-    assert not published.exists()
-    assert taken.read_text(encoding="utf-8") == "published by someone else"

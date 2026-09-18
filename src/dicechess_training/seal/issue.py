@@ -18,10 +18,8 @@ come from the owner, who froze them before any result existed.
 
 from __future__ import annotations
 
+import contextlib
 import json
-import os
-import shutil
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +28,7 @@ import numpy as np
 from dicechess_training.benchmark import core as benchmark_core
 from dicechess_training.benchmark.splits import position_key
 from dicechess_training.contracts import kcp13
+from dicechess_training.publish import stage, write_once
 
 SEAL_SCHEMA = "playground-seal-v1"
 NO_INFORMATION = "no-information"
@@ -154,19 +153,18 @@ def build_seal(
 def publish_seal(seal: dict[str, Any], path: str | Path) -> str:
     """Write the seal and return its own SHA-256, which the owner retains independently.
 
-    Staged and renamed like every other document this repository publishes, so a failed write
-    leaves nothing that could later be mistaken for a preregistration.
+    Published write-once: a preregistration that a later run can overwrite is not one, and the
+    check-then-rename this used to do is a race two issuers can both pass.
     """
     path = Path(path)
     _require(not path.exists(), "a seal already exists at that location")
-    staging = Path(tempfile.mkdtemp(dir=path.parent, prefix=".seal-staging-"))
-    try:
-        staged = staging / path.name
-        staged.write_text(
-            json.dumps(seal, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+    with contextlib.ExitStack() as stack:
+        staged = stage(
+            path, json.dumps(seal, indent=2, sort_keys=True, allow_nan=False) + "\n", stack
         )
         digest = kcp13.sha256_of(staged)
-        os.replace(staged, path)
+        try:
+            write_once([(staged, path)])
+        except FileExistsError as error:
+            raise SealError("a seal already exists at that location") from error
         return digest
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)

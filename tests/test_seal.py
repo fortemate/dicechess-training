@@ -283,13 +283,24 @@ def test_cli_reports_the_digest_to_retain_and_names_no_artifact(
     )
     assert code == 0
     printed = json.loads(capsys.readouterr().out)
+    assert set(printed) == {
+        "schema",
+        "seal_sha256",
+        "accepted_references",
+        "promotion_reference",
+        "retain",
+    }
     assert printed["seal_sha256"] == kcp13.sha256_of(path)
     assert printed["promotion_reference"] == "no-information"
-    assert "retain" in printed
+
     # Limits and identities stay in the file the owner keeps, never in what the command prints.
-    text = json.dumps(printed)
-    assert "512" not in text
-    assert "seal-test-candidate" not in text
+    # The digest is excluded from the scan on purpose: it is 64 hex characters, so it contains
+    # "512" by chance about once in sixty runs, and it moves with any source edit because
+    # `implementation_sha256` feeds the seal. Scanning it would fail for a reason that reads like
+    # a leak and is not one.
+    scanned = json.dumps({k: v for k, v in printed.items() if not k.endswith("_sha256")})
+    assert "512" not in scanned
+    assert "seal-test-candidate" not in scanned
 
 
 def test_cli_writes_nothing_when_it_refuses(tmp_path, bundles, candidate, capsys):
@@ -316,3 +327,28 @@ def test_cli_writes_nothing_when_it_refuses(tmp_path, bundles, candidate, capsys
     assert code == 2
     assert not path.exists()
     assert json.loads(capsys.readouterr().out)["error"] == "seal-issue-failed"
+
+
+def test_a_seal_is_published_write_once(tmp_path, bundles, candidate):
+    """A preregistration a later run can overwrite is not one.
+
+    The existence check and the publication used to be two steps, which two issuers can both pass
+    before either writes.
+    """
+    development, final, _ = bundles
+    path = tmp_path / "contested.json"
+    digest = publish_seal(_seal(candidate, development, final), path)
+    published = path.read_text(encoding="utf-8")
+
+    with pytest.raises(SealError, match="already exists"):
+        publish_seal(_seal(candidate, development, final), path)
+    assert path.read_text(encoding="utf-8") == published
+    assert kcp13.sha256_of(path) == digest
+
+
+def test_a_seal_left_by_a_failed_write_is_never_published(tmp_path, bundles, candidate):
+    development, final, _ = bundles
+    directory = tmp_path / "gone"
+    with pytest.raises(OSError):
+        publish_seal(_seal(candidate, development, final), directory / "seal.json")
+    assert not directory.exists()
