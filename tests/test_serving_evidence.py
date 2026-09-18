@@ -190,19 +190,83 @@ def test_an_unknown_observations_schema_refuses_the_document(tmp_path, candidate
         _run(tmp_path, candidate, _observations(candidate, schema="something-else"))
 
 
+def _repackage(directory, candidate, mutate):
+    """A copy of the package with its manifest mutated and its model left alone."""
+    directory.mkdir()
+    (directory / "model.onnx").write_bytes((candidate / "model.onnx").read_bytes())
+    manifest = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
+    mutate(manifest)
+    (directory / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    return directory
+
+
 def test_the_model_is_recovered_only_when_it_reproduces_the_packaged_bytes(tmp_path, candidate):
     model, manifest = recover_model(candidate, FIXTURE)
     assert manifest["modelSha256"] == kcp13.sha256_of(candidate / "model.onnx")
     assert model is not None
 
-    tampered = tmp_path / "tampered"
-    tampered.mkdir()
-    (tampered / "model.onnx").write_bytes((candidate / "model.onnx").read_bytes())
-    altered = json.loads((candidate / "manifest.json").read_text(encoding="utf-8"))
-    altered["provenance"]["seed"] = "999"
-    (tampered / "manifest.json").write_text(json.dumps(altered), encoding="utf-8")
-    with pytest.raises(ServingEvidenceError, match="disagrees with the package"):
-        recover_model(tampered, FIXTURE)
+
+def test_a_swapped_model_is_refused_before_anything_is_computed_with_it(tmp_path, candidate):
+    """The manifest alone is not the artifact. A replaced model must not reach the checks."""
+    swapped = tmp_path / "swapped"
+    swapped.mkdir()
+    (swapped / "manifest.json").write_bytes((candidate / "manifest.json").read_bytes())
+    original = (candidate / "model.onnx").read_bytes()
+    (swapped / "model.onnx").write_bytes(original[:-1] + bytes([original[-1] ^ 0x01]))
+    with pytest.raises(ServingEvidenceError, match="not one the benchmark would admit"):
+        recover_model(swapped, FIXTURE)
+
+
+def test_a_package_without_a_configuration_record_is_refused_rather_than_guessed(
+    tmp_path, candidate
+):
+    directory = _repackage(
+        tmp_path / "no-config", candidate, lambda m: m["provenance"].pop("config")
+    )
+    with pytest.raises(ServingEvidenceError, match="no configuration record"):
+        recover_model(directory, FIXTURE)
+
+
+def test_a_package_that_disagrees_with_its_own_record_is_refused(tmp_path, candidate):
+    directory = _repackage(
+        tmp_path / "inconsistent", candidate, lambda m: m["provenance"].__setitem__("seed", "999")
+    )
+    with pytest.raises(ServingEvidenceError, match="disagrees with its own configuration record"):
+        recover_model(directory, FIXTURE)
+
+
+def test_a_tampered_configuration_record_is_refused_before_training(tmp_path, candidate):
+    def rewrite(manifest):
+        record = json.loads(manifest["provenance"]["config"])
+        record["learning_rate"] = 0.5
+        manifest["provenance"]["config"] = json.dumps(record, sort_keys=True, separators=(",", ":"))
+
+    directory = _repackage(tmp_path / "tampered-config", candidate, rewrite)
+    with pytest.raises(ServingEvidenceError, match="does not match the digest"):
+        recover_model(directory, FIXTURE)
+
+
+def test_a_candidate_built_with_non_default_settings_is_recoverable(tmp_path):
+    """The reason the record exists: recovery must not be limited to default configurations."""
+    directory = tmp_path / "non-default"
+    config = CandidateConfig(
+        seed=5,
+        model_id="non-default-candidate",
+        hidden_dims=(8, 8),
+        learning_rate=5e-3,
+        batch_size=64,
+        epoch_candidates=(2, 3),
+        inner_cutoff=6500,
+    )
+    build_candidate(FIXTURE, directory, config)
+    model, manifest = recover_model(directory, FIXTURE)
+    assert model is not None
+    record = json.loads(manifest["provenance"]["config"])
+    assert record["hidden_dims"] == [8, 8]
+    assert record["inner_cutoff"] == 6500
+    # The identity is the manifest's, and is not duplicated into a field that travels beside it.
+    assert "model_id" not in record
+    assert manifest["modelId"] == "non-default-candidate"
 
 
 def test_bounds_are_read_before_the_serving_clamp(candidate):

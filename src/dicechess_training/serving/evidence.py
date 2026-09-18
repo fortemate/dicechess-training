@@ -32,7 +32,6 @@ from dicechess_training.ablation.export import export_candidate
 from dicechess_training.ablation.runner import predict as torch_predict
 from dicechess_training.benchmark import core as benchmark_core
 from dicechess_training.candidate.build import (
-    ENGINE_COMPATIBILITY,
     MODEL_FILE,
     CandidateConfig,
     train_candidate,
@@ -87,18 +86,48 @@ def raw_outputs(model_path: str | Path, features: np.ndarray) -> np.ndarray:
 
 
 def config_from_provenance(provenance: dict[str, str], model_id: str) -> CandidateConfig:
-    """Rebuild the packager's configuration from what the manifest recorded about it.
+    """Rebuild the packager's configuration from the record the package carries.
 
-    Only the fields provenance actually carries are taken from it; the rest are the packager's
-    declared defaults. If that reconstruction is wrong in any field, `config_sha256` will not
-    match and the recovery fails rather than quietly auditing a different model.
+    Every field is read back, none is assumed: a configuration reconstructed from defaults can
+    only ever recover a candidate that was built with defaults, and would reject every other one
+    as a digest mismatch it cannot explain. A package that predates the record is refused rather
+    than guessed at.
     """
-    return CandidateConfig(
-        seed=int(provenance["seed"]),
-        model_id=model_id,
-        engine_compatibility=ENGINE_COMPATIBILITY,
-        probability_calibration=provenance.get("probability_calibration", "none"),
+    _require("config" in provenance, "the package carries no configuration record to recover from")
+    try:
+        record = json.loads(provenance["config"])
+    except ValueError as error:
+        raise ServingEvidenceError("the configuration record is not readable") from error
+    _require(isinstance(record, dict), "the configuration record is not a mapping")
+    # Sequence fields travel through JSON as lists and the configuration declares them as tuples;
+    # `as_record` turns them back into lists, so the digest is unaffected either way.
+    record = {
+        key: tuple(value) if key in ("hidden_dims", "epoch_candidates") else value
+        for key, value in record.items()
+    }
+    # The record omits the model identity on purpose; the manifest is where it lives.
+    record["model_id"] = model_id
+    try:
+        config = CandidateConfig(**record)
+    except TypeError as error:
+        raise ServingEvidenceError(
+            "the configuration record does not describe a candidate"
+        ) from error
+    # The record now says what `config_sha256` only proved, so the two must agree before a single
+    # weight is fitted — otherwise a tampered record would be trained from and only be caught
+    # afterwards, by a digest comparison whose failure no longer explains itself.
+    _require(
+        benchmark_core.digest(config.as_record()) == provenance["config_sha256"],
+        "the configuration record does not match the digest the package declares",
     )
+    # Provenance states the seed and the calibration rule in their own right as well. A package
+    # that disagrees with itself is not one to recover a model from.
+    _require(
+        str(config.seed) == str(provenance["seed"])
+        and config.probability_calibration == provenance.get("probability_calibration", "none"),
+        "the package disagrees with its own configuration record",
+    )
+    return config
 
 
 def recover_model(candidate_dir: str | Path, training_data_dir: str | Path):
@@ -108,7 +137,16 @@ def recover_model(candidate_dir: str | Path, training_data_dir: str | Path):
     parity check can never be run against a model that is merely similar to the one deployed.
     """
     candidate_dir = Path(candidate_dir)
-    manifest = json.loads((candidate_dir / "manifest.json").read_text(encoding="utf-8"))
+    data_manifest, _ = benchmark_core.load_dataset(training_data_dir)
+    try:
+        # Admitted exactly as the benchmark admits it, before anything is computed with it: that
+        # verifies the shipped model against its own manifest and the ONNX tensor contract, so a
+        # swapped artifact is refused here rather than caught later by a check it happens to fail.
+        manifest = benchmark_core.load_candidate(
+            candidate_dir, data_manifest, benchmark_core.load_protocol()
+        )
+    except ValueError as error:
+        raise ServingEvidenceError("the package is not one the benchmark would admit") from error
     provenance = manifest["provenance"]
     config = config_from_provenance(provenance, manifest["modelId"])
 

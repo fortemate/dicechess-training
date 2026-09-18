@@ -292,6 +292,17 @@ def train_candidate(dataset_dir: str | Path, config: CandidateConfig) -> Trained
         "feature_schema": kcp13.SCHEMA_ID,
         "probability_calibration": config.probability_calibration,
         "logit_temperature": repr(calibration["temperature"]) if calibration else "1.0",
+        # The whole record, not the fields someone later guesses at. `config_sha256` proves a rerun
+        # used the same settings, but only this says what they were — and an audit that has to
+        # reconstruct them from defaults can recover a candidate built with defaults and no other.
+        # Serialised as a string because the serving contract types provenance as string-to-string.
+        # The model identity is deliberately left out: it is already the manifest's `modelId`, and
+        # a private name duplicated into a second field is a private name with two ways out.
+        "config": json.dumps(
+            {key: value for key, value in config.as_record().items() if key != "model_id"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
     }
 
     return TrainedCandidate(
