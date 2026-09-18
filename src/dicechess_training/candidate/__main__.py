@@ -44,7 +44,11 @@ def _public_summary(summary: dict) -> dict:
         "schema": "playground-candidate-v1",
         "model_sha256": summary["manifest"]["modelSha256"],
         "engine_compatibility": summary["manifest"]["engineCompatibility"],
-        "provenance": summary["provenance"],
+        # The configuration record is the one provenance entry that is a bundle of settings
+        # rather than a digest, so it stays in the package and out of the shareable summary.
+        "provenance": {
+            key: value for key, value in summary["provenance"].items() if key != "config"
+        },
         "parity": summary["parity"],
         "training_rows": summary["training_rows"],
         "inner_tuning_rows": summary["inner_tuning_rows"],

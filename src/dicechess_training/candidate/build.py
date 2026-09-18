@@ -203,12 +203,29 @@ def _model_card(summary: dict[str, Any]) -> str:
     return template.rstrip("\n") + "\n" + filled
 
 
-def build_candidate(
-    dataset_dir: str | Path,
-    output_dir: str | Path,
-    config: CandidateConfig,
-) -> dict[str, Any]:
-    """Train and package a candidate, or raise and write nothing."""
+@dataclass(frozen=True)
+class TrainedCandidate:
+    """Everything the packager needs, and everything a later audit needs to recover the model.
+
+    The serving evidence has to compare the manifest-bound training model against the exported
+    bytes, and the package is fixed at three files, so the model cannot travel with it. It is
+    recovered by running this again — which is the same thing the packager runs, so the audit
+    cannot drift from what was shipped.
+    """
+
+    model: Any
+    provenance: dict[str, str]
+    selection: dict[str, Any]
+    calibration: dict[str, Any] | None
+    data_manifest: dict[str, Any]
+    rows: list[dict]
+    parts: list[str]
+    training_rows: int
+    inner_tuning_rows: int
+
+
+def train_candidate(dataset_dir: str | Path, config: CandidateConfig) -> TrainedCandidate:
+    """Admit the dataset, train, calibrate and derive provenance. Writes nothing."""
     _require(
         config.probability_calibration in ("none", *TEMPERATURE_RULES),
         "unsupported probability calibration rule",
@@ -275,7 +292,46 @@ def build_candidate(
         "feature_schema": kcp13.SCHEMA_ID,
         "probability_calibration": config.probability_calibration,
         "logit_temperature": repr(calibration["temperature"]) if calibration else "1.0",
+        # The whole record, not the fields someone later guesses at. `config_sha256` proves a rerun
+        # used the same settings, but only this says what they were — and an audit that has to
+        # reconstruct them from defaults can recover a candidate built with defaults and no other.
+        # Serialised as a string because the serving contract types provenance as string-to-string.
+        # The model identity is deliberately left out: it is already the manifest's `modelId`, and
+        # a private name duplicated into a second field is a private name with two ways out.
+        "config": json.dumps(
+            {key: value for key, value in config.as_record().items() if key != "model_id"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
     }
+
+    return TrainedCandidate(
+        model=model,
+        provenance=provenance,
+        selection=selection,
+        calibration=calibration,
+        data_manifest=data_manifest,
+        rows=rows,
+        parts=parts,
+        training_rows=len(decisive),
+        inner_tuning_rows=len(inner),
+    )
+
+
+def build_candidate(
+    dataset_dir: str | Path,
+    output_dir: str | Path,
+    config: CandidateConfig,
+) -> dict[str, Any]:
+    """Train and package a candidate, or raise and write nothing."""
+    trained = train_candidate(dataset_dir, config)
+    model = trained.model
+    provenance = trained.provenance
+    calibration = trained.calibration
+    selection = trained.selection
+    data_manifest = trained.data_manifest
+    rows = trained.rows
+    parts = trained.parts
 
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
@@ -312,8 +368,8 @@ def build_candidate(
             "manifest": manifest,
             "provenance": provenance,
             "parity": parity,
-            "training_rows": len(decisive),
-            "inner_tuning_rows": len(inner),
+            "training_rows": trained.training_rows,
+            "inner_tuning_rows": trained.inner_tuning_rows,
             "epoch_selection": selection,
             "calibration": calibration,
             "dataset_version": data_manifest["version"],
