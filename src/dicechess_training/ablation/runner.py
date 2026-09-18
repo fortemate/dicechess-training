@@ -64,6 +64,7 @@ class ValueMLP(nn.Module):
         hidden_dims: list[int] | None = None,
         feature_mean: np.ndarray | None = None,
         feature_scale: np.ndarray | None = None,
+        logit_temperature: float | None = None,
     ):
         super().__init__()
         if hidden_dims is None:
@@ -94,6 +95,27 @@ class ValueMLP(nn.Module):
                 raise ValueError("standardisation scale must be positive")
             self.register_buffer("feature_mean", torch.tensor(mean))
             self.register_buffer("feature_scale", torch.tensor(scale))
+        self.calibrated = False
+        if logit_temperature is not None:
+            self.set_logit_temperature(logit_temperature)
+
+    def set_logit_temperature(self, temperature: float) -> None:
+        """Divide the final logit by `temperature` before the sigmoid.
+
+        Like the feature scaler, the constant is a persistent buffer rather than a serving-time
+        setting, so it travels inside the checkpoint and inside the exported graph. ADR 0001's
+        contract is untouched: the graph still takes raw features and still returns one
+        probability, and `candidate/build.py` refuses a manifest that declares a temperature,
+        because a calibration a consumer has to remember to apply is one it can forget.
+        """
+        value = float(temperature)
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"logit temperature must be finite and positive, got {temperature!r}")
+        if self.calibrated:
+            self.logit_temperature = torch.tensor(value, dtype=torch.float32)
+        else:
+            self.register_buffer("logit_temperature", torch.tensor(value, dtype=torch.float32))
+        self.calibrated = True
 
     def _standardise(self, x: torch.Tensor) -> torch.Tensor:
         if not self.standardised:
@@ -101,11 +123,19 @@ class ValueMLP(nn.Module):
         return (x - self.feature_mean) / self.feature_scale
 
     def forward_logits(self, x: torch.Tensor) -> torch.Tensor:
-        """Unbounded training scores; keep the probability-facing checkpoint layout."""
+        """Unbounded training scores; keep the probability-facing checkpoint layout.
+
+        Deliberately uncalibrated: training optimises the raw logit, and the calibration is
+        fitted afterwards against a held-out split.
+        """
         return self.net[:-1](self._standardise(x))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(self._standardise(x))
+        # An uncalibrated model keeps running through `self.net` unchanged, so checkpoints and
+        # exported graphs produced before calibration existed stay byte-identical.
+        if not self.calibrated:
+            return self.net(self._standardise(x))
+        return torch.sigmoid(self.forward_logits(x) / self.logit_temperature)
 
 
 def standardisation_statistics(
@@ -244,6 +274,58 @@ def select_epoch_budget(
         "selected_epochs": int(best_epoch),
         "inner_log_loss": best_loss,
         "candidates": [{"epochs": e, "inner_log_loss": ll} for e, ll in scored],
+    }
+
+
+#: Calibration search grid. Declared as constants rather than derived, so the fitted constant is
+#: a function of the held-out rows alone and a rerun cannot drift by changing the search.
+TEMPERATURE_GRID_MIN = 0.5
+TEMPERATURE_GRID_MAX = 3.0
+TEMPERATURE_GRID_STEPS = 501
+
+#: Scoring rules the calibration may be selected by. `brier` is the default in
+#: `candidate/build.py`: it is a proper scoring rule, so selecting on it cannot be gamed the way
+#: selecting on the gate's own ECE could, and by the Murphy decomposition it is the proper rule
+#: that carries an explicit calibration term — log loss is dominated by the dense middle of the
+#: distribution and under-corrects the tails where miscalibration actually lives.
+TEMPERATURE_RULES = ("brier", "log_loss", "ece")
+
+
+def fit_logit_temperature(
+    model: ValueMLP,
+    x_holdout: np.ndarray,
+    y_holdout: np.ndarray,
+    rule: str = "brier",
+) -> dict[str, Any]:
+    """Pick the logit temperature that scores best on rows `model` was not fitted on.
+
+    The caller owns the holdout discipline: pass rows outside this model's training set, and
+    never the outer validation partition, which stays a reporting and gating surface (#27).
+    """
+    if rule not in TEMPERATURE_RULES:
+        raise ValueError(
+            f"unsupported calibration rule {rule!r}; expected one of {TEMPERATURE_RULES}"
+        )
+    if len(x_holdout) == 0:
+        raise ValueError("calibration needs a non-empty holdout split")
+    y = np.asarray(y_holdout, dtype=float)
+    with torch.no_grad():
+        logits = model.forward_logits(torch.tensor(x_holdout, dtype=torch.float32))
+        z = logits.squeeze(-1).numpy().astype(np.float64)
+    if not np.isfinite(z).all():
+        raise ValueError("calibration holdout produced a non-finite logit")
+
+    grid = np.linspace(TEMPERATURE_GRID_MIN, TEMPERATURE_GRID_MAX, TEMPERATURE_GRID_STEPS)
+    scored = [(float(t), scores(y, 1.0 / (1.0 + np.exp(-z / t)))) for t in grid]
+    # Ties break towards 1.0 (the identity), so an uninformative holdout cannot buy a temperature.
+    best, best_scores = min(scored, key=lambda item: (item[1][rule], abs(item[0] - 1.0)))
+    baseline = scores(y, 1.0 / (1.0 + np.exp(-z)))
+    return {
+        "rule": rule,
+        "temperature": best,
+        "holdout_rows": int(len(y)),
+        "selected": {key: float(best_scores[key]) for key in ("log_loss", "brier", "ece")},
+        "uncalibrated": {key: float(baseline[key]) for key in ("log_loss", "brier", "ece")},
     }
 
 

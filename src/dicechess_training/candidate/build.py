@@ -23,8 +23,13 @@ from typing import Any
 import numpy as np
 
 from dicechess_training.ablation.export import export_candidate
+from dicechess_training.ablation.runner import (
+    TEMPERATURE_RULES,
+    fit_logit_temperature,
+    select_epoch_budget,
+    train_model,
+)
 from dicechess_training.ablation.runner import predict as torch_predict
-from dicechess_training.ablation.runner import select_epoch_budget, train_model
 from dicechess_training.benchmark import core as benchmark_core
 from dicechess_training.benchmark.splits import assignments
 from dicechess_training.contracts import kcp13
@@ -65,6 +70,11 @@ class CandidateConfig:
     inner_cutoff: int = 7000
     engine_compatibility: str = ENGINE_COMPATIBILITY
     calibration: dict[str, Any] = field(default_factory=dict)
+    #: Scoring rule the graph-embedded probability calibration is selected by, or `none` to ship
+    #: the raw sigmoid. Declared here rather than chosen after the fact, so it is digested into
+    #: `config_sha256` before the run and a candidate cannot acquire its calibration rule by
+    #: looking at how it scored.
+    probability_calibration: str = "brier"
 
     def training_config(self) -> dict[str, Any]:
         return {
@@ -88,6 +98,7 @@ class CandidateConfig:
             "epoch_candidates": list(self.epoch_candidates),
             "inner_cutoff": self.inner_cutoff,
             "engine_compatibility": self.engine_compatibility,
+            "probability_calibration": self.probability_calibration,
         }
 
 
@@ -172,6 +183,9 @@ def _model_card(summary: dict[str, Any]) -> str:
             f"| Engine compatibility | `{summary['manifest']['engineCompatibility']}` |",
             f"| Training seed | `{provenance['seed']}` |",
             f"| Selected epochs | `{provenance['selected_epochs']}` |",
+            f"| Probability calibration | `{provenance['probability_calibration']}`, "
+            f"embedded in the graph |",
+            f"| Logit temperature | `{provenance['logit_temperature']}` |",
             f"| Training rows (decisive) | `{summary['training_rows']}` |",
             f"| Model digest | `{summary['manifest']['modelSha256']}` |",
             f"| Training data digest | `{provenance['training_data_sha256']}` |",
@@ -195,6 +209,10 @@ def build_candidate(
     config: CandidateConfig,
 ) -> dict[str, Any]:
     """Train and package a candidate, or raise and write nothing."""
+    _require(
+        config.probability_calibration in ("none", *TEMPERATURE_RULES),
+        "unsupported probability calibration rule",
+    )
     data_manifest, rows = benchmark_core.load_dataset(dataset_dir)
     protocol = benchmark_core.load_protocol()
 
@@ -225,6 +243,25 @@ def build_candidate(
         epochs=selection["selected_epochs"],
     )
 
+    # The calibration is fitted against a model that has never seen the inner tuning split, at the
+    # budget already selected on it, and the constant is then carried to the shipped model. The
+    # shipped model is refit on fit+inner, so the inner split is not held out for it; a constant
+    # fitted there would read that model's memorised confidence as calibration and under-correct.
+    # Both models share architecture, seed and budget, and differ only by the ~12% of training
+    # rows added by the refit, which is the same transfer assumption the epoch budget already makes.
+    calibration = None
+    if config.probability_calibration != "none":
+        probe = train_model(
+            x_fit,
+            y_fit,
+            kcp13.FEATURE_COUNT,
+            training_config,
+            config.seed,
+            epochs=selection["selected_epochs"],
+        )
+        calibration = fit_logit_temperature(probe, x_inner, y_inner, config.probability_calibration)
+        model.set_logit_temperature(calibration["temperature"])
+
     identity = benchmark_core.train_identity(data_manifest, rows)
     provenance = {
         **identity,
@@ -236,6 +273,8 @@ def build_candidate(
         "perspective": "side-to-move",
         "selected_epochs": str(selection["selected_epochs"]),
         "feature_schema": kcp13.SCHEMA_ID,
+        "probability_calibration": config.probability_calibration,
+        "logit_temperature": repr(calibration["temperature"]) if calibration else "1.0",
     }
 
     destination = Path(output_dir)
@@ -276,6 +315,7 @@ def build_candidate(
             "training_rows": len(decisive),
             "inner_tuning_rows": len(inner),
             "epoch_selection": selection,
+            "calibration": calibration,
             "dataset_version": data_manifest["version"],
         }
 
