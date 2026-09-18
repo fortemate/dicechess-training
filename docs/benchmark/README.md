@@ -89,6 +89,21 @@ anywhere in development. Any exact-position overlap with any development partiti
 qualification; redraw/removal of final rows after seeing results is forbidden. All supplied final
 rows are scored after the declared draw exclusion; they are not hashed into new splits.
 
+Drawing the sealed bundle from a disjoint set of games satisfies the group, game and root rule on
+its own, but not the exact-position rule: openings are shared across games, and every game contains
+the initial position. The custodian therefore exports the bundle with
+`--exclude-positions-from <development-directory>`, which drops every row whose canonical position
+already occurs in development, using the benchmark's own position key so the exporter and
+`prepare_final` cannot disagree. The exclusion is recorded in the sealed manifest
+(`excluded_positions_source_sha256`, `excluded_positions_rows`), so the dataset identity the seal
+binds distinguishes a filtered bundle from an unfiltered one. Both keys are written whenever a
+source was applied, including when it matched nothing: the record answers whether the bundle was
+constructed against development, which a zero-removal export would otherwise leave unanswerable.
+A bundle exported without the option keeps the manifest it has always written. This is construction before results, not the forbidden
+redraw after them. Note the consequence and state it in the model card: the filter removes shared
+openings preferentially, so a sealed bundle is weighted towards the middlegame and endgame, and the
+opening slice may fall below `min_slice_groups` and report as uncovered rather than as passed.
+
 Before training, the owner records the protocol Git commit/digest, development and final manifest
 digests, group/exclusion policy, the reference inventory, and serving envelope in an access-controlled
 append-only record. The trainer receives only the train/validation exports. The final custodian
