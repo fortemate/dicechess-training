@@ -58,6 +58,12 @@ def main(argv=None):
     parser.add_argument("--output", required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--model-id", required=True)
+    parser.add_argument(
+        "--probability-calibration",
+        choices=("brier", "log_loss", "ece", "none"),
+        default="brier",
+        help="Scoring rule the graph-embedded calibration is selected by on the inner tuning split",
+    )
     parser.add_argument("--report")
     reserved = None
     try:
@@ -74,7 +80,13 @@ def main(argv=None):
         # so library chatter is redirected to stderr for the duration of the build.
         with contextlib.redirect_stdout(sys.stderr):
             summary = build_candidate(
-                data_dir, output_dir, CandidateConfig(seed=args.seed, model_id=args.model_id)
+                data_dir,
+                output_dir,
+                CandidateConfig(
+                    seed=args.seed,
+                    model_id=args.model_id,
+                    probability_calibration=args.probability_calibration,
+                ),
             )
         result = (
             json.dumps(_public_summary(summary), indent=2, sort_keys=True, allow_nan=False) + "\n"
