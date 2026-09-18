@@ -205,6 +205,37 @@ freezes load levels, request mix/order and sample accounting privately before re
 must match between seal and serving evidence. The booleans attest reviewed external evidence;
 the CLI does not run the JVM or attest its truth.
 
+`python -m dicechess_training.serving` assembles that document from the two halves rather than
+leaving all seven booleans to be written by hand. It **computes** `torch_onnx_parity` over every
+authored golden vector and every row of every supplied qualification dataset,
+`probability_bounds` on raw outputs read before any serving clamp, `jvm_golden_parity` as the
+error between the owner-supplied service responses and the candidate's own probabilities, and the
+golden half of `piece_safety`. It **carries** `immediate_king_capture`, `forced_loss`,
+`concurrency`, the piece-safety matched-alternatives review and both measurements from an
+owner-reviewed observations file, and never defaults, infers or derives any of them.
+
+To compare against the packaged model the tool recovers it by rebuilding through the packager's
+own code and refuses unless the export is byte-identical to the shipped artifact, which keeps the
+serving package at the three files its contract fixes.
+
+A missing observation refuses to write anything: absent is not false, and flattening the two would
+let the document answer a question nobody asked the evaluator. An observation that is present and
+negative becomes a `false` check, so the benchmark reports it by name. The command prints digests
+and failed check names only — never a limit, a latency or a service detail — and writes the raw
+observations to a separate file whose digest the document carries.
+
+The observations file the owner writes has schema `playground-serving-observations-v1`: the frozen
+`concurrency_workload_sha256`, a `jvm_golden_probabilities` response for every authored probe (a
+missing or unknown probe id refuses the run), `attested` booleans for `immediate_king_capture`,
+`forced_loss`, `concurrency` and `piece_safety_matched_alternatives`, `measurements` for
+`latency_p95_ms` and `rss_mb`, and an optional free-form `raw` block carried into the retained raw
+evidence. It stays outside Git with the rest of the private material.
+
+Note that `code_sha256` in a package's provenance covers the packager's own source, so a refactor
+of that code moves it even when the weights are untouched. That is deliberately conservative: it
+means a package must be re-issued after such a change before its model can be recovered, and the
+recovery proves the weights survived by reproducing the shipped bytes exactly.
+
 ## Commands and model card
 
 From a clean checkout:
