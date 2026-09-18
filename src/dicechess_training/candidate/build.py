@@ -291,6 +291,9 @@ def train_candidate(dataset_dir: str | Path, config: CandidateConfig) -> Trained
         "selected_epochs": str(selection["selected_epochs"]),
         "feature_schema": kcp13.SCHEMA_ID,
         "probability_calibration": config.probability_calibration,
+        # Which manifest version describes this package, readable without opening the manifest.
+        # Filled after the manifest is built, because the role decides the version (#44).
+        "manifest_version": "",
         "logit_temperature": repr(calibration["temperature"]) if calibration else "1.0",
         # The whole record, not the fields someone later guesses at. `config_sha256` proves a rerun
         # used the same settings, but only this says what they were — and an audit that has to
@@ -351,6 +354,9 @@ def build_candidate(
             calibration=config.calibration or None,
             provenance=provenance,
         )
+
+        provenance["manifest_version"] = manifest["manifestVersion"]
+        manifest["provenance"] = dict(provenance)
 
         # Exactly what the benchmark will do to this package, before it is allowed to exist.
         kcp13.validate_manifest(manifest, data_manifest["engine_version"])
