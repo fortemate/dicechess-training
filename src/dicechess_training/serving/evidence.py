@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,11 @@ class ServingEvidenceError(ValueError):
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ServingEvidenceError(message)
+
+
+def _is_number(value: Any) -> bool:
+    """A real number, not a boolean wearing one: `isinstance(True, int)` is true in Python."""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def authored_probes() -> list:
@@ -292,14 +298,17 @@ def load_observations(path: str | Path) -> dict[str, Any]:
     responses = observations.get("jvm_golden_probabilities", {})
     _require(isinstance(responses, dict) and bool(responses), "service probe responses are missing")
     for value in responses.values():
+        # `bool` is a subclass of `int`, so a JSON `true` passes a numeric check and would be
+        # written out as 1.0. A probability nobody measured must not become one that reads as
+        # measured, so booleans are refused rather than coerced.
         _require(
-            isinstance(value, (int, float)) and np.isfinite(value),
+            _is_number(value) and np.isfinite(value),
             "a service probe response is not a finite number",
         )
     for measurement in ("latency_p95_ms", "rss_mb"):
         value = observations.get("measurements", {}).get(measurement)
         _require(
-            isinstance(value, (int, float)) and np.isfinite(value) and value >= 0,
+            _is_number(value) and np.isfinite(value) and value >= 0,
             "a service measurement is missing or unusable",
         )
     return observations
@@ -347,33 +356,54 @@ def build_evidence(
         "measurements": observations["measurements"],
         "owner_raw": observations.get("raw"),
     }
-    # The raw file is written first because the evidence document has to carry its digest, and a
-    # digest of something that was never written is the one thing this document may not contain.
-    raw_evidence_path = Path(raw_evidence_path)
-    with raw_evidence_path.open("x", encoding="utf-8") as handle:
-        handle.write(json.dumps(raw, indent=2, sort_keys=True, allow_nan=False) + "\n")
+    raw_evidence_path, evidence_path = Path(raw_evidence_path), Path(evidence_path)
+    for destination in (raw_evidence_path, evidence_path):
+        _require(not destination.exists(), "an output file already exists")
 
-    evidence = {
-        "schema": EVIDENCE_SCHEMA,
-        "candidate_manifest_sha256": benchmark_core.digest(manifest),
-        "probe_suite_sha256": kcp13.sha256_of(ROOT / PROBE_SUITE),
-        "concurrency_workload_sha256": observations["concurrency_workload_sha256"],
-        "raw_evidence_sha256": kcp13.sha256_of(raw_evidence_path),
-        "checks": checks,
-        "measurements": {
-            "latency_p95_ms": float(observations["measurements"]["latency_p95_ms"]),
-            "rss_mb": float(observations["measurements"]["rss_mb"]),
-        },
-    }
-    evidence_path = Path(evidence_path)
+    # Staged and published by rename, the way the packager and the dataset exporter publish: a
+    # failed write must leave nothing behind, and half a document is worse than none at all. The
+    # raw file is serialised first because the evidence has to carry its digest, and a digest of
+    # something that was never written is the one thing this document may not contain.
+    staging = Path(tempfile.mkdtemp(dir=evidence_path.parent, prefix=".serving-staging-"))
     try:
-        with evidence_path.open("x", encoding="utf-8") as handle:
-            handle.write(json.dumps(evidence, indent=2, sort_keys=True, allow_nan=False) + "\n")
-    except OSError:
-        # Raw observations whose document was never written would read as evidence of a run that
-        # did not produce one.
-        os.unlink(raw_evidence_path)
-        raise
+        staged_raw = staging / raw_evidence_path.name
+        staged_raw.write_text(
+            json.dumps(raw, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+        )
+        evidence = {
+            "schema": EVIDENCE_SCHEMA,
+            "candidate_manifest_sha256": benchmark_core.digest(manifest),
+            "probe_suite_sha256": kcp13.sha256_of(ROOT / PROBE_SUITE),
+            "concurrency_workload_sha256": observations["concurrency_workload_sha256"],
+            "raw_evidence_sha256": kcp13.sha256_of(staged_raw),
+            "checks": checks,
+            "measurements": {
+                "latency_p95_ms": float(observations["measurements"]["latency_p95_ms"]),
+                "rss_mb": float(observations["measurements"]["rss_mb"]),
+            },
+        }
+        staged_evidence = staging / evidence_path.name
+        staged_evidence.write_text(
+            json.dumps(evidence, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
+
+        published: list[Path] = []
+        try:
+            for staged, destination in (
+                (staged_raw, raw_evidence_path),
+                (staged_evidence, evidence_path),
+            ):
+                os.replace(staged, destination)
+                published.append(destination)
+        except OSError:
+            # Raw observations whose document was never published would read as evidence of a run
+            # that did not produce one.
+            for destination in published:
+                destination.unlink(missing_ok=True)
+            raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return {
         "evidence": evidence,
         "failed_checks": sorted(name for name, passed in checks.items() if not passed),

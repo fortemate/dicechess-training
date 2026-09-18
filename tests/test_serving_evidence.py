@@ -335,3 +335,53 @@ def test_cli_exits_nonzero_when_a_check_failed(tmp_path, candidate, capsys):
 
 def test_cli_refuses_invalid_arguments():
     assert main([]) == 2
+
+
+def test_a_boolean_is_not_accepted_where_a_number_is_required(tmp_path, candidate):
+    """`isinstance(True, int)` is true in Python, so `true` would have been written out as 1.0."""
+    responses = _service_responses(candidate)
+    responses[next(iter(responses))] = True
+    with pytest.raises(ServingEvidenceError, match="not a finite number"):
+        _run(tmp_path, candidate, _observations(candidate, jvm_golden_probabilities=responses))
+
+    with pytest.raises(ServingEvidenceError, match="measurement is missing or unusable"):
+        _run(
+            tmp_path,
+            candidate,
+            _observations(candidate, measurements={"latency_p95_ms": True, "rss_mb": 420.0}),
+            name="bool-measurement",
+        )
+
+
+def test_a_non_finite_measurement_is_refused(tmp_path, candidate):
+    observations = _observations(candidate)
+    observations["measurements"] = {"latency_p95_ms": float("inf"), "rss_mb": 420.0}
+    # `json.dumps` writes Infinity by default, which `json.loads` reads back as a float.
+    (tmp_path / "inf-observations.json").write_text(json.dumps(observations), encoding="utf-8")
+    with pytest.raises(ServingEvidenceError, match="measurement is missing or unusable"):
+        build_evidence(
+            candidate,
+            FIXTURE,
+            [FIXTURE],
+            tmp_path / "inf-observations.json",
+            tmp_path / "inf-evidence.json",
+            tmp_path / "inf-raw.json",
+        )
+
+
+def test_an_existing_output_is_never_overwritten(tmp_path, candidate):
+    for occupied in ("run-raw.json", "run-evidence.json"):
+        directory = tmp_path / occupied.split(".")[0]
+        directory.mkdir()
+        (directory / occupied).write_text("previous run", encoding="utf-8")
+        with pytest.raises(ServingEvidenceError, match="already exists"):
+            _run(directory, candidate, _observations(candidate))
+        assert (directory / occupied).read_text(encoding="utf-8") == "previous run"
+
+
+def test_a_refused_run_leaves_no_staging_directory_behind(tmp_path, candidate):
+    attested = _observations(candidate)["attested"]
+    del attested["concurrency"]
+    with pytest.raises(ServingEvidenceError):
+        _run(tmp_path, candidate, _observations(candidate, attested=attested), name="aborted")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["aborted-observations.json"]
