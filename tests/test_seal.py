@@ -340,8 +340,9 @@ def test_a_seal_is_published_write_once(tmp_path, bundles, candidate):
     digest = publish_seal(_seal(candidate, development, final), path)
     published = path.read_text(encoding="utf-8")
 
+    second = _seal(candidate, development, final)
     with pytest.raises(SealError, match="already exists"):
-        publish_seal(_seal(candidate, development, final), path)
+        publish_seal(second, path)
     assert path.read_text(encoding="utf-8") == published
     assert kcp13.sha256_of(path) == digest
 
@@ -349,6 +350,7 @@ def test_a_seal_is_published_write_once(tmp_path, bundles, candidate):
 def test_a_seal_left_by_a_failed_write_is_never_published(tmp_path, bundles, candidate):
     development, final, _ = bundles
     directory = tmp_path / "gone"
+    seal = _seal(candidate, development, final)
     with pytest.raises(OSError):
-        publish_seal(_seal(candidate, development, final), directory / "seal.json")
+        publish_seal(seal, directory / "seal.json")
     assert not directory.exists()
