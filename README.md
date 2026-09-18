@@ -70,6 +70,27 @@ uv run python -m dicechess_training.benchmark --data tests/fixtures/benchmark
 This fixture verifies benchmark mechanics; it provides no model-quality evidence. Real model
 reports and final holdout data remain private.
 
+### Retaining a bundle
+
+A bundle is what the protocol binds and what a later reader has to be able to fetch, but it is
+kept as a directory on whichever machine exported it. Publishing one to a dataset repository on
+the [Hugging Face Hub](https://huggingface.co/docs/hub/) gives it a durable, revision-addressed
+home:
+
+```bash
+uv tool install huggingface_hub   # provides `hf`; not a dependency of this project
+hf auth login
+uv run python -m dicechess_training.hub \
+  --repo <owner>/<repository> --bundle <bundle-directory> --path-in-repo <run>/<bundle>
+```
+
+The bundle is admitted through the benchmark's own loader before anything is uploaded, and the
+published copy is read back and compared by digest afterwards, so the result is a copy that is
+proven equal to the export rather than assumed to be. Only the three files of the bundle contract
+are published; anything else sitting beside them is left behind. The destination repository is
+created private, because a bundle carries its own data terms. The command prints the revision it
+produced — record it, since that is what makes a later read reproducible.
+
 ## Why
 
 Dice Chess is a chess variant where three piece-type dice are rolled each turn, and only the
