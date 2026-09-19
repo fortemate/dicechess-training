@@ -136,8 +136,11 @@ building the engine, the platform, and the bots:
   NNUE-style, king-relative representations rather than a bigger plain MLP.
 - **Our strongest bot is not the ML one.** A hand-crafted evaluation with an exact 216-roll
   rescoring phase beats our best model-based bot 66.4% head-to-head — and under real-time
-  budgets it only manages to exactly rescore 1–2 candidate moves. A learned move pre-ranker
-  already measured **+4.8 pp** from improving which candidates get rescored.
+  budgets it only manages to exactly rescore 1–2 candidate moves. Which candidates those are
+  is worth **+4.8 pp**: that is what doubling the candidate limit from 8 to 16 measured, with
+  the *same* material pre-ranker, purely from surfacing turns the material proxy had buried.
+  Widening pays for a crude ranker at linear search cost; a learned one attacks the same
+  bottleneck directly.
 
 The conclusion drives this repository: use HPC to manufacture **deep exact labels** that our
 own hardware can never compute, and compress them into **small networks** that run at the
