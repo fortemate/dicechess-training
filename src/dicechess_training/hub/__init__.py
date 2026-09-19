@@ -31,13 +31,22 @@ import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from dicechess_training.contracts import kcp13
+from dicechess_training.contracts import SCHEMA_CONTRACTS, kcp13
 
 from ..benchmark import core
 
+#: Named once: both contracts carry a manifest, and the package's admission reads it.
+MANIFEST_FILE = "manifest.json"
+MODEL_FILE = "model.onnx"
+
 # The bundle contract, exactly. Staging these by name is what keeps a stray file that happens to
 # sit beside a bundle — a report, an editor backup — out of the published copy.
-BUNDLE_FILES = ("manifest.json", "rows.json", "license.txt")
+BUNDLE_FILES = (MANIFEST_FILE, "rows.json", "license.txt")
+
+#: The package contract, exactly, and for the same reason. Restated here rather than imported from
+#: the packager, which reaches PyTorch through its training path and would make a publish tool pay
+#: for a dependency it never uses; `test_hub.py` asserts the two agree so they cannot drift.
+PACKAGE_FILES = (MODEL_FILE, MANIFEST_FILE, "model-card.md")
 
 _REVISION = re.compile(r"/commit/([0-9a-f]{40})")
 
@@ -63,32 +72,32 @@ def _run(command: Sequence[str]) -> str:
     return completed.stdout
 
 
-def _stage(bundle: Path) -> tuple[Path, Callable[[], None]]:
-    """Materialize exactly the bundle contract in a directory of its own.
+def _stage(source: Path, files: Sequence[str]) -> tuple[Path, Callable[[], None]]:
+    """Materialize exactly the named contract in a directory of its own.
 
-    Hard links are tried first so that staging a large bundle costs no bytes; the staging directory
-    is created beside the bundle to keep the link on one filesystem. A copy is the fallback, since
-    a link is an optimization and not part of the guarantee.
+    Hard links are tried first so that staging a large artifact costs no bytes; the staging
+    directory is created beside the source to keep the link on one filesystem. A copy is the
+    fallback, since a link is an optimization and not part of the guarantee.
     """
-    directory = Path(tempfile.mkdtemp(dir=bundle.parent, prefix=".hub-staging-"))
+    directory = Path(tempfile.mkdtemp(dir=source.parent, prefix=".hub-staging-"))
 
     def cleanup() -> None:
         shutil.rmtree(directory, ignore_errors=True)
 
     try:
-        for name in BUNDLE_FILES:
+        for name in files:
             try:
-                os.link(bundle / name, directory / name)
+                os.link(source / name, directory / name)
             except OSError:
-                shutil.copy2(bundle / name, directory / name)
+                shutil.copy2(source / name, directory / name)
     except Exception:
         cleanup()
         raise
     return directory, cleanup
 
 
-def digests(directory: Path) -> dict[str, str]:
-    return {name: kcp13.sha256_of(directory / name) for name in BUNDLE_FILES}
+def digests(directory: Path, files: Sequence[str] = BUNDLE_FILES) -> dict[str, str]:
+    return {name: kcp13.sha256_of(directory / name) for name in files}
 
 
 def admit(bundle: Path) -> dict:
@@ -104,6 +113,145 @@ def admit(bundle: Path) -> dict:
     return manifest
 
 
+def admit_package(package: Path) -> dict:
+    """Refuse a package that could not be served, before any of it is uploaded.
+
+    A bundle is admitted by the benchmark's own loader. A package has no equivalent loader, but it
+    is self-describing: the manifest states what its own graph should hash to, so verification
+    leans on that claim rather than on a digest list kept beside it — a second list would be a
+    second thing that can disagree with the first.
+
+    Two checks, and they answer different questions. The digest says the three files belong
+    together. The contract says the graph could actually be served under the schema it declares,
+    which a digest cannot tell you: a package whose manifest and graph agree perfectly can still
+    expose the wrong tensors.
+    """
+    # Every file of the contract, not only the two this function reads. A package missing its
+    # card used to reach `digests()` and raise FileNotFoundError from inside the shared path,
+    # which the CLI does not catch — a traceback instead of a refusal.
+    for name in PACKAGE_FILES:
+        if not (package / name).is_file():
+            raise HubError(f"package refused: {name} is missing")
+
+    try:
+        manifest = core.read_json(package / MANIFEST_FILE)
+    except (ValueError, KeyError, OSError) as error:
+        raise HubError(f"package refused: unreadable manifest: {error}") from error
+
+    schema = manifest.get("featureSchema")
+    contract = SCHEMA_CONTRACTS.get(schema)
+    if contract is None:
+        # Named rather than skipped: a package for a schema this repository cannot describe is the
+        # case most worth stopping, because nothing downstream would notice it was never checked.
+        raise HubError(f"package refused: no contract here for feature schema {schema!r}")
+
+    model = package / MODEL_FILE
+    declared = str(manifest.get("modelSha256", ""))
+    if kcp13.sha256_of(model) != declared.lower():
+        raise HubError(f"package refused: {MODEL_FILE} does not match the manifest's modelSha256")
+
+    # Only a serving contract knows how to read tensor names out of a manifest; an ablation schema
+    # has none, and its graph is admitted under the contract's own defaults.
+    names = getattr(contract, "manifest_tensor_names", None)
+    try:
+        contract.validate_onnx_contract(model, *(names(manifest) if names else ()))
+    except Exception as error:
+        raise HubError(f"package refused: {error}") from error
+    return manifest
+
+
+def _publish(
+    repo_id: str,
+    source: Path,
+    path_in_repo: str,
+    *,
+    files: Sequence[str],
+    repo_type: str,
+    label: str,
+    runner: Runner,
+) -> dict:
+    """Create, stage, upload and read back — the part that is the same whatever is published.
+
+    Shared rather than repeated, because the guarantee is the same one: what landed is what left,
+    and a second copy of it would be a second thing to keep correct.
+    """
+    # Belt and braces for any future caller: admission catches this with a better message, but
+    # the shared path must not be able to raise an error the entry point does not translate.
+    for name in files:
+        if not (source / name).is_file():
+            raise HubError(f"{label} refused: {name} is missing")
+    expected = digests(source, files)
+
+    # Private is not a default to be overridden by a flag here: a bundle ships an owner-controlled
+    # data policy and a package ships trained weights, so a public destination would be a
+    # disclosure rather than a configuration choice.
+    runner(["repos", "create", repo_id, "--repo-type", repo_type, "--private", "--exist-ok"])
+    # `create --private` only decides how a repository is born. A destination that already existed
+    # keeps whatever visibility it has, so creating with `--exist-ok` and stopping there would
+    # upload into a public repository while this tool claims the opposite. `settings` updates
+    # visibility on an existing repository — the CLI's own help says otherwise, but it is copied
+    # from `create`; `HfApi.update_repo_settings` documents itself as updating "gated access and
+    # visibility" and posts to the repository's settings endpoint.
+    runner(["repos", "settings", repo_id, "--repo-type", repo_type, "--private"])
+
+    staged, cleanup = _stage(source, files)
+    try:
+        output = runner(
+            [
+                "upload",
+                repo_id,
+                str(staged),
+                path_in_repo,
+                "--repo-type",
+                repo_type,
+                "--commit-message",
+                f"Publish {label} {path_in_repo}",
+            ]
+        )
+    finally:
+        cleanup()
+
+    with tempfile.TemporaryDirectory(prefix="hub-verify-") as workspace:
+        runner(
+            [
+                "download",
+                repo_id,
+                "--repo-type",
+                repo_type,
+                "--local-dir",
+                workspace,
+                "--include",
+                f"{path_in_repo}/*",
+            ]
+        )
+        published = Path(workspace) / path_in_repo
+        for name in files:
+            if not (published / name).is_file():
+                raise HubError(f"published copy is missing {name}")
+        actual = digests(published, files)
+
+    for name in files:
+        if actual[name] != expected[name]:
+            raise HubError(f"published copy differs from the {label}: {name}")
+
+    matches = _REVISION.findall(output or "")
+    return {
+        "repo_id": repo_id,
+        "path_in_repo": path_in_repo,
+        "revision": matches[-1] if matches else None,
+        "digests": expected,
+    }
+
+
+def _destination(source: Path, path_in_repo: str, kind: str) -> Path:
+    source = Path(source)
+    if not source.is_dir():
+        raise HubError(f"{kind} is not a directory")
+    if not path_in_repo or path_in_repo.startswith("/") or ".." in Path(path_in_repo).parts:
+        raise HubError("invalid destination path")
+    return source
+
+
 def publish_bundle(
     repo_id: str,
     bundle: str | Path,
@@ -116,65 +264,39 @@ def publish_bundle(
     Returns the destination, the revision the upload produced and the digests that were verified on
     both sides, so a caller can record what it published without re-deriving it.
     """
-    bundle = Path(bundle)
-    if not bundle.is_dir():
-        raise HubError("bundle is not a directory")
-    if not path_in_repo or path_in_repo.startswith("/") or ".." in Path(path_in_repo).parts:
-        raise HubError("invalid destination path")
-
+    bundle = _destination(bundle, path_in_repo, "bundle")
     admit(bundle)
-    expected = digests(bundle)
+    return _publish(
+        repo_id,
+        bundle,
+        path_in_repo,
+        files=BUNDLE_FILES,
+        repo_type="dataset",
+        label="bundle",
+        runner=runner,
+    )
 
-    # Private is not a default to be overridden by a flag here: a bundle ships an owner-controlled
-    # data policy, and a public destination would be a disclosure rather than a configuration
-    # choice. An existing repository keeps whatever visibility it already has, which is why the
-    # caller is told the destination back and is expected to look.
-    runner(["repos", "create", repo_id, "--repo-type", "dataset", "--private", "--exist-ok"])
 
-    staged, cleanup = _stage(bundle)
-    try:
-        output = runner(
-            [
-                "upload",
-                repo_id,
-                str(staged),
-                path_in_repo,
-                "--repo-type",
-                "dataset",
-                "--commit-message",
-                f"Publish bundle {path_in_repo}",
-            ]
-        )
-    finally:
-        cleanup()
+def publish_package(
+    repo_id: str,
+    package: str | Path,
+    path_in_repo: str,
+    *,
+    runner: Runner = _run,
+) -> dict:
+    """Publish `package` under `path_in_repo` of the private **model** repository `repo_id`.
 
-    with tempfile.TemporaryDirectory(prefix="hub-verify-") as workspace:
-        runner(
-            [
-                "download",
-                repo_id,
-                "--repo-type",
-                "dataset",
-                "--local-dir",
-                workspace,
-                "--include",
-                f"{path_in_repo}/*",
-            ]
-        )
-        published = Path(workspace) / path_in_repo
-        for name in BUNDLE_FILES:
-            if not (published / name).is_file():
-                raise HubError(f"published copy is missing {name}")
-        actual = digests(published)
-
-    for name in BUNDLE_FILES:
-        if actual[name] != expected[name]:
-            raise HubError(f"published copy differs from the bundle: {name}")
-
-    matches = _REVISION.findall(output or "")
-    return {
-        "repo_id": repo_id,
-        "path_in_repo": path_in_repo,
-        "revision": matches[-1] if matches else None,
-        "digests": expected,
-    }
+    The same guarantee the bundle path gives, with the admission a package needs instead of the
+    one a bundle needs, and a model repository rather than a dataset one.
+    """
+    package = _destination(package, path_in_repo, "package")
+    admit_package(package)
+    return _publish(
+        repo_id,
+        package,
+        path_in_repo,
+        files=PACKAGE_FILES,
+        repo_type="model",
+        label="package",
+        runner=runner,
+    )
