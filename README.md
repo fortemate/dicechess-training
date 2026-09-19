@@ -88,8 +88,10 @@ The bundle is admitted through the benchmark's own loader before anything is upl
 published copy is read back and compared by digest afterwards, so the result is a copy that is
 proven equal to the export rather than assumed to be. Only the three files of the bundle contract
 are published; anything else sitting beside them is left behind. The destination repository is
-created private, because a bundle carries its own data terms. The command prints the revision it
-produced — record it, since that is what makes a later read reproducible.
+created private, because a bundle carries its own data terms — and a destination that already
+existed is *set* private before anything is uploaded, since creating with `--exist-ok` decides only
+how a repository is born, not what an existing one is. The command prints the revision it produced
+— record it, since that is what makes a later read reproducible.
 
 ### Retaining a model package
 
@@ -109,8 +111,9 @@ that claim rather than on a digest list kept beside it. Two checks, answering di
 graph could actually be served, which a digest cannot tell you. A package whose declared schema
 has no contract here is refused by name rather than passed through unchecked.
 
-The destination is a **model** repository rather than a dataset one, and it is likewise created
-private: trained weights are private wherever they are written, so that is not a flag.
+The destination is a **model** repository rather than a dataset one, and its visibility is handled
+the same way: trained weights are private wherever they are written, so that is not a flag, and an
+existing destination is made private before the upload rather than trusted to be.
 
 ## Why
 

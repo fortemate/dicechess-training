@@ -126,6 +126,13 @@ def admit_package(package: Path) -> dict:
     which a digest cannot tell you: a package whose manifest and graph agree perfectly can still
     expose the wrong tensors.
     """
+    # Every file of the contract, not only the two this function reads. A package missing its
+    # card used to reach `digests()` and raise FileNotFoundError from inside the shared path,
+    # which the CLI does not catch — a traceback instead of a refusal.
+    for name in PACKAGE_FILES:
+        if not (package / name).is_file():
+            raise HubError(f"package refused: {name} is missing")
+
     try:
         manifest = core.read_json(package / MANIFEST_FILE)
     except (ValueError, KeyError, OSError) as error:
@@ -140,8 +147,6 @@ def admit_package(package: Path) -> dict:
 
     model = package / MODEL_FILE
     declared = str(manifest.get("modelSha256", ""))
-    if not model.is_file():
-        raise HubError(f"package refused: {MODEL_FILE} is missing")
     if kcp13.sha256_of(model) != declared.lower():
         raise HubError(f"package refused: {MODEL_FILE} does not match the manifest's modelSha256")
 
@@ -170,13 +175,24 @@ def _publish(
     Shared rather than repeated, because the guarantee is the same one: what landed is what left,
     and a second copy of it would be a second thing to keep correct.
     """
+    # Belt and braces for any future caller: admission catches this with a better message, but
+    # the shared path must not be able to raise an error the entry point does not translate.
+    for name in files:
+        if not (source / name).is_file():
+            raise HubError(f"{label} refused: {name} is missing")
     expected = digests(source, files)
 
     # Private is not a default to be overridden by a flag here: a bundle ships an owner-controlled
     # data policy and a package ships trained weights, so a public destination would be a
-    # disclosure rather than a configuration choice. An existing repository keeps whatever
-    # visibility it already has, which is why the caller is told the destination back.
+    # disclosure rather than a configuration choice.
     runner(["repos", "create", repo_id, "--repo-type", repo_type, "--private", "--exist-ok"])
+    # `create --private` only decides how a repository is born. A destination that already existed
+    # keeps whatever visibility it has, so creating with `--exist-ok` and stopping there would
+    # upload into a public repository while this tool claims the opposite. `settings` updates
+    # visibility on an existing repository — the CLI's own help says otherwise, but it is copied
+    # from `create`; `HfApi.update_repo_settings` documents itself as updating "gated access and
+    # visibility" and posts to the repository's settings endpoint.
+    runner(["repos", "settings", repo_id, "--repo-type", repo_type, "--private"])
 
     staged, cleanup = _stage(source, files)
     try:

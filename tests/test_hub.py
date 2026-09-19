@@ -347,3 +347,54 @@ def test_the_cli_refuses_a_package_without_publishing(package, capsys):
     assert json.loads(captured.err)["published"] is False
     assert str(package) not in captured.err
     assert captured.out == ""
+
+
+def test_visibility_is_set_on_the_destination_not_only_requested_at_creation(package):
+    """`create --private` decides how a repository is born, not what an existing one is."""
+    client = FakeModelHub()
+
+    hub.publish_package(PACKAGE_REPO, package, PACKAGE_DESTINATION, runner=client)
+
+    settings = next(c for c in client.commands if c[:2] == ["repos", "settings"])
+    assert settings[2] == PACKAGE_REPO
+    assert "--private" in settings
+    assert settings[settings.index("--repo-type") + 1] == "model"
+    # And it happens before anything is uploaded, or it would not have protected the upload.
+    names = [c[0] if c[0] != "repos" else " ".join(c[:2]) for c in client.commands]
+    assert names.index("repos settings") < names.index("upload")
+
+
+def test_a_bundle_destination_is_made_private_too(bundle):
+    client = FakeHub()
+
+    hub.publish_bundle(REPO, bundle, DESTINATION, runner=client)
+
+    settings = next(c for c in client.commands if c[:2] == ["repos", "settings"])
+    assert settings[settings.index("--repo-type") + 1] == "dataset"
+    assert "--private" in settings
+
+
+@pytest.mark.parametrize("missing", ["model-card.md", "manifest.json"])
+def test_a_package_missing_any_file_of_the_contract_is_refused(package, missing):
+    """The card is not read by admission, but its absence used to escape as a traceback."""
+    client = FakeModelHub()
+    (package / missing).unlink()
+
+    with pytest.raises(hub.HubError, match=f"{missing} is missing"):
+        hub.publish_package(PACKAGE_REPO, package, PACKAGE_DESTINATION, runner=client)
+
+    assert client.commands == []
+
+
+def test_the_cli_turns_a_missing_card_into_a_refusal_not_a_traceback(package, capsys):
+    (package / "model-card.md").unlink()
+
+    code = main(
+        ["--repo", PACKAGE_REPO, "--package", str(package), "--path-in-repo", PACKAGE_DESTINATION]
+    )
+
+    assert code == 1
+    captured = capsys.readouterr()
+    assert json.loads(captured.err)["published"] is False
+    assert "model-card.md" in json.loads(captured.err)["error"]
+    assert str(package) not in captured.err
