@@ -91,6 +91,27 @@ are published; anything else sitting beside them is left behind. The destination
 created private, because a bundle carries its own data terms. The command prints the revision it
 produced — record it, since that is what makes a later read reproducible.
 
+### Retaining a model package
+
+A candidate package has the same problem and the same answer, with one difference in what can be
+checked. Run this once a package is one you intend to keep — after it has been built on a commit
+you can name, not while you are still iterating:
+
+```bash
+uv run python -m dicechess_training.hub \
+  --repo <owner>/<repository> --package <package-directory> --path-in-repo <run>/<package>
+```
+
+A bundle is admitted by the benchmark's own loader. A package has no equivalent loader, but it is
+self-describing: the manifest records what its own graph should hash to, so admission leans on
+that claim rather than on a digest list kept beside it. Two checks, answering different questions
+— the digest says the three files belong together, and the feature schema's ONNX contract says the
+graph could actually be served, which a digest cannot tell you. A package whose declared schema
+has no contract here is refused by name rather than passed through unchecked.
+
+The destination is a **model** repository rather than a dataset one, and it is likewise created
+private: trained weights are private wherever they are written, so that is not a flag.
+
 ## Why
 
 Dice Chess is a chess variant where three piece-type dice are rolled each turn, and only the
