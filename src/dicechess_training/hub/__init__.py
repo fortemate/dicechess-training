@@ -35,14 +35,18 @@ from dicechess_training.contracts import SCHEMA_CONTRACTS, kcp13
 
 from ..benchmark import core
 
+#: Named once: both contracts carry a manifest, and the package's admission reads it.
+MANIFEST_FILE = "manifest.json"
+MODEL_FILE = "model.onnx"
+
 # The bundle contract, exactly. Staging these by name is what keeps a stray file that happens to
 # sit beside a bundle — a report, an editor backup — out of the published copy.
-BUNDLE_FILES = ("manifest.json", "rows.json", "license.txt")
+BUNDLE_FILES = (MANIFEST_FILE, "rows.json", "license.txt")
 
 #: The package contract, exactly, and for the same reason. Restated here rather than imported from
 #: the packager, which reaches PyTorch through its training path and would make a publish tool pay
 #: for a dependency it never uses; `test_hub.py` asserts the two agree so they cannot drift.
-PACKAGE_FILES = ("model.onnx", "manifest.json", "model-card.md")
+PACKAGE_FILES = (MODEL_FILE, MANIFEST_FILE, "model-card.md")
 
 _REVISION = re.compile(r"/commit/([0-9a-f]{40})")
 
@@ -123,7 +127,7 @@ def admit_package(package: Path) -> dict:
     expose the wrong tensors.
     """
     try:
-        manifest = core.read_json(package / "manifest.json")
+        manifest = core.read_json(package / MANIFEST_FILE)
     except (ValueError, KeyError, OSError) as error:
         raise HubError(f"package refused: unreadable manifest: {error}") from error
 
@@ -134,12 +138,12 @@ def admit_package(package: Path) -> dict:
         # case most worth stopping, because nothing downstream would notice it was never checked.
         raise HubError(f"package refused: no contract here for feature schema {schema!r}")
 
-    model = package / "model.onnx"
+    model = package / MODEL_FILE
     declared = str(manifest.get("modelSha256", ""))
     if not model.is_file():
-        raise HubError("package refused: model.onnx is missing")
+        raise HubError(f"package refused: {MODEL_FILE} is missing")
     if kcp13.sha256_of(model) != declared.lower():
-        raise HubError("package refused: model.onnx does not match the manifest's modelSha256")
+        raise HubError(f"package refused: {MODEL_FILE} does not match the manifest's modelSha256")
 
     # Only a serving contract knows how to read tensor names out of a manifest; an ablation schema
     # has none, and its graph is admitted under the contract's own defaults.
