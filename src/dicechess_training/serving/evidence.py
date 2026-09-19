@@ -141,6 +141,11 @@ def recover_model(candidate_dir: str | Path, training_data_dir: str | Path):
 
     Returns the model only when the reproduction is byte-identical to the shipped artifact, so a
     parity check can never be run against a model that is merely similar to the one deployed.
+
+    A package built before #59 cannot be recovered here. Until that fix, the exporter wrote the
+    absolute source path and line number of the traced `forward` into every node, so its bytes
+    depended on the checkout's location on disk — a rebuild reproduces the model and not the file.
+    Such a package has to be re-issued rather than argued with.
     """
     candidate_dir = Path(candidate_dir)
     data_manifest, _ = benchmark_core.load_dataset(training_data_dir)

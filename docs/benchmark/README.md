@@ -218,6 +218,12 @@ To compare against the packaged model the tool recovers it by rebuilding through
 own code and refuses unless the export is byte-identical to the shipped artifact, which keeps the
 serving package at the three files its contract fixes.
 
+That comparison is only meaningful because the exported bytes are a function of the model. They
+were not always: until #59 the exporter wrote the absolute source path and line number of the
+traced `forward` onto every node, so a package's digest depended on where the checkout sat on disk
+and on where a line sat in the file defining the model, while the graphs agreed numerically. A
+package built before that fix cannot be recovered and must be re-issued.
+
 A missing observation refuses to write anything: absent is not false, and flattening the two would
 let the document answer a question nobody asked the evaluator. An observation that is present and
 negative becomes a `false` check, so the benchmark reports it by name. The command prints digests
