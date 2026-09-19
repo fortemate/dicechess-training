@@ -99,7 +99,7 @@ location, bot configuration or weight is disclosed.
 | --- | --- | --- | --- | --- |
 | material GBDT (`OnnxFeatures`) | 7 | OnnxMLTools `TreeEnsembleRegressor`, output tensor `variable` | no (width, output name) | private arena logs only |
 | rich GBDT (`RichFeatures`) | 9 | same | no (width, output name) | private arena logs only |
-| **kcp GBDT (`KcpFeatures`)**, one artifact, SHA-256 `df6f5252ad31…` (private) | 13 | OnnxMLTools `TreeEnsembleRegressor`, LightGBM `regression` objective, output tensor `variable` | **no**: output must be named `output`; regression output is unbounded and would rely on the evaluator's clamp | training export, enrichment engine version, config and commit are **not recorded next to the artifact** → recorded as a blocker; it cannot become the promotion reference |
+| **kcp GBDT (`KcpFeatures`)**, one private artifact (digest recorded privately) | 13 | OnnxMLTools `TreeEnsembleRegressor`, LightGBM `regression` objective, output tensor `variable` | **no**: output must be named `output`; regression output is unbounded and would rely on the evaluator's clamp | training export, enrichment engine version, config and commit are **not recorded next to the artifact** → recorded as a blocker; it cannot become the promotion reference |
 | safe GBDT | 15 | same | no (width) | private |
 | raw-board MLP (`RawBoardFeatures`) | 768 | PyTorch, `input`/`output` | no (schema) | private; measured −25 Elo against the rich GBDT at two plies |
 | public demo value net (`mise run demo`) | 774 = raw board + dice | PyTorch, `features`/`win_probability` | no (schema, names) and **wrong role**: dice-conditioned | this repository |
@@ -273,9 +273,8 @@ Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), th
    - **S2 (`kcp-mobility-pawns-31-v1`)** scored 0.6443 (-0.90% relative gain, 95% paired CI `[-0.0014, +0.0138]`).
    - Neither candidate met the +1.0% relative improvement threshold or the strictly negative confidence interval bound.
 3. **Private Corpus Qualification**:
-   - Evaluated by the repository owner across 100,000 games (1,500,477 positions) on the private development corpus under numerically stable training.
-   - Relative gains over S0 were +0.125% for S1 and +0.180% for S2, failing the +1.0% promotion gate.
-   - Aggregated findings and decision lineage are archived in the private knowledge base:
+   - The owner repeated the ablation on the private development corpus under numerically stable training. Neither successor schema met the predeclared gate there either, so the public-sample outcome stands and the decision below is unchanged by it.
+   - The corpus size, the measured gains and the confidence intervals are experiment verdicts on private data and are recorded in the private knowledge base:
      - Page title: `Private Decision: Playground Feature Schema Qualification (Issue #17)`.
      - In accordance with open-core publication boundaries, private numerical metrics and weights are preserved in internal documentation.
 
@@ -367,3 +366,33 @@ the model. That contract defines a manifest version this record did not.
    moves it: a seal preregistered before this amendment must be re-issued. Nothing else moves — the
    feature schema, the tensor contract for position models, the probability perspective, the
    `engineCompatibility` grammar and the promotion gate are untouched.
+
+## Amendment: Publication boundary applied to this record (2026-09-19)
+
+This record announced the open-core boundary and then crossed it two lines above the announcement.
+The #17 amendment reported the size of the private development corpus and the gains measured on it;
+the inventory table carried a private artifact's digest. Corpus size is labelled-corpus detail, a
+measured gain is an experiment verdict, and an artifact digest is an artifact identity — all three
+are always private under `dc-shared:publication v4`, wherever they are written.
+
+1. **What moved.** The private-corpus figures and the corpus size are replaced by the decision they
+   produced, which is the part a public decision record owes its reader: the owner repeated the
+   ablation privately, neither successor met the gate, and the outcome is unchanged. The magnitudes
+   live in the private page already cited beside them. The private artifact's digest is replaced by
+   a statement that it is recorded privately; the row identified the family without it.
+2. **What deliberately did not move, so it is not "fixed" later.**
+   - The public-sample ablation figures in the same amendment are open results computed on
+     `sample/playsite-bots-v0` under a committed protocol, and they are already published in
+     [`docs/ablation/report.md`](../ablation/report.md). Restating them here discloses nothing this
+     repository does not publish by design.
+   - The programme numbers in `README.md`, including the raw-board evaluator's measured Elo delta,
+     are public by the boundary's own text: it lists "the programme numbers already published in
+     the project READMEs" among what is public by nature. This record's inventory restates one of
+     them and may continue to.
+3. **An edit is not an unpublication.** The boundary is forward-only: history is not rewritten, and
+   the figures removed here remain in this file's Git history and in the pull request that added
+   them. What this achieves is that the current document no longer carries them and no longer
+   teaches the pattern by example. Treating it as a retraction would be the wrong conclusion.
+4. **Nothing binding moves.** `implementation_digest()` covers `benchmark/*.py`, the contract,
+   `uv.lock` and the serving probe suite — not this file. A preregistered seal is unaffected, and no
+   schema, tensor contract, perspective, engine range, gate threshold or decision changes here.
