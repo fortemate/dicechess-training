@@ -175,7 +175,9 @@ def load_candidate(directory, data_manifest, protocol):
     manifest = read_json(directory / "manifest.json")
     kcp13.validate_manifest(manifest, data_manifest["engine_version"])
     kcp13.verify_model_digest(directory / MODEL_FILE, manifest)
-    kcp13.validate_onnx_contract(directory / MODEL_FILE)
+    # The graph is checked against the names the manifest declares, so a manifest cannot accept
+    # tensor names this validator would then reject (#44).
+    kcp13.validate_onnx_contract(directory / MODEL_FILE, *kcp13.manifest_tensor_names(manifest))
     provenance = manifest["provenance"]
     for key in (
         "training_data_sha256",

@@ -12,10 +12,10 @@ import shutil
 
 import pytest
 
+from dicechess_training import publish as publish_module
 from dicechess_training.benchmark import core
 from dicechess_training.benchmark.splits import split_for
 from dicechess_training.candidate import CandidateConfig, build_candidate
-from dicechess_training.candidate import build as build_module
 from dicechess_training.candidate.__main__ import main
 from dicechess_training.candidate.build import (
     MANIFEST_FILE,
@@ -255,16 +255,17 @@ def test_a_taken_report_path_publishes_no_package(tmp_path, capsys):
 
 
 def test_a_failure_while_publishing_leaves_no_partial_package(tmp_path, monkeypatch):
-    real_replace = build_module.os.replace
+    # Publication is the shared write-once helper, so the interruption is injected there.
+    real_link = publish_module.os.link
     calls = {"n": 0}
 
-    def flaky_replace(src, dst):
+    def flaky_link(src, dst):
         calls["n"] += 1
         if calls["n"] == 2:  # the manifest, after the model has already been published
             raise OSError("publication interrupted")
-        return real_replace(src, dst)
+        return real_link(src, dst)
 
-    monkeypatch.setattr(build_module.os, "replace", flaky_replace)
+    monkeypatch.setattr(publish_module.os, "link", flaky_link)
     output = tmp_path / "interrupted"
     config = CandidateConfig(seed=11, model_id="interrupted")
     with pytest.raises(OSError, match="publication interrupted"):

@@ -307,3 +307,63 @@ Under [Issue #17](https://github.com/fortemate/dicechess-training/issues/17), th
 5. **Unchanged.** The ablation stays pinned to engine 0.9.3 (`docs/ablation/protocol-v4.json`,
    `scripts/check_enrichment.py`); nothing here changes the selected schema, the tensor contract, the
    manifest rules or the promotion gate.
+
+## Amendment: Manifest 1.1.0, model role and perspective (Issue #44, 2026-09-18)
+
+The engine now ships its own model serving contract (fortemate/dicechess-engine#78, pull request
+#254): a manifest pins a model's role, feature schema and width, tensor names, probability
+perspective, engine-compatibility range and digest, and each is checked before a position reaches
+the model. That contract defines a manifest version this record did not.
+
+1. **Why a role field exists.** Tensor width cannot say what a model *is*. A position evaluator, a
+   chance-collapse afterstate network (#8) and a listwise move pre-ranker (#9) may share the
+   `kcp-13` schema and therefore an identical `[batch, 13]` input. Feeding one where another is
+   expected produces a bot that runs, reports no error and plays worse than it measured. Here it is
+   sharper still: the evaluation service's turn endpoint scores candidate afterstates from the new
+   side to move and reports `1 − p`, which is right for a position model and wrong for any other,
+   so a collapse model would be served silently as a position model.
+2. **Versions.** `1.0.0` keeps its meaning exactly: no role, perspective or tensor-name fields, read
+   as `position-value` on the mover perspective with `input`/`output` tensors — identical to the
+   engine's reading of a legacy manifest. `1.1.0` adds `modelRole` and `perspective` as **required**
+   fields and `inputName`/`outputName` as optional ones. Roles are the engine's ids verbatim:
+   `position-value`, `chance-collapse`, `move-prerank`. `perspective` admits `side-to-move` alone.
+   Anything else fails closed; "assume position value" is the mis-wiring the field prevents.
+3. **A `1.0.0` manifest carrying a `1.1.0` field is refused, not defaulted.** Every `1.0.0`-only
+   reader — this contract until now, the deployed evaluation service today — ignores a field its
+   version does not define, so honouring it would make one file mean `chance-collapse` to the engine
+   and `position-value` to everything else. A manifest that wants to state a role declares `1.1.0`.
+4. **Tensor names, and one place this contract is deliberately stricter than the engine.** The
+   engine version-gates `modelRole` and `perspective` but reads `inputName`/`outputName` at any
+   version, while the evaluation service has no such field and reads `input`/`output`. A `1.0.0`
+   manifest naming its tensors would therefore mean `features` to the engine and `input` to the
+   service — the same ambiguity the role rule exists to prevent. This contract refuses it: a
+   producer should emit only what every consumer reads identically, so it admits the intersection
+   of the two readers rather than the union. Worth raising upstream, since the engine could gate
+   those two fields for the same reason it gates the other two.
+5. **A present `null` reads as absent, on purpose.** `ManifestFields.optionalString` maps both to
+   `None`, so `{"modelRole": null}` under `1.0.0` falls back to the legacy default in the engine,
+   and this contract agrees. A null states no value, both readers reach the same default, and
+   nothing can mean two things. Under `1.1.0` the same reading makes a null required field a
+   missing one, which is refused.
+6. **A position model is always `1.0.0`, with no escape hatch.** It cannot rename its tensors:
+   `1.0.0` has no field to say so, and emitting `1.1.0` to say it would produce a package the
+   deployed service cannot parse and therefore cannot mount — an artifact that describes itself
+   perfectly and serves nowhere. `build_manifest` refuses that combination until the service reads
+   `1.1.0`.
+7. **Readers first, writers second, the service last.** `dicechess-evaluation` pins
+   `SupportedManifestVersion = "1.0.0"` and refuses a version it cannot parse, so a `1.1.0` position
+   model would not mount. `build_manifest` therefore keeps writing `1.0.0` for `standard-kcp`
+   position artifacts and writes `1.1.0` only for a role `1.0.0` cannot express. Order: this contract reads `1.1.0` → new roles emit it → fortemate/dicechess-evaluation#88
+   teaches the service → only then `1.1.0` for position models, as a separate change.
+8. **One field the two readers do not share.** The engine's committed `1.1.0` fixtures omit
+   `evaluationProfile`: the engine wires a model into its own search and never reads it, while the
+   evaluation service selects its serving profile with it. This contract mirrors the service, so it
+   still requires the field, and `tests/fixtures/manifests/` records the divergence with the engine's
+   fixtures copied byte-for-byte — accepted once the service-side field is supplied, refused by name
+   without it. Packages built here always carry it and so satisfy both readers.
+9. **Provenance.** A package records `manifest_version`, so which version describes it is readable
+   without opening the manifest.
+10. **Consequence for custody.** `contracts/kcp13.py` feeds `implementation_digest()`, so this edit
+   moves it: a seal preregistered before this amendment must be re-issued. Nothing else moves — the
+   feature schema, the tensor contract for position models, the probability perspective, the
+   `engineCompatibility` grammar and the promotion gate are untouched.

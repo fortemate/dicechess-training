@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -33,10 +32,13 @@ from dicechess_training.ablation.runner import predict as torch_predict
 from dicechess_training.benchmark import core as benchmark_core
 from dicechess_training.benchmark.splits import assignments
 from dicechess_training.contracts import kcp13
+from dicechess_training.publish import write_once
 
 MODEL_FILE = "model.onnx"
 MANIFEST_FILE = "manifest.json"
 MODEL_CARD_FILE = "model-card.md"
+#: The three files a package is, in the order they are published.
+PACKAGE_FILES = (MODEL_FILE, MANIFEST_FILE, MODEL_CARD_FILE)
 
 #: ADR 0001, amended by Issue #30: the range whose extraction the golden corpus replays.
 ENGINE_COMPATIBILITY = ">=0.4.0 <0.13.0"
@@ -291,6 +293,9 @@ def train_candidate(dataset_dir: str | Path, config: CandidateConfig) -> Trained
         "selected_epochs": str(selection["selected_epochs"]),
         "feature_schema": kcp13.SCHEMA_ID,
         "probability_calibration": config.probability_calibration,
+        # Which manifest version describes this package, readable without opening the manifest.
+        # Filled after the manifest is built, because the role decides the version (#44).
+        "manifest_version": "",
         "logit_temperature": repr(calibration["temperature"]) if calibration else "1.0",
         # The whole record, not the fields someone later guesses at. `config_sha256` proves a rerun
         # used the same settings, but only this says what they were — and an audit that has to
@@ -335,7 +340,7 @@ def build_candidate(
 
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
-    for name in (MODEL_FILE, MANIFEST_FILE, MODEL_CARD_FILE):
+    for name in PACKAGE_FILES:
         _require(not (destination / name).exists(), f"{name} already exists in the output")
 
     # Staged beside the destination rather than in the system temp directory, so publication is
@@ -351,6 +356,9 @@ def build_candidate(
             calibration=config.calibration or None,
             provenance=provenance,
         )
+
+        provenance["manifest_version"] = manifest["manifestVersion"]
+        manifest["provenance"] = dict(provenance)
 
         # Exactly what the benchmark will do to this package, before it is allowed to exist.
         kcp13.validate_manifest(manifest, data_manifest["engine_version"])
@@ -381,16 +389,10 @@ def build_candidate(
         )
         (staging / MODEL_CARD_FILE).write_text(_model_card(summary), encoding="utf-8")
 
-        published: list[Path] = []
-        try:
-            for name in (MODEL_FILE, MANIFEST_FILE, MODEL_CARD_FILE):
-                os.replace(staging / name, destination / name)
-                published.append(destination / name)
-        except OSError:
-            # A package missing one of its three files is worse than no package at all.
-            for path in published:
-                path.unlink(missing_ok=True)
-            raise
+        # A package missing one of its three files is worse than no package at all, which is the
+        # guarantee `write_once` makes. Shared with the seal and the serving evidence rather than
+        # kept as a third copy: the copy nobody is looking at is the one that keeps a defect.
+        write_once([(staging / name, destination / name) for name in PACKAGE_FILES])
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 

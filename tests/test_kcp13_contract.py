@@ -332,3 +332,185 @@ def test_the_newest_golden_covers_every_committed_probe():
     corpus = kcp13.load_golden(kcp13.golden_path(newest))
     rows = (kcp13.GOLDEN_DIR / "probes.tsv").read_text().splitlines()[1:]
     assert [row.split("\t")[0] for row in rows] == [probe.id for probe in corpus.probes]
+
+
+# --- Manifest 1.1.0 (#44) ---------------------------------------------------------------------
+
+MANIFESTS = Path(kcp13.__file__).resolve().parents[3] / "tests/fixtures/manifests"
+ENGINE_VERSION = "0.12.0"
+
+
+def _engine_fixture(name):
+    return json.loads((MANIFESTS / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def _serviceable(manifest):
+    """The engine omits `evaluationProfile`; the service this contract mirrors requires it."""
+    return {**manifest, "evaluationProfile": kcp13.PROFILE_ID}
+
+
+def test_a_legacy_manifest_still_validates_unchanged():
+    kcp13.validate_manifest(
+        _engine_fixture("synthetic_kcp13_value_legacy_manifest"), ENGINE_VERSION
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "synthetic_kcp13_value_manifest",
+        "synthetic_kcp13_collapse_manifest",
+        "synthetic_kcp13_renamed_tensors_manifest",
+    ],
+)
+def test_the_engines_committed_manifests_validate(name):
+    """Every 1.1.0 field the two readers share is agreed; only the service-side one is added."""
+    kcp13.validate_manifest(_serviceable(_engine_fixture(name)), ENGINE_VERSION)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "synthetic_kcp13_value_manifest",
+        "synthetic_kcp13_collapse_manifest",
+        "synthetic_kcp13_renamed_tensors_manifest",
+    ],
+)
+def test_the_engines_manifests_are_refused_only_for_the_field_the_engine_does_not_read(name):
+    """Documents the one divergence, so it cannot drift into an unnoticed difference."""
+    manifest = _engine_fixture(name)
+    with pytest.raises(kcp13.ContractError, match="evaluationProfile"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+@pytest.mark.parametrize("field", ["modelRole", "perspective"])
+def test_a_current_manifest_missing_a_required_field_names_it(field):
+    manifest = _serviceable(_engine_fixture("synthetic_kcp13_value_manifest"))
+    del manifest[field]
+    with pytest.raises(kcp13.ContractError, match=f"requires field '{field}'"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+@pytest.mark.parametrize("field", ["modelRole", "perspective"])
+def test_a_legacy_manifest_carrying_a_current_field_is_refused_not_defaulted(field):
+    """A 1.0.0-only reader ignores the field, so honouring it makes one file mean two things."""
+    manifest = _engine_fixture("synthetic_kcp13_value_legacy_manifest")
+    manifest[field] = {"modelRole": "chance-collapse", "perspective": "side-to-move"}[field]
+    with pytest.raises(kcp13.ContractError, match=f"does not define field '{field}'"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+def test_an_unknown_role_fails_closed_rather_than_defaulting():
+    manifest = _serviceable(_engine_fixture("synthetic_kcp13_value_manifest"))
+    manifest["modelRole"] = "leaf-evaluator"
+    with pytest.raises(kcp13.ContractError, match="unknown modelRole"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+def test_an_unsupported_perspective_fails_closed():
+    manifest = _serviceable(_engine_fixture("synthetic_kcp13_value_manifest"))
+    manifest["perspective"] = "white"
+    with pytest.raises(kcp13.ContractError, match="unsupported perspective"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+def test_a_version_outside_the_supported_set_is_refused_before_any_other_field():
+    manifest = {"manifestVersion": "2.0.0"}
+    with pytest.raises(kcp13.ContractError, match="unsupported manifestVersion"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+@pytest.mark.parametrize("field", ["inputName", "outputName"])
+def test_a_blank_tensor_name_is_refused(field):
+    manifest = _serviceable(_engine_fixture("synthetic_kcp13_value_manifest"))
+    manifest[field] = "  "
+    with pytest.raises(kcp13.ContractError, match=f"{field} must not be blank"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+def test_tensor_names_default_to_the_contracts_own():
+    legacy = _engine_fixture("synthetic_kcp13_value_legacy_manifest")
+    assert kcp13.manifest_tensor_names(legacy) == (kcp13.INPUT_NAME, kcp13.OUTPUT_NAME)
+    renamed = _engine_fixture("synthetic_kcp13_renamed_tensors_manifest")
+    assert kcp13.manifest_tensor_names(renamed) == (renamed["inputName"], renamed["outputName"])
+
+
+def test_the_role_decides_the_version_a_package_declares(tmp_path):
+    """A position model keeps writing 1.0.0: the deployed service can parse nothing else."""
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"not a graph; only the digest is read here")
+    position = kcp13.build_manifest(model, "m", ">=0.12.0 <1.0.0")
+    assert position["manifestVersion"] == kcp13.LEGACY_MANIFEST_VERSION
+    assert "modelRole" not in position
+
+    collapse = kcp13.build_manifest(
+        model, "m", ">=0.12.0 <1.0.0", model_role=kcp13.ROLE_CHANCE_COLLAPSE
+    )
+    assert collapse["manifestVersion"] == kcp13.CURRENT_MANIFEST_VERSION
+    assert collapse["modelRole"] == kcp13.ROLE_CHANCE_COLLAPSE
+    assert collapse["perspective"] == kcp13.PERSPECTIVE
+    assert (collapse["inputName"], collapse["outputName"]) == (kcp13.INPUT_NAME, kcp13.OUTPUT_NAME)
+
+    renamed = kcp13.build_manifest(
+        model, "m", ">=0.12.0 <1.0.0", model_role=kcp13.ROLE_MOVE_PRERANK, input_name="features"
+    )
+    assert renamed["manifestVersion"] == kcp13.CURRENT_MANIFEST_VERSION
+    assert renamed["inputName"] == "features"
+
+
+def test_building_an_unknown_role_is_refused(tmp_path):
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"digest only")
+    role = "leaf-evaluator"
+    with pytest.raises(kcp13.ContractError, match="unknown modelRole"):
+        kcp13.build_manifest(model, "m", ">=0.12.0 <1.0.0", model_role=role)
+
+
+def test_a_built_manifest_validates_for_every_role(tmp_path):
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"digest only")
+    for role in kcp13.SUPPORTED_ROLES:
+        manifest = kcp13.build_manifest(model, "m", ">=0.12.0 <1.0.0", model_role=role)
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+def test_a_position_model_may_not_rename_its_tensors(tmp_path):
+    """1.0.0 cannot say so, and 1.1.0 would not mount: the artifact has nowhere to be served."""
+    model = tmp_path / "model.onnx"
+    model.write_bytes(b"digest only")
+    with pytest.raises(kcp13.ContractError, match="cannot rename its tensors"):
+        kcp13.build_manifest(model, "m", ">=0.12.0 <1.0.0", output_name="score")
+
+
+@pytest.mark.parametrize("field", ["inputName", "outputName"])
+def test_a_legacy_manifest_naming_its_tensors_is_refused(field):
+    """The engine honours the field at any version, the service has no such field at all.
+
+    One file would then mean `features` to the engine and `input` to the service, which is the
+    same ambiguity the role rule exists to prevent.
+    """
+    manifest = _engine_fixture("synthetic_kcp13_value_legacy_manifest")
+    manifest[field] = "features"
+    with pytest.raises(kcp13.ContractError, match=f"does not define field '{field}'"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)
+
+
+@pytest.mark.parametrize("field", ["modelRole", "perspective", "inputName", "outputName"])
+def test_an_explicit_null_reads_as_absent_exactly_as_the_engine_reads_it(field):
+    """`ManifestFields.optionalString` maps `None | Some(JNull)` to `None`.
+
+    Refusing a null here would be a divergence of its own: a null states no value, both readers
+    fall back to the same default, and nothing can mean two things.
+    """
+    manifest = _engine_fixture("synthetic_kcp13_value_legacy_manifest")
+    manifest[field] = None
+    kcp13.validate_manifest(manifest, ENGINE_VERSION)
+    assert kcp13.manifest_tensor_names(manifest) == (kcp13.INPUT_NAME, kcp13.OUTPUT_NAME)
+
+
+def test_a_current_manifest_with_a_null_required_field_is_still_refused():
+    """Null reads as absent, and absent is exactly what 1.1.0 does not allow for these."""
+    manifest = _serviceable(_engine_fixture("synthetic_kcp13_value_manifest"))
+    manifest["modelRole"] = None
+    with pytest.raises(kcp13.ContractError, match="requires field 'modelRole'"):
+        kcp13.validate_manifest(manifest, ENGINE_VERSION)

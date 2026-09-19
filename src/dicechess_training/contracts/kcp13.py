@@ -35,7 +35,30 @@ SCHEMA_ID = "kcp-13"
 FEATURE_COUNT = 13
 PROFILE_ID = "standard-kcp"
 ALGORITHM = "kcp-1ply-onnx"
+#: The version this contract writes for a `standard-kcp` position model, and the only one the
+#: deployed evaluation service can parse (`SupportedManifestVersion`). Emitting 1.1.0 for that role
+#: would make the model unmountable, so readers move first and that writer moves last
+#: (fortemate/dicechess-evaluation#88).
 MANIFEST_VERSION = "1.0.0"
+LEGACY_MANIFEST_VERSION = "1.0.0"
+CURRENT_MANIFEST_VERSION = "1.1.0"
+SUPPORTED_MANIFEST_VERSIONS: frozenset[str] = frozenset(
+    {LEGACY_MANIFEST_VERSION, CURRENT_MANIFEST_VERSION}
+)
+
+#: What a model is *used for*. Tensor width cannot tell these apart — two roles may share a feature
+#: schema and therefore an identical `[batch, F]` input — so the role is the only thing that can,
+#: and feeding one where another is expected produces a bot that runs, logs nothing and plays
+#: worse than it measured. The ids are the engine's `ModelRole` ids verbatim.
+ROLE_POSITION_VALUE = "position-value"
+ROLE_CHANCE_COLLAPSE = "chance-collapse"
+ROLE_MOVE_PRERANK = "move-prerank"
+SUPPORTED_ROLES: tuple[str, ...] = (
+    ROLE_POSITION_VALUE,
+    ROLE_CHANCE_COLLAPSE,
+    ROLE_MOVE_PRERANK,
+)
+
 INPUT_NAME = "input"
 OUTPUT_NAME = "output"
 MAX_OPSET = 18  # highest default-domain opset the evaluator's ONNX Runtime is verified to load
@@ -222,13 +245,61 @@ def engine_compatible(constraint: str, engine_version: str) -> bool:
     return True
 
 
+def _versioned_field(manifest: dict, name: str, version: str, legacy_default: str) -> str:
+    """A field 1.1.0 requires and 1.0.0 never defined.
+
+    Three cases, and the third is the one that matters. Present under 1.1.0 wins. Absent under
+    1.0.0 falls back to the legacy default, which is exactly how the engine reads a legacy
+    manifest. Present under 1.0.0 is **refused**: every 1.0.0-only reader — this contract until
+    now, the deployed evaluation service today — ignores a field its version does not define, so
+    honouring it would make one file mean `chance-collapse` here and `position-value` everywhere
+    else. A manifest that wants to state a role declares 1.1.0.
+    """
+    value = manifest.get(name)
+    if value is not None:
+        if version == LEGACY_MANIFEST_VERSION:
+            raise ContractError(f"manifestVersion {version} does not define field {name!r}")
+        return str(value)
+    if version == LEGACY_MANIFEST_VERSION:
+        return legacy_default
+    raise ContractError(f"manifestVersion {version} requires field {name!r}")
+
+
+def manifest_tensor_names(manifest: dict) -> tuple[str, str]:
+    """The tensor names the graph must expose: the manifest's, or the contract's defaults.
+
+    Refused under 1.0.0 for the same reason `modelRole` is, and with one extra step. The engine
+    reads `inputName` whatever the version, while the evaluation service has no such field and
+    reads `input`/`output` — so a 1.0.0 manifest naming its tensors would mean one thing to the
+    engine and another to the service. This contract mirrors the service, and more to the point a
+    producer should only emit what every consumer reads identically, so it admits the intersection
+    and refuses the ambiguity.
+    """
+    version = manifest.get("manifestVersion")
+    names = []
+    for key, default in (("inputName", INPUT_NAME), ("outputName", OUTPUT_NAME)):
+        value = manifest.get(key)
+        if value is None:
+            # Absent, or an explicit null: `ManifestFields.optionalString` reads both as absent,
+            # and disagreeing with the engine about that would be a divergence of its own.
+            names.append(default)
+            continue
+        if version == LEGACY_MANIFEST_VERSION:
+            raise ContractError(f"manifestVersion {version} does not define field {key!r}")
+        if not isinstance(value, str) or not value.strip():
+            raise ContractError(f"{key} must not be blank")
+        names.append(value)
+    return names[0], names[1]
+
+
 def validate_manifest(manifest: dict, engine_version: str) -> None:
     """Mirror of the evaluator's ``ModelManifest.validate``: raise ``ContractError`` on the first
     violation instead of loading anything."""
-    if manifest.get("manifestVersion") != MANIFEST_VERSION:
+    version = manifest.get("manifestVersion")
+    if version not in SUPPORTED_MANIFEST_VERSIONS:
         raise ContractError(
-            f"unsupported manifestVersion {manifest.get('manifestVersion')!r}; "
-            f"expected {MANIFEST_VERSION!r}"
+            f"unsupported manifestVersion {version!r}; "
+            f"expected one of {', '.join(sorted(SUPPORTED_MANIFEST_VERSIONS))}"
         )
     if not str(manifest.get("modelId", "")).strip():
         raise ContractError("modelId must not be blank")
@@ -247,6 +318,15 @@ def validate_manifest(manifest: dict, engine_version: str) -> None:
             f"unsupported evaluationProfile {manifest.get('evaluationProfile')!r}; "
             f"expected {PROFILE_ID!r}"
         )
+    role = _versioned_field(manifest, "modelRole", version, ROLE_POSITION_VALUE)
+    if role not in SUPPORTED_ROLES:
+        raise ContractError(
+            f"unknown modelRole {role!r}; known roles: {', '.join(sorted(SUPPORTED_ROLES))}"
+        )
+    perspective = _versioned_field(manifest, "perspective", version, PERSPECTIVE)
+    if perspective != PERSPECTIVE:
+        raise ContractError(f"unsupported perspective {perspective!r}; supported: {PERSPECTIVE!r}")
+    manifest_tensor_names(manifest)
     constraint = str(manifest.get("engineCompatibility", ""))
     if not engine_compatible(constraint, engine_version):
         raise ContractError(
@@ -269,9 +349,18 @@ def _dims(tensor) -> list[int | None]:
     ]
 
 
-def validate_onnx_contract(model_path: str | Path) -> None:
+def validate_onnx_contract(
+    model_path: str | Path,
+    input_name: str = INPUT_NAME,
+    output_name: str = OUTPUT_NAME,
+) -> None:
     """Mirror of the evaluator's ``OnnxModelContract.validate`` on the serialized graph, plus the
-    ONNX checker (``onnx.load`` only deserializes) and the opset ceiling from ADR 0001."""
+    ONNX checker (``onnx.load`` only deserializes) and the opset ceiling from ADR 0001.
+
+    The names default to the contract's own, so a 1.0.0 package validates exactly as before. Pass
+    a 1.1.0 manifest's declared names through `manifest_tensor_names`, or a manifest could accept
+    tensor names this validator would then reject.
+    """
     import onnx
 
     model = onnx.load(str(model_path))
@@ -291,14 +380,14 @@ def validate_onnx_contract(model_path: str | Path) -> None:
     initializers = {init.name for init in model.graph.initializer}
     inputs = [tensor for tensor in model.graph.input if tensor.name not in initializers]
     outputs = list(model.graph.output)
-    if len(inputs) != 1 or inputs[0].name != INPUT_NAME:
+    if len(inputs) != 1 or inputs[0].name != input_name:
         raise ContractError(
-            f"ONNX model must expose exactly one input named {INPUT_NAME!r}; "
+            f"ONNX model must expose exactly one input named {input_name!r}; "
             f"found {[t.name for t in inputs]}"
         )
-    if len(outputs) != 1 or outputs[0].name != OUTPUT_NAME:
+    if len(outputs) != 1 or outputs[0].name != output_name:
         raise ContractError(
-            f"ONNX model must expose exactly one output named {OUTPUT_NAME!r}; "
+            f"ONNX model must expose exactly one output named {output_name!r}; "
             f"found {[t.name for t in outputs]}"
         )
     float_type = onnx.TensorProto.FLOAT
@@ -342,11 +431,42 @@ def build_manifest(
     engine_compatibility: str,
     calibration: dict | None = None,
     provenance: dict[str, str] | None = None,
+    model_role: str = ROLE_POSITION_VALUE,
+    input_name: str = INPUT_NAME,
+    output_name: str = OUTPUT_NAME,
 ) -> dict:
     """Assemble a manifest for a contract-conforming ONNX artifact. The digest is computed from the
-    bytes on disk so the manifest can only ever describe the exact file it was built from."""
+    bytes on disk so the manifest can only ever describe the exact file it was built from.
+
+    The role decides the version, and it is not a preference. A position model keeps writing 1.0.0
+    because that is the only version the deployed evaluation service can parse, and a 1.1.0
+    position model would simply not mount; any other role can only be described by 1.1.0, since
+    1.0.0 has no field to say what it is. Writing 1.1.0 for position models becomes safe once the
+    service reads it, and is a separate change on purpose.
+    """
+    if model_role not in SUPPORTED_ROLES:
+        raise ContractError(
+            f"unknown modelRole {model_role!r}; known roles: {', '.join(sorted(SUPPORTED_ROLES))}"
+        )
+    # A position model is always 1.0.0, with no escape hatch. 1.0.0 cannot name its tensors, and
+    # emitting 1.1.0 to say so would produce a package the deployed service cannot parse and
+    # therefore cannot mount — an artifact that describes itself perfectly and serves nowhere. So
+    # renamed tensors are refused for this role until the service reads 1.1.0, rather than
+    # quietly produced in a form nothing can load.
+    if model_role == ROLE_POSITION_VALUE and (input_name, output_name) != (
+        INPUT_NAME,
+        OUTPUT_NAME,
+    ):
+        raise ContractError(
+            f"a {ROLE_POSITION_VALUE} artifact cannot rename its tensors: "
+            f"{LEGACY_MANIFEST_VERSION} has no field for it and the evaluation service reads "
+            f"no other version"
+        )
+    version = (
+        LEGACY_MANIFEST_VERSION if model_role == ROLE_POSITION_VALUE else CURRENT_MANIFEST_VERSION
+    )
     manifest = {
-        "manifestVersion": MANIFEST_VERSION,
+        "manifestVersion": version,
         "modelId": model_id,
         "modelSha256": sha256_of(model_path),
         "featureSchema": SCHEMA_ID,
@@ -356,4 +476,9 @@ def build_manifest(
         "calibration": {"temperature": 1.0, **(calibration or {})},
         "provenance": dict(provenance or {}),
     }
+    if version == CURRENT_MANIFEST_VERSION:
+        manifest["modelRole"] = model_role
+        manifest["perspective"] = PERSPECTIVE
+        manifest["inputName"] = input_name
+        manifest["outputName"] = output_name
     return manifest
