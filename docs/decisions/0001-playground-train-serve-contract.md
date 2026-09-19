@@ -369,11 +369,13 @@ the model. That contract defines a manifest version this record did not.
 
 ## Amendment: Publication boundary applied to this record (2026-09-19)
 
-This record announced the open-core boundary and then crossed it two lines above the announcement.
-The #17 amendment reported the size of the private development corpus and the gains measured on it;
-the inventory table carried a private artifact's digest. Corpus size is labelled-corpus detail, a
-measured gain is an experiment verdict, and an artifact digest is an artifact identity — all three
-are always private under `dc-shared:publication v4`, wherever they are written.
+This record crossed the open-core boundary in two places. The *Private Corpus Qualification* bullets
+of the #17 amendment reported the size of the private development corpus and the gains measured on
+it, immediately above their own statement that private metrics are preserved in internal
+documentation. The *historical candidate families* inventory carried a private artifact's digest.
+Corpus size is labelled-corpus detail, a measured gain is an experiment verdict, and an artifact
+digest is an artifact identity — all three are always private under `dc-shared:publication v4`,
+wherever they are written.
 
 1. **What moved.** The private-corpus figures and the corpus size are replaced by the decision they
    produced, which is the part a public decision record owes its reader: the owner repeated the
