@@ -268,12 +268,24 @@ def _versioned_field(manifest: dict, name: str, version: str, legacy_default: st
 def manifest_tensor_names(manifest: dict) -> tuple[str, str]:
     """The tensor names the graph must expose: the manifest's, or the contract's defaults.
 
-    Optional in both versions, so a 1.0.0 manifest keeps meaning `input`/`output` exactly as it
-    always did.
+    Refused under 1.0.0 for the same reason `modelRole` is, and with one extra step. The engine
+    reads `inputName` whatever the version, while the evaluation service has no such field and
+    reads `input`/`output` — so a 1.0.0 manifest naming its tensors would mean one thing to the
+    engine and another to the service. This contract mirrors the service, and more to the point a
+    producer should only emit what every consumer reads identically, so it admits the intersection
+    and refuses the ambiguity.
     """
+    version = manifest.get("manifestVersion")
     names = []
     for key, default in (("inputName", INPUT_NAME), ("outputName", OUTPUT_NAME)):
-        value = manifest.get(key, default)
+        value = manifest.get(key)
+        if value is None:
+            # Absent, or an explicit null: `ManifestFields.optionalString` reads both as absent,
+            # and disagreeing with the engine about that would be a divergence of its own.
+            names.append(default)
+            continue
+        if version == LEGACY_MANIFEST_VERSION:
+            raise ContractError(f"manifestVersion {version} does not define field {key!r}")
         if not isinstance(value, str) or not value.strip():
             raise ContractError(f"{key} must not be blank")
         names.append(value)
@@ -436,11 +448,22 @@ def build_manifest(
         raise ContractError(
             f"unknown modelRole {model_role!r}; known roles: {', '.join(sorted(SUPPORTED_ROLES))}"
         )
-    renamed = (input_name, output_name) != (INPUT_NAME, OUTPUT_NAME)
+    # A position model is always 1.0.0, with no escape hatch. 1.0.0 cannot name its tensors, and
+    # emitting 1.1.0 to say so would produce a package the deployed service cannot parse and
+    # therefore cannot mount — an artifact that describes itself perfectly and serves nowhere. So
+    # renamed tensors are refused for this role until the service reads 1.1.0, rather than
+    # quietly produced in a form nothing can load.
+    if model_role == ROLE_POSITION_VALUE and (input_name, output_name) != (
+        INPUT_NAME,
+        OUTPUT_NAME,
+    ):
+        raise ContractError(
+            f"a {ROLE_POSITION_VALUE} artifact cannot rename its tensors: "
+            f"{LEGACY_MANIFEST_VERSION} has no field for it and the evaluation service reads "
+            f"no other version"
+        )
     version = (
-        LEGACY_MANIFEST_VERSION
-        if model_role == ROLE_POSITION_VALUE and not renamed
-        else CURRENT_MANIFEST_VERSION
+        LEGACY_MANIFEST_VERSION if model_role == ROLE_POSITION_VALUE else CURRENT_MANIFEST_VERSION
     )
     manifest = {
         "manifestVersion": version,

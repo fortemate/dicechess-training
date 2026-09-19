@@ -332,21 +332,38 @@ the model. That contract defines a manifest version this record did not.
    reader — this contract until now, the deployed evaluation service today — ignores a field its
    version does not define, so honouring it would make one file mean `chance-collapse` to the engine
    and `position-value` to everything else. A manifest that wants to state a role declares `1.1.0`.
-4. **Readers first, writers second, the service last.** `dicechess-evaluation` pins
+4. **Tensor names, and one place this contract is deliberately stricter than the engine.** The
+   engine version-gates `modelRole` and `perspective` but reads `inputName`/`outputName` at any
+   version, while the evaluation service has no such field and reads `input`/`output`. A `1.0.0`
+   manifest naming its tensors would therefore mean `features` to the engine and `input` to the
+   service — the same ambiguity the role rule exists to prevent. This contract refuses it: a
+   producer should emit only what every consumer reads identically, so it admits the intersection
+   of the two readers rather than the union. Worth raising upstream, since the engine could gate
+   those two fields for the same reason it gates the other two.
+5. **A present `null` reads as absent, on purpose.** `ManifestFields.optionalString` maps both to
+   `None`, so `{"modelRole": null}` under `1.0.0` falls back to the legacy default in the engine,
+   and this contract agrees. A null states no value, both readers reach the same default, and
+   nothing can mean two things. Under `1.1.0` the same reading makes a null required field a
+   missing one, which is refused.
+6. **A position model is always `1.0.0`, with no escape hatch.** It cannot rename its tensors:
+   `1.0.0` has no field to say so, and emitting `1.1.0` to say it would produce a package the
+   deployed service cannot parse and therefore cannot mount — an artifact that describes itself
+   perfectly and serves nowhere. `build_manifest` refuses that combination until the service reads
+   `1.1.0`.
+7. **Readers first, writers second, the service last.** `dicechess-evaluation` pins
    `SupportedManifestVersion = "1.0.0"` and refuses a version it cannot parse, so a `1.1.0` position
    model would not mount. `build_manifest` therefore keeps writing `1.0.0` for `standard-kcp`
-   position artifacts and writes `1.1.0` only for a role — or a tensor naming — that `1.0.0` cannot
-   express. Order: this contract reads `1.1.0` → new roles emit it → fortemate/dicechess-evaluation#88
+   position artifacts and writes `1.1.0` only for a role `1.0.0` cannot express. Order: this contract reads `1.1.0` → new roles emit it → fortemate/dicechess-evaluation#88
    teaches the service → only then `1.1.0` for position models, as a separate change.
-5. **One field the two readers do not share.** The engine's committed `1.1.0` fixtures omit
+8. **One field the two readers do not share.** The engine's committed `1.1.0` fixtures omit
    `evaluationProfile`: the engine wires a model into its own search and never reads it, while the
    evaluation service selects its serving profile with it. This contract mirrors the service, so it
    still requires the field, and `tests/fixtures/manifests/` records the divergence with the engine's
    fixtures copied byte-for-byte — accepted once the service-side field is supplied, refused by name
    without it. Packages built here always carry it and so satisfy both readers.
-6. **Provenance.** A package records `manifest_version`, so which version describes it is readable
+9. **Provenance.** A package records `manifest_version`, so which version describes it is readable
    without opening the manifest.
-7. **Consequence for custody.** `contracts/kcp13.py` feeds `implementation_digest()`, so this edit
+10. **Consequence for custody.** `contracts/kcp13.py` feeds `implementation_digest()`, so this edit
    moves it: a seal preregistered before this amendment must be re-issued. Nothing else moves — the
    feature schema, the tensor contract for position models, the probability perspective, the
    `engineCompatibility` grammar and the promotion gate are untouched.
