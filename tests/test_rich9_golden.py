@@ -89,3 +89,28 @@ def test_rich9_is_the_kcp13_prefix(path: Path) -> None:
     columns = tuple(_load(path)["columns"])
     assert columns == kcp13.COLUMN_NAMES[:FEATURE_COUNT]
     assert all("capture" in name for name in kcp13.COLUMN_NAMES[FEATURE_COUNT:])
+
+
+@pytest.mark.parametrize("path", _corpora(), ids=lambda p: p.stem)
+def test_values_equal_the_kcp13_corpus_on_the_shared_columns(path: Path) -> None:
+    """The strongest check these fixtures can make of each other.
+
+    Both corpora are produced by the same generator from the same probes, and `rich-9` is the
+    `kcp-13` prefix, so on the nine shared columns the engine must have written identical numbers.
+    A wrong extractor wired under this schema id, a corpus regenerated against a different engine,
+    or a probe list that drifted apart all break this equality — using only committed evidence, with
+    no JVM in the loop.
+
+    What it cannot do is prove the engine still answers this way today; that needs a regeneration
+    run, which no schema in this repository has in CI and which would make a Python-only test suite
+    depend on sbt and a resolved engine artifact.
+    """
+    raw = _load(path)
+    reference = _load(KCP13 / f"golden-engine-{raw['engineVersion']}.json")
+    theirs = {probe["id"]: probe for probe in reference["probes"]}
+    assert {probe["id"] for probe in raw["probes"]} == set(theirs)
+    for probe in raw["probes"]:
+        other = theirs[probe["id"]]
+        assert probe["features"] == other["features"][:FEATURE_COUNT], probe["id"]
+        assert (probe["fen"], probe["side"]) == (other["fen"], other["side"]), probe["id"]
+        assert (probe.get("tags"), probe.get("note")) == (other.get("tags"), other.get("note"))
