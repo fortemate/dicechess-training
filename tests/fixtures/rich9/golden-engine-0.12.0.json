@@ -1,0 +1,226 @@
+{
+  "schema": "rich-9-v1",
+  "perspective": "side-to-move",
+  "engineVersion": "0.12.0",
+  "engineArtifact": "com.fortemate:dicechess-engine_3:0.12.0",
+  "generator": "tools/kcp13-golden (dicechess.training.golden.Kcp13Golden)",
+  "columns": ["p_diff", "n_diff", "b_diff", "r_diff", "q_diff", "material_diff", "total_material", "mobility_diff", "king_safety_diff"],
+  "probes": [
+    {
+      "id": "start-w",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "side": "w",
+      "tags": ["opening", "symmetric"],
+      "note": "Initial position, White to move: only total_material is non-zero.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 78.0, 0.0, 0.0]
+    },
+    {
+      "id": "start-w-6field",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "side": "w",
+      "tags": ["canonicalization"],
+      "note": "Same as start-w with the two clock fields present; must be identical.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 78.0, 0.0, 0.0]
+    },
+    {
+      "id": "start-b",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -",
+      "side": "b",
+      "tags": ["opening", "symmetric", "perspective"],
+      "note": "Initial position, Black to move; mover-canonical vector must equal start-w.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 78.0, 0.0, 0.0]
+    },
+    {
+      "id": "kings-only-w",
+      "fen": "4k3/8/8/8/8/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["endgame", "material"],
+      "note": "Bare kings: every feature zero including total_material.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    },
+    {
+      "id": "knight-up-w",
+      "fen": "r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+      "side": "w",
+      "tags": ["material"],
+      "note": "Black is missing a knight; White to move sees n_diff +1, material_diff +3.",
+      "features": [0.0, 1.0, 0.0, 0.0, 0.0, 3.0, 75.0, 1.0, 0.0]
+    },
+    {
+      "id": "knight-down-b",
+      "fen": "r1bqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq -",
+      "side": "b",
+      "tags": ["material", "perspective"],
+      "note": "Same placement, Black to move: signs of the *_diff block flip.",
+      "features": [0.0, -1.0, 0.0, 0.0, 0.0, -3.0, 75.0, -1.0, 0.0]
+    },
+    {
+      "id": "rook-king-danger-w",
+      "fen": "4k3/8/8/8/8/8/4r3/4K3 w - -",
+      "side": "w",
+      "tags": ["king-capture", "perspective"],
+      "note": "Black rook e2 bears on the White king e1: king_capture_danger > 0 for the mover.",
+      "features": [0.0, 0.0, 0.0, -1.0, 0.0, -5.0, 5.0, -13.0, -2000.0]
+    },
+    {
+      "id": "rook-queen-attack-w",
+      "fen": "k7/8/8/4q3/8/8/8/K3R3 w - -",
+      "side": "w",
+      "tags": ["piece-safety"],
+      "note": "White rook e1 bears on the Black queen e5: queen_capture_attack > 0.",
+      "features": [0.0, 0.0, 0.0, 1.0, -1.0, -4.0, 14.0, -17.0, -2000.0]
+    },
+    {
+      "id": "queen-en-prise-w",
+      "fen": "4k3/8/8/4p3/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["piece-safety"],
+      "note": "White queen d4 is attacked by the pawn e5: queen_capture_danger > 0 for White.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 22.0, 0.0]
+    },
+    {
+      "id": "rook-king-attack-w",
+      "fen": "4k3/8/8/8/8/8/4R3/K7 w - -",
+      "side": "w",
+      "tags": ["king-capture", "forced-loss"],
+      "note": "White rook e2 bears on the Black king e8: king_capture_attack >= P(any R or Q die) = 152/216.",
+      "features": [0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 5.0, 12.0, 2000.0]
+    },
+    {
+      "id": "kp-vs-k-w",
+      "fen": "8/8/8/4k3/8/8/4P3/4K3 w - -",
+      "side": "w",
+      "tags": ["endgame", "material"],
+      "note": "King and pawn versus king, White to move: p_diff +1, material_diff +1.",
+      "features": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, -2.0, 0.0]
+    },
+    {
+      "id": "kp-vs-k-b",
+      "fen": "8/8/8/4k3/8/8/4P3/4K3 b - -",
+      "side": "b",
+      "tags": ["endgame", "material", "perspective"],
+      "note": "Same placement, Black to move: p_diff -1.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 1.0, 2.0, 0.0]
+    },
+    {
+      "id": "ep-e6-w",
+      "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6",
+      "side": "w",
+      "tags": ["canonicalization"],
+      "note": "After 1.e4 e5 with an en-passant target no pawn can use; must equal ep-none-w.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 78.0, 0.0, 0.0]
+    },
+    {
+      "id": "ep-none-w",
+      "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq -",
+      "side": "w",
+      "tags": ["canonicalization"],
+      "note": "ep-e6-w with the unusable en-passant target dropped (X-FEN normalisation).",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 78.0, 0.0, 0.0]
+    },
+    {
+      "id": "sample-mid-b",
+      "fen": "r1bk4/ppp3pp/8/1BP5/2P5/8/R2K2QP/4R3 b - -",
+      "side": "b",
+      "tags": ["middlegame", "sample"],
+      "note": "Public sample playsite-bots-v0, game 0030b6cf-7074-5886-8ad0-39af6dcad9f7 ply 20.",
+      "features": [2.0, 0.0, 0.0, -1.0, -1.0, -12.0, 38.0, -36.0, 0.0]
+    },
+    {
+      "id": "sample-mid-w",
+      "fen": "1r1k4/ppp3pp/8/2P5/2P4P/8/R2K2Q1/4R3 w - -",
+      "side": "w",
+      "tags": ["middlegame", "sample"],
+      "note": "Public sample playsite-bots-v0, same game, ply 23.",
+      "features": [-2.0, 0.0, 0.0, 1.0, 1.0, 12.0, 32.0, 33.0, 0.0]
+    },
+    {
+      "id": "blocked-pawns-w",
+      "fen": "4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["blocked-pawn", "pawn-blockage"],
+      "note": "Blocked pawn chain: White to move, zero mobility diff, symmetric 8-pawn material.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0]
+    },
+    {
+      "id": "passed-pawn-w",
+      "fen": "k7/4P3/8/8/8/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["passed-pawn", "endgame", "promotion"],
+      "note": "Promotion-eligible passed pawn on e7: +1 pawn diff, +1 material diff, White king and pawn only.",
+      "features": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 6.0, 0.0]
+    },
+    {
+      "id": "knight-up-w-twin",
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/R1BQKBNR b KQkq -",
+      "side": "b",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of knight-up-w: the mover-canonical vector must be identical.",
+      "features": [0.0, 1.0, 0.0, 0.0, 0.0, 3.0, 75.0, 1.0, 0.0]
+    },
+    {
+      "id": "rook-king-danger-w-twin",
+      "fen": "4k3/4R3/8/8/8/8/8/4K3 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of rook-king-danger-w: the mover-canonical vector must be identical.",
+      "features": [0.0, 0.0, 0.0, -1.0, 0.0, -5.0, 5.0, -13.0, -2000.0]
+    },
+    {
+      "id": "rook-queen-attack-w-twin",
+      "fen": "k3r3/8/8/8/4Q3/8/8/K7 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of rook-queen-attack-w: the mover-canonical vector must be identical.",
+      "features": [0.0, 0.0, 0.0, 1.0, -1.0, -4.0, 14.0, -17.0, -2000.0]
+    },
+    {
+      "id": "queen-en-prise-w-twin",
+      "fen": "4k3/8/8/3q4/4P3/8/8/4K3 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of queen-en-prise-w: the mover-canonical vector must be identical.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 22.0, 0.0]
+    },
+    {
+      "id": "rook-king-attack-w-twin",
+      "fen": "k7/4r3/8/8/8/8/8/4K3 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of rook-king-attack-w: the mover-canonical vector must be identical.",
+      "features": [0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 5.0, 12.0, 2000.0]
+    },
+    {
+      "id": "sample-mid-b-twin",
+      "fen": "4r3/r2k2qp/8/2p5/1bp5/8/PPP3PP/R1BK4 w - -",
+      "side": "w",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of sample-mid-b: the mover-canonical vector must be identical.",
+      "features": [2.0, 0.0, 0.0, -1.0, -1.0, -12.0, 38.0, -36.0, 0.0]
+    },
+    {
+      "id": "sample-mid-w-twin",
+      "fen": "4r3/r2k2q1/8/2p4p/2p5/8/PPP3PP/1R1K4 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective"],
+      "note": "Colour-swapped rank-mirror of sample-mid-w: the mover-canonical vector must be identical.",
+      "features": [-2.0, 0.0, 0.0, 1.0, 1.0, 12.0, 32.0, 33.0, 0.0]
+    },
+    {
+      "id": "blocked-pawns-w-twin",
+      "fen": "4k3/8/8/p1p1p1p1/P1P1P1P1/8/8/4K3 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective", "blocked-pawn"],
+      "note": "Colour-swapped rank-mirror of blocked-pawns-w: mover-canonical vector must be identical.",
+      "features": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0]
+    },
+    {
+      "id": "passed-pawn-w-twin",
+      "fen": "4k3/8/8/8/8/8/4p3/K7 b - -",
+      "side": "b",
+      "tags": ["twin", "perspective", "passed-pawn"],
+      "note": "Colour-swapped rank-mirror of passed-pawn-w: mover-canonical vector must be identical.",
+      "features": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 6.0, 0.0]
+    }
+  ]
+}

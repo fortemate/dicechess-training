@@ -61,8 +61,17 @@ object Kcp13Golden:
         (dicechess.engine.search.KcpMobilityFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.KcpMobilityFeatures.extract(s, c))
       case "kcp-mobility-pawns-31-v1" =>
         (dicechess.engine.search.KcpMobilityPawnsFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.KcpMobilityPawnsFeatures.extract(s, c))
+      // The two cheap schemas a move pre-ranker can afford: its pass sees every legal turn, so the
+      // per-candidate cost is the constraint, not the model (training#9).
+      case "rich-9-v1" =>
+        (dicechess.engine.search.RichFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.RichFeatures.extract(s, c))
+      // `material-7-v1` is deliberately absent: the released engine this tool builds against does not
+      // expose `OnnxFeatures.columnNames`, and the column layout is the engine's to state, not this
+      // file's to assume. It arrives when a release does.
       case other =>
-        sys.error(s"unsupported schema '$other' (expected 'kcp-13', 'kcp-mobility-27-v1', or 'kcp-mobility-pawns-31-v1')")
+        sys.error(
+          s"unsupported schema '$other' (expected 'kcp-13', 'kcp-mobility-27-v1', 'kcp-mobility-pawns-31-v1' or 'rich-9-v1')"
+        )
 
     val probes = readProbes(input)
     val ids    = probes.map(_.id)
