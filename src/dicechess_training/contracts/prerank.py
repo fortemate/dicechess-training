@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -46,6 +47,11 @@ MAX_OPSET = 18
 DEFAULT_ENGINE_VERSION = "0.12.0"
 
 GOLDEN_DIR = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "rich9"
+
+#: Matched rather than parsed: a 64-character string that is not hexadecimal must be refused the
+#: same way as every other malformed field, and `int(value, 16)` would raise a ValueError past
+#: the callers that only catch ContractError.
+_SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
 def golden_path(engine_version: str = DEFAULT_ENGINE_VERSION) -> Path:
@@ -123,9 +129,8 @@ def validate_manifest(manifest: dict, engine_version: str) -> None:
         )
     if not str(manifest.get("modelId", "")).strip():
         raise ContractError("modelId must not be blank")
-    if not isinstance(manifest.get("modelSha256"), str) or len(manifest["modelSha256"]) != 64:
+    if not _SHA256.match(str(manifest.get("modelSha256", ""))):
         raise ContractError("modelSha256 must be exactly 64 hexadecimal characters")
-    int(manifest["modelSha256"], 16)
     if manifest.get("featureSchema") != SCHEMA_ID:
         raise ContractError(
             f"unsupported featureSchema {manifest.get('featureSchema')!r}; expected {SCHEMA_ID!r}"

@@ -103,6 +103,10 @@ def test_a_built_manifest_validates(tmp_path: Path) -> None:
         ({"perspective": "white"}, "unsupported perspective"),
         ({"modelId": "  "}, "modelId must not be blank"),
         ({"modelSha256": "abc"}, "64 hexadecimal"),
+        # 64 characters and not one of them hexadecimal: the length check passes and the
+        # digest is still unusable, which is where a parse would raise the wrong exception.
+        ({"modelSha256": "z" * 64}, "64 hexadecimal"),
+        ({"modelSha256": 12345}, "64 hexadecimal"),
         ({"featureSchema": "kcp-13"}, "unsupported featureSchema"),
         ({"featureCount": 13}, "unsupported featureCount"),
         ({"calibration": {"temperature": 1.12}}, "nothing to calibrate"),
