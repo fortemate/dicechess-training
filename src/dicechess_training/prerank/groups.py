@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -203,17 +204,14 @@ def _check_group(group: dict, columns: tuple[str, ...]) -> None:
             ),
             "a feature is not a number",
         )
-        _require(
-            all(value == value and abs(value) != float("inf") for value in features),
-            "a feature is not finite",
-        )
+        _require(all(math.isfinite(value) for value in features), "a feature is not finite")
 
         target = candidate["target"]
         _require(
             isinstance(target, (int, float)) and not isinstance(target, bool),
             "a target is not a number",
         )
-        _require(target == target and abs(target) != float("inf"), "a target is not finite")
+        _require(math.isfinite(target), "a target is not finite")
 
 
 def load_groups(directory: str | Path) -> tuple[dict, list[dict]]:
