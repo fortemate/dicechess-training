@@ -10,6 +10,7 @@ here rather than in a dataset built months later.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -52,7 +53,7 @@ def test_every_probe_is_usable(path: Path) -> None:
         features = probe["features"]
         assert len(features) == FEATURE_COUNT, probe["id"]
         assert all(isinstance(value, (int, float)) for value in features), probe["id"]
-        assert all(value == value and abs(value) != float("inf") for value in features), probe["id"]
+        assert all(math.isfinite(value) for value in features), probe["id"]
         assert probe["side"] in ("w", "b"), probe["id"]
 
 
