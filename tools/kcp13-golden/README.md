@@ -6,8 +6,16 @@ and the extraction-latency benchmark. See [ADR 0001](../../docs/decisions/0001-p
 
 Use **JDK 21** and sbt for enrichment. The Hadoop dependency does not support
 newer JDKs (reproduced on JDK 26) (`Subject.getSubject`); select JDK 21 with `JAVA_HOME`.
-The current module requires engine 0.9.3 or a compatible later release because
-it compiles all three schema extractors together.
+
+Which schemas a build offers follows the engine it resolves. `kcp-13` and
+`rich-9-v1` replay against every engine this module can resolve; the mobility
+schemas (`kcp-mobility-27-v1`, `kcp-mobility-pawns-31-v1`), the enrichment
+producer and the extraction benchmark need engine **0.9.3 or later**, which is
+the release that first published `KcpMobilityFeatures`. Selecting an older
+engine compiles the `scala-legacy` tier instead of `scala-mobility`, so
+`-Dengine.version=0.9.1` replays the two cheap schemas rather than failing to
+compile over a class that engine never had. Asking such a build for a mobility
+schema fails at startup, naming the schemas it does offer.
 
 From the repository root:
 
