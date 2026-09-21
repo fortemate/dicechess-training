@@ -143,10 +143,31 @@ def test_the_file_is_what_the_generator_reads(tmp_path: Path) -> None:
     assert len(digest) == 64
 
 
-def test_a_field_that_would_break_the_file_is_refused(tmp_path: Path) -> None:
-    frame = _rows(("game\ta", 1, START, "BNP", "w"))
-    with pytest.raises(RootsError, match="tab or newline"):
+# `\r` counts with the others because the generator reads this file with `Files.readAllLines`,
+# which ends a line on a lone carriage return: a field carrying one becomes two records rather
+# than an error, and the corpus is then built from roots nobody chose.
+@pytest.mark.parametrize("bad", ["game\ta", "game\na", "game\ra"])
+def test_a_field_that_would_break_the_file_is_refused(tmp_path: Path, bad: str) -> None:
+    frame = _rows((bad, 1, START, "BNP", "w"))
+    with pytest.raises(RootsError, match="tab, newline or carriage return"):
         write_roots(distinct_roots(frame), tmp_path / ROOTS_FILE)
+
+
+def test_two_spellings_of_one_root_resolve_the_same_way_whatever_the_input_order() -> None:
+    """The same position, game and ply, written two ways — castling reordered, clocks on one.
+
+    Nothing downstream distinguishes them, so either could be kept; what may not happen is the
+    choice depending on which row the file held first. `roots.tsv` is digested into the dataset's
+    `source_sha256`, so an order-dependent selection is an order-dependent dataset identity.
+    """
+    spellings = [
+        ("game-a", 4, "4k3/8/8/8/8/8/8/4K3 w KQkq -", "PPP", "w"),
+        ("game-a", 4, "4k3/8/8/8/8/8/8/4K3 w qkQK - 0 1", "PPP", "w"),
+    ]
+    forward = distinct_roots(_rows(*spellings))
+    backward = distinct_roots(_rows(*reversed(spellings)))
+    assert len(forward) == len(backward) == 1
+    assert list(forward["fen"]) == list(backward["fen"])
 
 
 def test_export_records_what_it_read_and_what_it_chose(tmp_path: Path) -> None:

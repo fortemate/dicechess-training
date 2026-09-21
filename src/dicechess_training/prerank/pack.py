@@ -97,6 +97,18 @@ def build_manifest(
 
     groups = json.loads((directory / GROUPS_FILE).read_text(encoding="utf-8"))
     _require(isinstance(groups, list) and groups, "the corpus has no groups")
+    # The manifest has to state the counts, and `load_groups` will not read a manifest that does
+    # not — so the counts are taken from the payload before anything has validated it. That makes
+    # the shape this module's problem: without these two lines a malformed group leaves as a
+    # `KeyError` past every caller that knows how to report a refusal.
+    _require(
+        all(isinstance(group, dict) for group in groups),
+        "the corpus holds something that is not a group",
+    )
+    _require(
+        all(isinstance(group.get("candidates"), list) for group in groups),
+        "a group does not carry a list of candidates",
+    )
 
     # The columns and the golden digest come from the committed corpus for the engine the
     # generator says it ran, never from the generation record: a producer does not get to state
@@ -154,11 +166,23 @@ def pack(
         shutil.copyfile(license_file, directory / LICENSE_FILE)
 
     manifest = build_manifest(directory, record, version=version, kind=kind, license_=license_)
-    (directory / MANIFEST_FILE).write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    path = directory / MANIFEST_FILE
 
-    admitted, groups = load_groups(directory)
+    # `load_groups` reads the manifest from its fixed name, so it cannot be admitted anywhere but
+    # in place. A refusal therefore has to undo the write: leaving the rejected manifest would
+    # contradict the guarantee this module exists to give — that a manifest found beside a corpus
+    # has been through the loader — and overwriting a previously valid one would be worse still,
+    # because the corpus it described was fine until this command touched it.
+    previous = path.read_bytes() if path.is_file() else None
+    path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        admitted, groups = load_groups(directory)
+    except Exception:
+        if previous is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_bytes(previous)
+        raise
     return admitted, summarise(groups, record)
 
 

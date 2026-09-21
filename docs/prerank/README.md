@@ -51,8 +51,12 @@ uv run python -m dicechess_training.prerank pack <corpus-dir> \
 
 Step 1 writes `roots.tsv` — tab-separated `game_id, fen, dice, side` — and
 `roots-provenance.json`, which records the shards it read with their content digests. The roots
-file is the producer's reproduction record: the dataset's `source_sha256` is its digest, and the
-corpus can be rebuilt from it exactly.
+file is the producer's _input_ record, which is what `source_sha256` binds. Rebuilding the corpus
+needs the rest of the run as well: the generator's commit, the engine it resolved and the profile
+it ran with, which `generation.json` names. Between the two, a corpus can be traced back to the
+shards it came from and forward to the evaluation that labelled it —
+`roots-provenance.json` is the audit trail for the first half and is not needed to regenerate
+anything once `roots.tsv` exists.
 
 Step 3 writes `manifest.json` beside `groups.json`, `generation.json` and `license.txt`. It cannot
 write a manifest the loader would reject, because it runs the loader before returning.

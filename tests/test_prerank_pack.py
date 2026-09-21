@@ -259,3 +259,96 @@ def test_the_summary_follows_the_shortlist_it_is_given() -> None:
     groups = [_group(0, candidates=10), _group(1, candidates=60)]
     assert summarise(groups, _record(), shortlist=8)["groups_above_shortlist"] == 2
     assert summarise(groups, _record(), shortlist=100)["groups_above_shortlist"] == 0
+
+
+# The manifest has to state the counts, and `load_groups` will not read one that does not — so
+# the counts come off the payload before anything has validated it. A malformed group must
+# therefore be refused here rather than escape as a `KeyError` past every caller that knows how
+# to report a refusal.
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ([["not", "a", "group"]], "not a group"),
+        ([{"group_id": "x"}], "list of candidates"),
+        ([{"group_id": "x", "candidates": {}}], "list of candidates"),
+    ],
+)
+def test_a_payload_that_is_not_groups_is_refused(
+    tmp_path: Path, payload: list, message: str
+) -> None:
+    corpus = _corpus(tmp_path / "corpus", groups=payload)
+    with pytest.raises(PackError, match=message):
+        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+
+
+def test_a_refused_corpus_is_left_without_a_manifest(tmp_path: Path) -> None:
+    """The guarantee is that a manifest beside a corpus has been through the loader. A refusal
+    that left the rejected manifest on disk would quietly withdraw it."""
+    broken = _group(0)
+    broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
+    corpus = _corpus(tmp_path / "corpus", groups=[broken])
+    with pytest.raises(GroupsError):
+        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+    assert not (corpus / "manifest.json").exists()
+
+
+def test_a_refusal_does_not_destroy_the_manifest_that_was_already_there(tmp_path: Path) -> None:
+    """Worse than leaving a bad manifest is replacing a good one: the corpus it described was
+    admissible until this command touched it."""
+    corpus = _corpus(tmp_path / "corpus")
+    pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+    good = (corpus / "manifest.json").read_bytes()
+
+    broken = _group(0)
+    broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
+    (corpus / "groups.json").write_text(json.dumps([broken]) + "\n", encoding="utf-8")
+    with pytest.raises(GroupsError):
+        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+    assert (corpus / "manifest.json").read_bytes() == good
+
+
+# The CLI promises that a failure says what went wrong and never where. A filesystem error would
+# otherwise arrive as a traceback carrying the directory it failed on.
+def test_the_command_line_reports_a_filesystem_failure_without_a_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from dicechess_training.prerank.__main__ import main
+
+    corpus = _corpus(tmp_path / "corpus", with_terms=False)
+    # A directory where the data terms belong: the copy fails with an `IsADirectoryError`, which
+    # no domain check anticipates, which is exactly the case under test.
+    (corpus / "license.txt").mkdir()
+
+    exit_code = main(
+        ["pack", str(corpus), "--license", TERMS, "--license-file", str(_terms(tmp_path))]
+    )
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert captured.err.strip() == "refused: a file could not be read or written"
+    assert str(tmp_path) not in captured.err
+
+
+def test_the_command_line_reports_a_refusal_without_a_path(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from dicechess_training.prerank.__main__ import main
+
+    corpus = _corpus(tmp_path / "corpus", with_terms=False)
+    exit_code = main(["pack", str(corpus), "--license", TERMS])
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "refused: the corpus has no data terms beside it" in captured.err
+    assert str(tmp_path) not in captured.err
+
+
+def test_the_command_line_packs_a_good_corpus(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from dicechess_training.prerank.__main__ import main
+
+    corpus = _corpus(tmp_path / "corpus")
+    exit_code = main(
+        ["pack", str(corpus), "--license", TERMS, "--license-file", str(_terms(tmp_path))]
+    )
+    assert exit_code == 0
+    assert "admitted 10 groups, 30 candidates" in capsys.readouterr().out

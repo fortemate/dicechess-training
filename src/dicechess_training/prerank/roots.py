@@ -102,7 +102,12 @@ def distinct_roots(frame: pd.DataFrame) -> pd.DataFrame:
                 order_key(fen, dice) for fen, dice in zip(frame["fen"], frame["dice"], strict=True)
             ]
         )
-        .sort_values(["_key", "game_id", "ply"], kind="stable")
+        # `fen` is the last key, not decoration. Two rows can share a canonical key, a game and a
+        # ply while spelling their FEN differently — castling in another order, or clocks on one
+        # and not the other — and a stable sort would then keep whichever the file happened to
+        # hold first. The digest of `roots.tsv` is the dataset's `source_sha256`, so a selection
+        # that depends on input order is a digest that depends on input order.
+        .sort_values(["_key", "game_id", "ply", "fen"], kind="stable")
         .drop_duplicates("_key", keep="first")
     )
     return chosen.reset_index(drop=True)
@@ -121,8 +126,11 @@ def write_roots(roots: pd.DataFrame, path: Path) -> str:
     lines = ["\t".join(HEADER)]
     for row in roots.itertuples():
         for field in (row.game_id, row.fen, row.dice, row.side):
-            if "\t" in str(field) or "\n" in str(field):
-                raise RootsError("a root field contains a tab or newline")
+            # `\r` belongs here with the others: the generator reads this file with
+            # `Files.readAllLines`, which ends a line on a lone carriage return, so a field
+            # carrying one would silently become two records rather than fail.
+            if any(character in str(field) for character in ("\t", "\n", "\r")):
+                raise RootsError("a root field contains a tab, newline or carriage return")
         lines.append(f"{row.game_id}\t{row.fen}\t{row.dice}\t{row.side}")
     payload = "\n".join(lines) + "\n"
     path.write_text(payload, encoding="utf-8")

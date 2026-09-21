@@ -120,7 +120,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return int(args.handler(args))
     except (packer.PackError, rooter.RootsError, GroupsError) as error:
+        # These messages are written to say what, never where — see the module docstring.
         print(f"refused: {error}", file=sys.stderr)
+        return 1
+    except OSError:
+        # A filesystem failure carries the path it failed on, and this command handles corpora
+        # whose location is itself private. The operator can see their own permissions and disk;
+        # what they must not get is a traceback naming a directory in a log or a pasted report.
+        print("refused: a file could not be read or written", file=sys.stderr)
         return 1
 
 
