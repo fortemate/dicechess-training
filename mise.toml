@@ -38,6 +38,17 @@ out="${1:-../../tests/fixtures/kcp13/golden-engine-${version}.json}"
 sbt -batch "-Dengine.version=${version}" "runMain dicechess.training.golden.Kcp13Golden ../../tests/fixtures/kcp13/probes.tsv ${out}"
 """
 
+[tasks."golden:rich9"]
+description = "Regenerate the rich-9 golden corpus from the released engine (needs JDK 21+ and sbt; not part of check)"
+dir = "tools/kcp13-golden"
+run = """
+#!/usr/bin/env bash
+set -euo pipefail
+version="${ENGINE_VERSION:-0.9.3}"
+out="${1:-../../tests/fixtures/rich9/golden-engine-${version}.json}"
+sbt -batch "-Dengine.version=${version}" "runMain dicechess.training.golden.Kcp13Golden rich-9-v1 ../../tests/fixtures/kcp13/probes.tsv ${out}"
+"""
+
 [tasks."check:enrichment"]
 description = "JVM -> Parquet -> Python metadata and golden parity smoke (requires JDK 21 and sbt)"
 run = "uv run python scripts/check_enrichment.py"

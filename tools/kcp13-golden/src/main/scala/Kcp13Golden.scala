@@ -5,9 +5,8 @@ import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 
 import dicechess.engine.domain.FenParser
-import dicechess.engine.search.KcpFeatures
 
-/** Replays `probes.tsv` through the engine's [[KcpFeatures]] — the single source of truth for the `kcp-13` feature
+/** Replays `probes.tsv` through the engine's own extractor — the single source of truth for the `kcp-13` feature
   * vector the evaluation service serves — and writes the resulting vectors as a deterministic JSON golden corpus.
   *
   * The Python side of the training repository never reimplements these features; it loads this file and checks
@@ -15,6 +14,8 @@ import dicechess.engine.search.KcpFeatures
   * written to the fixture, so regenerating against another engine version yields a byte-comparable file.
   *
   * Usage: `sbt -Dengine.version=0.9.2 "run tests/fixtures/kcp13/probes.tsv tests/fixtures/kcp13/golden-engine-0.9.2.json"`
+  *
+  * Which schemas this build offers depends on the engine selected: see [[BaseSchemas]].
   */
 object Kcp13Golden:
 
@@ -54,24 +55,15 @@ object Kcp13Golden:
       case Array(sch, in, out) => (sch, Path.of(in), Path.of(out))
       case _                   => sys.error("usage: Kcp13Golden [schema] <probes.tsv> <golden.json>")
     val engineVersion = sys.props.getOrElse("engine.version", "0.9.3")
-    val (columns, extractor) = schema match
-      case "kcp-13" =>
-        (KcpFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => KcpFeatures.extract(s, c))
-      case "kcp-mobility-27-v1" =>
-        (dicechess.engine.search.KcpMobilityFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.KcpMobilityFeatures.extract(s, c))
-      case "kcp-mobility-pawns-31-v1" =>
-        (dicechess.engine.search.KcpMobilityPawnsFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.KcpMobilityPawnsFeatures.extract(s, c))
-      // The two cheap schemas a move pre-ranker can afford: its pass sees every legal turn, so the
-      // per-candidate cost is the constraint, not the model (training#9).
-      case "rich-9-v1" =>
-        (dicechess.engine.search.RichFeatures.columnNames, (s: dicechess.engine.domain.GameState, c: dicechess.engine.domain.Color) => dicechess.engine.search.RichFeatures.extract(s, c))
-      // `material-7-v1` is deliberately absent: the released engine this tool builds against does not
-      // expose `OnnxFeatures.columnNames`, and the column layout is the engine's to state, not this
-      // file's to assume. It arrives when a release does.
-      case other =>
-        sys.error(
-          s"unsupported schema '$other' (expected 'kcp-13', 'kcp-mobility-27-v1', 'kcp-mobility-pawns-31-v1' or 'rich-9-v1')"
-        )
+    // `material-7-v1` is absent from every tier: no released engine exposes `OnnxFeatures.columnNames`, and the
+    // column layout is the engine's to state, not this file's to assume. It arrives when a release does.
+    val FeatureExtractor(columns, extractor) = Schemas.byId.getOrElse(
+      schema,
+      sys.error(
+        s"unsupported schema '$schema' for engine $engineVersion " +
+          s"(this build offers ${Schemas.byId.keys.toList.sorted.mkString(", ")})"
+      )
+    )
 
     val probes = readProbes(input)
     val ids    = probes.map(_.id)
