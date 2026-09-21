@@ -71,6 +71,29 @@ class RootsError(ValueError):
     """A roots selection was refused. The message says what, never where."""
 
 
+def canonical_dice(dice: str) -> str:
+    """The roll as the dataset contract spells it: three sorted upper-case piece letters.
+
+    Shards do not all arrive that way. The analytics dialect writes the roll in upper case on
+    White's turns and lower case on Black's — the case repeats `side`, which the row already
+    carries — and `schema.validate_frame` checks that dialect without rewriting it, so a shard
+    written by anything other than `ingest.convert_export` keeps whatever case it was handed.
+    Measured on the 100k development corpus: 723,499 of 1,500,477 rows are lower case, exactly
+    the Black-to-move ones, and the committed public sample has none, which is why this was
+    invisible until a second corpus arrived.
+
+    Normalising is not a loss: a dice pool is a multiset — the engine takes it as a list and the
+    order never survives — so the sorted upper-case form is the same roll, spelled the way the
+    contract, the group id and the generator all expect. Left raw, one root would become two
+    under two spellings, and every Black-to-move group would be refused on admission after the
+    corpus had already cost its core-hours.
+    """
+    try:
+        return "".join(sorted(schema.validate_dice(str(dice))))
+    except ValueError as error:
+        raise RootsError("a row carries a roll that is not three piece letters") from error
+
+
 def order_key(fen: str, dice: str) -> str:
     """Where a root falls in the selection order. A function of the root alone, so the order is
     the same whatever shards it was found in and whatever order they were read."""
@@ -95,6 +118,10 @@ def distinct_roots(frame: pd.DataFrame) -> pd.DataFrame:
     mismatched = int((declared != frame["side"].astype(str)).sum())
     if mismatched:
         raise RootsError(f"{mismatched} rows declare a side that is not the FEN's side to move")
+
+    # Canonical before anything keys on it: the order key, the deduplication and the written
+    # file all have to agree with what a group id is derived from.
+    frame = frame.assign(dice=[canonical_dice(dice) for dice in frame["dice"]])
 
     chosen = (
         frame.assign(
