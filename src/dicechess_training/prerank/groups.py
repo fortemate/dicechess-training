@@ -7,11 +7,13 @@ data is a list of groups and never a table of rows with a group column. A flat t
 filtered, sorted or shuffled into something that still loads and no longer has lists in it; this
 shape cannot.
 
-**The split is by game, the audit is by position.** Assigning candidates rather than groups would
-put a root's own alternatives on both sides of the split, which is leakage of the crudest kind, so
-splitting takes whole groups by `game_id`. That alone is not enough: the same position with the
-same dice occurs in many games, and two such groups landing in different splits is the same leak
-wearing a different coat. `duplicate_roots` finds those; it does not decide what to do about them.
+**The split is by game, and a root belongs to one of them.** Assigning candidates rather than
+groups would put a root's own alternatives on both sides of the split, which is leakage of the
+crudest kind, so splitting takes whole groups by `game_id`. The subtler leak — the same position
+under the same roll reached by two games, landing on opposite sides — cannot occur here at all: a
+group's id is derived from exactly that pair, and a dataset may not carry the same id twice. Which
+game a repeated root is attributed to is therefore decided before this module sees it, when the
+roots are sampled (`prerank.roots`), and it is a rule rather than an accident.
 
 **Features come from the engine, not from here.** The manifest names a feature schema, and the
 columns are checked against the committed golden corpus for that schema and engine version rather
@@ -79,7 +81,13 @@ def root_key(group: dict) -> tuple[str, str]:
     return _canonical_fen(group["root_fen"]), group["dice"]
 
 
-def _golden_columns(schema_id: str, engine_version: str) -> tuple[tuple[str, ...], str]:
+def golden_columns(schema_id: str, engine_version: str) -> tuple[tuple[str, ...], str]:
+    """The engine's column layout for a schema, and the digest that binds the evidence for it.
+
+    The only place either value may come from. A producer does not get to state the layout it was
+    supposed to produce, and an engine with no committed golden corpus is refused rather than
+    trusted — which is what makes `engine_version` in a manifest a claim somebody checked.
+    """
     _require(schema_id in STUDENT_SCHEMAS, "unsupported feature schema for a pre-ranker")
     _require(
         _ENGINE_VERSION.match(engine_version) is not None,
@@ -140,7 +148,7 @@ def _check_manifest(manifest: dict, directory: Path) -> tuple[tuple[str, ...], d
     except ValueError as error:
         raise GroupsError("the teacher's weights digest is unusable") from error
 
-    columns, golden_digest = _golden_columns(
+    columns, golden_digest = golden_columns(
         str(manifest.get("feature_schema")), str(manifest.get("engine_version"))
     )
     _require(
@@ -225,6 +233,9 @@ def load_groups(directory: str | Path) -> tuple[dict, list[dict]]:
     for group in groups:
         _check_group(group, columns)
 
+    # One decision, once. Because the id is derived from the root and the roll, this also rules
+    # out the leak a game-level split cannot see: the same position under the same roll, reached by
+    # two games, landing on opposite sides. It cannot be here twice to land anywhere twice.
     ids = [group["group_id"] for group in groups]
     _require(len(set(ids)) == len(ids), "the same list appears twice")
     _require(
@@ -246,18 +257,3 @@ def assign_splits(groups: list[dict]) -> list[str]:
     benchmark's own, so a game that is train for the evaluator is train here too.
     """
     return [split_for(str(group["game_id"])) for group in groups]
-
-
-def duplicate_roots(groups: list[dict], splits: list[str]) -> dict[tuple[str, str], set[str]]:
-    """Roots that occur in more than one split, with the splits they occur in.
-
-    Games are disjoint by construction; positions are not. The same opening position under the same
-    roll is reached by many games, and when two of them fall on opposite sides of the split the
-    model is tested on a list it has already been fitted to. Reported rather than dropped: whether
-    to exclude, keep or rebuild is the owner's call, and silently deleting rows would hide how much
-    of the corpus is affected.
-    """
-    seen: dict[tuple[str, str], set[str]] = {}
-    for group, split in zip(groups, splits, strict=True):
-        seen.setdefault(root_key(group), set()).add(split)
-    return {key: splits_seen for key, splits_seen in seen.items() if len(splits_seen) > 1}

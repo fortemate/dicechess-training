@@ -17,7 +17,6 @@ from dicechess_training.contracts import kcp13
 from dicechess_training.prerank import (
     GroupsError,
     assign_splits,
-    duplicate_roots,
     group_id_for,
     load_groups,
 )
@@ -134,21 +133,17 @@ def _deduplicate(groups: list[dict]) -> list[dict]:
     return unique
 
 
-def test_the_same_root_in_two_splits_is_reported(tmp_path: Path) -> None:
-    """Games are disjoint; positions are not. Two games reaching the same root under the same roll
-    is the leak that a game-level split cannot see."""
-    groups = [_group(game="game-a"), _group(game="game-b")]
-    # Both groups are the same list, so give the second a different id the loader will accept.
-    groups[1]["game_id"] = "game-b"
-    splits = ["train", "test"]
-    found = duplicate_roots(groups, splits)
-    assert len(found) == 1
-    assert next(iter(found.values())) == {"train", "test"}
+def test_a_root_cannot_reach_two_splits(tmp_path: Path) -> None:
+    """The leak a game-level split cannot see — the same position under the same roll, reached by
+    two games and landing on opposite sides — is prevented rather than reported.
 
-
-def test_a_root_in_one_split_is_not_reported() -> None:
-    groups = [_group(game="game-a"), _group(game="game-b")]
-    assert duplicate_roots(groups, ["train", "train"]) == {}
+    A group's id is derived from exactly that pair, so the two would be the same list, and a
+    dataset may not carry the same list twice. There is nothing left for an audit to find, which
+    is why one no longer exists: `duplicate_roots` could only ever have fired on a digest
+    collision. Which game a repeated root is charged to is settled when the roots are sampled.
+    """
+    with pytest.raises(GroupsError, match="appears twice"):
+        load_groups(_write(tmp_path / "ds", [_group(game="game-a"), _group(game="game-b")]))
 
 
 @pytest.mark.parametrize(
