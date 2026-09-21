@@ -12,8 +12,9 @@ from __future__ import annotations
 from .groups import (
     SCHEMA_ID,
     GroupsError,
+    admit,
     assign_splits,
-    duplicate_roots,
+    golden_columns,
     group_id_for,
     load_groups,
     root_key,
@@ -22,8 +23,9 @@ from .groups import (
 __all__ = [
     "SCHEMA_ID",
     "GroupsError",
+    "admit",
     "assign_splits",
-    "duplicate_roots",
+    "golden_columns",
     "group_id_for",
     "load_groups",
     "root_key",
