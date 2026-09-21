@@ -222,10 +222,13 @@ def test_a_roll_is_canonical_however_the_shard_spelt_it(raw: str, canonical: str
     assert canonical_dice(raw) == canonical
 
 
-def test_a_roll_that_is_not_three_piece_letters_is_refused() -> None:
-    for bad in ("", "BP", "BPRK", "BPZ", "123"):
-        with pytest.raises(RootsError, match="three piece letters"):
-            canonical_dice(bad)
+@pytest.mark.parametrize("bad", ["", "BP", "BPRK", "BPZ", "123"])
+def test_a_roll_that_is_not_three_piece_letters_is_refused(bad: str) -> None:
+    with pytest.raises(RootsError, match="three piece letters") as refusal:
+        canonical_dice(bad)
+    # The offending value is in the message: a corpus has a million rows, and an operator who
+    # cannot see which roll was rejected cannot find them.
+    assert repr(bad) in str(refusal.value)
 
 
 def test_one_roll_spelt_two_ways_is_one_root() -> None:

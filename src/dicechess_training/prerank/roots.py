@@ -99,7 +99,12 @@ def canonical_dice(dice: str) -> str:
     try:
         return "".join(sorted(schema.validate_dice(str(dice))))
     except ValueError as error:
-        raise RootsError("a row carries a roll that is not three piece letters") from error
+        # The value belongs in the message. "Says what, never where" is about paths and private
+        # parameters; a roll is three letters of the data being refused, and without them the
+        # operator cannot find the rows that carry it in a corpus of a million.
+        raise RootsError(
+            f"a row carries a roll that is not three piece letters: {dice!r}"
+        ) from error
 
 
 def order_key(fen: str, dice: str) -> str:
