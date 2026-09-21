@@ -111,8 +111,9 @@ def test_a_row_whose_side_contradicts_its_fen_is_refused() -> None:
 
 
 def test_an_empty_source_is_refused() -> None:
+    empty = _rows()
     with pytest.raises(RootsError, match="no rows"):
-        distinct_roots(_rows())
+        distinct_roots(empty)
 
 
 def test_a_source_missing_a_column_is_refused() -> None:
@@ -123,8 +124,9 @@ def test_a_source_missing_a_column_is_refused() -> None:
 
 @pytest.mark.parametrize("limit", [0, -1])
 def test_a_limit_that_selects_nothing_is_refused(limit: int) -> None:
+    frame = _rows(("game-a", 1, START, "BNP", "w"))
     with pytest.raises(RootsError, match="positive"):
-        select(_rows(("game-a", 1, START, "BNP", "w")), limit)
+        select(frame, limit)
 
 
 def test_the_file_is_what_the_generator_reads(tmp_path: Path) -> None:
@@ -148,9 +150,9 @@ def test_the_file_is_what_the_generator_reads(tmp_path: Path) -> None:
 # than an error, and the corpus is then built from roots nobody chose.
 @pytest.mark.parametrize("bad", ["game\ta", "game\na", "game\ra"])
 def test_a_field_that_would_break_the_file_is_refused(tmp_path: Path, bad: str) -> None:
-    frame = _rows((bad, 1, START, "BNP", "w"))
+    roots = distinct_roots(_rows((bad, 1, START, "BNP", "w")))
     with pytest.raises(RootsError, match="tab, newline or carriage return"):
-        write_roots(distinct_roots(frame), tmp_path / ROOTS_FILE)
+        write_roots(roots, tmp_path / ROOTS_FILE)
 
 
 def test_two_spellings_of_one_root_resolve_the_same_way_whatever_the_input_order() -> None:

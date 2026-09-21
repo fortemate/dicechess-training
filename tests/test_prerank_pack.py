@@ -123,14 +123,9 @@ def test_a_generated_corpus_becomes_an_admissible_dataset(tmp_path: Path) -> Non
 def test_the_layout_comes_from_committed_evidence_not_from_the_producer(tmp_path: Path) -> None:
     """A producer does not get to state the layout it was supposed to produce."""
     corpus = _corpus(tmp_path / "corpus", columns=["invented"] * 9)
+    record = read_generation(corpus)
     with pytest.raises(PackError, match="not the engine's layout"):
-        build_manifest(
-            corpus,
-            read_generation(corpus),
-            version="0.1.0",
-            kind="owner-controlled",
-            license_=TERMS,
-        )
+        build_manifest(corpus, record, version="0.1.0", kind="owner-controlled", license_=TERMS)
 
 
 def test_a_record_that_names_no_columns_still_packs(tmp_path: Path) -> None:
@@ -169,14 +164,9 @@ def test_the_teacher_travels_as_an_id_and_a_digest(tmp_path: Path) -> None:
 
 def test_an_engine_with_no_committed_golden_is_refused(tmp_path: Path) -> None:
     corpus = _corpus(tmp_path / "corpus", engine_version="9.9.9")
+    record = read_generation(corpus)
     with pytest.raises(GroupsError, match="no committed golden corpus"):
-        build_manifest(
-            corpus,
-            read_generation(corpus),
-            version="0.1.0",
-            kind="owner-controlled",
-            license_=TERMS,
-        )
+        build_manifest(corpus, record, version="0.1.0", kind="owner-controlled", license_=TERMS)
 
 
 @pytest.mark.parametrize(
@@ -216,20 +206,23 @@ def test_data_terms_are_required_and_not_invented(tmp_path: Path) -> None:
 @pytest.mark.parametrize("license_", ["", "  ", "unknown", "unresolved"])
 def test_a_licence_that_says_nothing_is_refused(tmp_path: Path, license_: str) -> None:
     corpus = _corpus(tmp_path / "corpus")
+    terms = _terms(tmp_path)
     with pytest.raises(PackError, match="missing data terms"):
-        pack(corpus, license_=license_, license_file=_terms(tmp_path))
+        pack(corpus, license_=license_, license_file=terms)
 
 
 def test_an_unverified_origin_is_refused(tmp_path: Path) -> None:
     corpus = _corpus(tmp_path / "corpus")
+    terms = _terms(tmp_path)
     with pytest.raises(PackError, match="unverified dataset origin"):
-        pack(corpus, license_=TERMS, license_file=_terms(tmp_path), kind="scraped")
+        pack(corpus, license_=TERMS, license_file=terms, kind="scraped")
 
 
 def test_an_empty_corpus_is_refused(tmp_path: Path) -> None:
     corpus = _corpus(tmp_path / "corpus", groups=[])
+    terms = _terms(tmp_path)
     with pytest.raises(PackError, match="no groups"):
-        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+        pack(corpus, license_=TERMS, license_file=terms)
 
 
 def test_a_corpus_the_loader_would_reject_is_not_papered_over(tmp_path: Path) -> None:
@@ -238,8 +231,9 @@ def test_a_corpus_the_loader_would_reject_is_not_papered_over(tmp_path: Path) ->
     broken = _group(0)
     broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
     corpus = _corpus(tmp_path / "corpus", groups=[broken])
+    terms = _terms(tmp_path)
     with pytest.raises(GroupsError, match="same position"):
-        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+        pack(corpus, license_=TERMS, license_file=terms)
 
 
 def test_the_summary_says_what_can_and_cannot_be_ranked() -> None:
@@ -277,8 +271,9 @@ def test_a_payload_that_is_not_groups_is_refused(
     tmp_path: Path, payload: list, message: str
 ) -> None:
     corpus = _corpus(tmp_path / "corpus", groups=payload)
+    terms = _terms(tmp_path)
     with pytest.raises(PackError, match=message):
-        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+        pack(corpus, license_=TERMS, license_file=terms)
 
 
 def test_a_refused_corpus_is_left_without_a_manifest(tmp_path: Path) -> None:
@@ -287,8 +282,9 @@ def test_a_refused_corpus_is_left_without_a_manifest(tmp_path: Path) -> None:
     broken = _group(0)
     broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
     corpus = _corpus(tmp_path / "corpus", groups=[broken])
+    terms = _terms(tmp_path)
     with pytest.raises(GroupsError):
-        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+        pack(corpus, license_=TERMS, license_file=terms)
     assert not (corpus / "manifest.json").exists()
 
 
@@ -302,8 +298,9 @@ def test_a_refusal_does_not_destroy_the_manifest_that_was_already_there(tmp_path
     broken = _group(0)
     broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
     (corpus / "groups.json").write_text(json.dumps([broken]) + "\n", encoding="utf-8")
+    terms = _terms(tmp_path)
     with pytest.raises(GroupsError):
-        pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+        pack(corpus, license_=TERMS, license_file=terms)
     assert (corpus / "manifest.json").read_bytes() == good
 
 

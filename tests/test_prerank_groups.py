@@ -142,8 +142,9 @@ def test_a_root_cannot_reach_two_splits(tmp_path: Path) -> None:
     is why one no longer exists: `duplicate_roots` could only ever have fired on a digest
     collision. Which game a repeated root is charged to is settled when the roots are sampled.
     """
+    dataset = _write(tmp_path / "ds", [_group(game="game-a"), _group(game="game-b")])
     with pytest.raises(GroupsError, match="appears twice"):
-        load_groups(_write(tmp_path / "ds", [_group(game="game-a"), _group(game="game-b")]))
+        load_groups(dataset)
 
 
 @pytest.mark.parametrize(
