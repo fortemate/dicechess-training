@@ -304,6 +304,35 @@ def test_a_refusal_does_not_destroy_the_manifest_that_was_already_there(tmp_path
     assert (corpus / "manifest.json").read_bytes() == good
 
 
+def test_a_refusal_leaves_nothing_of_its_own_behind(tmp_path: Path) -> None:
+    """Admission happens on a staged copy, so a refused run leaves the corpus as it found it —
+    no manifest, and no staging directory either."""
+    broken = _group(0)
+    broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
+    corpus = _corpus(tmp_path / "corpus", groups=[broken])
+    before = sorted(path.name for path in corpus.iterdir())
+    terms = _terms(tmp_path)
+
+    with pytest.raises(GroupsError):
+        pack(corpus, license_=TERMS, license_file=terms)
+
+    after = sorted(path.name for path in corpus.iterdir())
+    # `license.txt` is the one thing the run is allowed to have added, because the operator
+    # passed it in; nothing else, and above all no half-finished staging directory.
+    assert after == sorted({*before, "license.txt"})
+
+
+def test_the_staged_copy_is_the_same_bytes_not_a_rewrite(tmp_path: Path) -> None:
+    """The digest in the manifest is of the corpus file itself, so the copy admission runs
+    against has to be that file, not a re-serialisation of it."""
+    corpus = _corpus(tmp_path / "corpus")
+    manifest, _ = pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
+    from dicechess_training.contracts import kcp13
+
+    assert manifest["groups_sha256"] == kcp13.sha256_of(corpus / "groups.json")
+    assert manifest["license_evidence_sha256"] == kcp13.sha256_of(corpus / "license.txt")
+
+
 # The CLI promises that a failure says what went wrong and never where. A filesystem error would
 # otherwise arrive as a traceback carrying the directory it failed on.
 def test_the_command_line_reports_a_filesystem_failure_without_a_path(
