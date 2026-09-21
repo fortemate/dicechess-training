@@ -20,9 +20,7 @@ the loader has already accepted it before the command returns.
 from __future__ import annotations
 
 import json
-import os
 import shutil
-import tempfile
 from collections import Counter
 from pathlib import Path
 
@@ -36,9 +34,9 @@ from dicechess_training.prerank.groups import (
     PERSPECTIVE,
     SCHEMA_ID,
     TARGET,
+    admit,
     assign_splits,
     golden_columns,
-    load_groups,
 )
 
 GENERATION_FILE = "generation.json"
@@ -168,38 +166,17 @@ def pack(
         shutil.copyfile(license_file, directory / LICENSE_FILE)
 
     manifest = build_manifest(directory, record, version=version, kind=kind, license_=license_)
-    payload = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-    admitted, groups = _admit(directory, payload)
-    (directory / MANIFEST_FILE).write_text(payload, encoding="utf-8")
+
+    # Admitted before it is written, not after. `groups.admit` runs the same checks `load_groups`
+    # runs, against the files in this directory, on a manifest that is still only in memory — so
+    # a refused corpus is left exactly as it was found. Writing first and undoing on refusal
+    # would give the same outcome only for as long as the undo kept working, and would destroy a
+    # previously valid manifest every time it had anything to do.
+    admitted, groups = admit(manifest, directory)
+    (directory / MANIFEST_FILE).write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return admitted, summarise(groups, record)
-
-
-def _admit(directory: Path, payload: str) -> tuple[dict, list[dict]]:
-    """Try a manifest the corpus does not have yet, and only then let it have it.
-
-    `load_groups` reads the manifest from a fixed name beside the data, so the only way to try one
-    without committing to it is to try it somewhere else. The payload is hard-linked into a
-    staging directory on the same filesystem — a corpus is hundreds of megabytes, and a link is
-    the same bytes, the same inode and therefore the same digest — which is the shape
-    `dicechess_training.hub` already uses to admit an artifact before publishing it. A copy is the
-    fallback, because the link is an optimisation and not part of the guarantee.
-
-    The guarantee is what this buys: a refused corpus is left exactly as it was found. No manifest
-    appears beside it, and one that was already there is untouched — its corpus was admissible
-    until this command ran, and a failed run must not be what changes that. Writing first and
-    undoing afterwards would give the same outcome only for as long as the undo kept working.
-    """
-    staging = Path(tempfile.mkdtemp(dir=directory, prefix=".prerank-staging-"))
-    try:
-        for name in (GROUPS_FILE, LICENSE_FILE):
-            try:
-                os.link(directory / name, staging / name)
-            except OSError:
-                shutil.copy2(directory / name, staging / name)
-        (staging / MANIFEST_FILE).write_text(payload, encoding="utf-8")
-        return load_groups(staging)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
 
 
 def summarise(groups: list[dict], record: dict, shortlist: int = 48) -> dict:

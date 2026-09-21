@@ -225,7 +225,22 @@ def _check_group(group: dict, columns: tuple[str, ...]) -> None:
 def load_groups(directory: str | Path) -> tuple[dict, list[dict]]:
     """Admit a grouped dataset, or refuse it. Returns the manifest and its groups."""
     directory = Path(directory)
-    manifest = benchmark_core.read_json(directory / MANIFEST_FILE)
+    return admit(benchmark_core.read_json(directory / MANIFEST_FILE), directory)
+
+
+def admit(manifest: dict, directory: str | Path) -> tuple[dict, list[dict]]:
+    """The same admission, for a manifest that is not on disk yet.
+
+    Separated from [[load_groups]] for the one caller that has a manifest it has not committed
+    to: `prerank.pack` builds one and needs to know whether it holds *before* writing it beside
+    the data. The alternative — write, admit, undo on refusal — would leave the guarantee that a
+    manifest found beside a corpus has been through here resting on a rescue path, and would
+    destroy a previously valid manifest whenever that path had anything to do.
+
+    The digests still bind the real files: everything below reads them from `directory`. Only the
+    manifest itself comes from the caller.
+    """
+    directory = Path(directory)
     columns, manifest = _check_manifest(manifest, directory)
 
     groups = json.loads((directory / GROUPS_FILE).read_text(encoding="utf-8"))

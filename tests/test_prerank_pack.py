@@ -305,8 +305,8 @@ def test_a_refusal_does_not_destroy_the_manifest_that_was_already_there(tmp_path
 
 
 def test_a_refusal_leaves_nothing_of_its_own_behind(tmp_path: Path) -> None:
-    """Admission happens on a staged copy, so a refused run leaves the corpus as it found it —
-    no manifest, and no staging directory either."""
+    """The manifest is admitted before it is written, so a refused run leaves the corpus exactly
+    as it found it — no manifest, and nothing else either."""
     broken = _group(0)
     broken["candidates"][1]["result_fen"] = broken["candidates"][0]["result_fen"]
     corpus = _corpus(tmp_path / "corpus", groups=[broken])
@@ -322,9 +322,9 @@ def test_a_refusal_leaves_nothing_of_its_own_behind(tmp_path: Path) -> None:
     assert after == sorted({*before, "license.txt"})
 
 
-def test_the_staged_copy_is_the_same_bytes_not_a_rewrite(tmp_path: Path) -> None:
-    """The digest in the manifest is of the corpus file itself, so the copy admission runs
-    against has to be that file, not a re-serialisation of it."""
+def test_the_digests_bind_the_files_on_disk(tmp_path: Path) -> None:
+    """Admission runs on an in-memory manifest but reads the payload from the directory, so the
+    digests it checked are the digests of the files that end up beside it."""
     corpus = _corpus(tmp_path / "corpus")
     manifest, _ = pack(corpus, license_=TERMS, license_file=_terms(tmp_path))
     from dicechess_training.contracts import kcp13
