@@ -48,13 +48,21 @@ ORDER_LABEL = "prerank-roots-v1"
 
 SELECTION_RULE = f'sha256("{ORDER_LABEL}:" + canonical_fen + "|" + dice) ascending, first `limit`'
 
-#: What one root turned out to cost, measured on 400 roots of the committed sample at engine
-#: 0.12.0: 120.7 candidates per root read, 235 bytes of JSON each, 0.60 ms per candidate on eight
-#: threads. Used only to project the bill before it is run up — the corpus is cheap in CPU and
-#: expensive in JSON, and 43,692 roots is 1.2 GB, which the loader would have to hold as objects.
-CANDIDATES_PER_ROOT = 120.7
-BYTES_PER_CANDIDATE = 235
-MILLISECONDS_PER_CANDIDATE = 0.6
+#: What one root turned out to cost, from the first real run: 5,000 roots of the 100k development
+#: corpus at engine 0.12.0, eight threads — 150.5 candidates per root read, 237 bytes of JSON
+#: each, 0.55 ms per candidate.
+#:
+#: These replace constants taken from 400 roots of the committed public sample, which projected
+#: 141.8 MB for that run against an actual 178.2 MB — 26% low, because the development corpus
+#: averages half again as many candidates per root as the sample does. A projection is worth
+#: having only if it is drawn from the corpus being sampled, so it is worth re-measuring when the
+#: source changes rather than trusting a number from a different one.
+#:
+#: The projection exists because the corpus is cheap in CPU and expensive in JSON: the whole 1.2M
+#: distinct roots of that corpus would be 43 GB, which no loader is going to hold as objects.
+CANDIDATES_PER_ROOT = 150.5
+BYTES_PER_CANDIDATE = 237
+MILLISECONDS_PER_CANDIDATE = 0.55
 
 
 def projected_cost(roots: int) -> dict:
@@ -69,6 +77,34 @@ def projected_cost(roots: int) -> dict:
 
 class RootsError(ValueError):
     """A roots selection was refused. The message says what, never where."""
+
+
+def canonical_dice(dice: str) -> str:
+    """The roll as the dataset contract spells it: three sorted upper-case piece letters.
+
+    Shards do not all arrive that way. The analytics dialect writes the roll in upper case on
+    White's turns and lower case on Black's — the case repeats `side`, which the row already
+    carries — and `schema.validate_frame` checks that dialect without rewriting it, so a shard
+    written by anything other than `ingest.convert_export` keeps whatever case it was handed.
+    Measured on the 100k development corpus: 723,499 of 1,500,477 rows are lower case, exactly
+    the Black-to-move ones, and the committed public sample has none, which is why this was
+    invisible until a second corpus arrived.
+
+    Normalising is not a loss: a dice pool is a multiset — the engine takes it as a list and the
+    order never survives — so the sorted upper-case form is the same roll, spelled the way the
+    contract, the group id and the generator all expect. Left raw, one root would become two
+    under two spellings, and every Black-to-move group would be refused on admission after the
+    corpus had already cost its core-hours.
+    """
+    try:
+        return "".join(sorted(schema.validate_dice(str(dice))))
+    except ValueError as error:
+        # The value belongs in the message. "Says what, never where" is about paths and private
+        # parameters; a roll is three letters of the data being refused, and without them the
+        # operator cannot find the rows that carry it in a corpus of a million.
+        raise RootsError(
+            f"a row carries a roll that is not three piece letters: {dice!r}"
+        ) from error
 
 
 def order_key(fen: str, dice: str) -> str:
@@ -95,6 +131,10 @@ def distinct_roots(frame: pd.DataFrame) -> pd.DataFrame:
     mismatched = int((declared != frame["side"].astype(str)).sum())
     if mismatched:
         raise RootsError(f"{mismatched} rows declare a side that is not the FEN's side to move")
+
+    # Canonical before anything keys on it: the order key, the deduplication and the written
+    # file all have to agree with what a group id is derived from.
+    frame = frame.assign(dice=[canonical_dice(dice) for dice in frame["dice"]])
 
     chosen = (
         frame.assign(

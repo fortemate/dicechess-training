@@ -74,33 +74,40 @@ leak a game-level split cannot see, because a root that exists once cannot land 
 and `--limit` takes a prefix. Raising the limit adds roots without disturbing the ones already
 chosen, so a larger corpus reuses the core-hours already spent instead of invalidating them.
 
-**Compute is not the constraint; the file is.** Measured at engine 0.12.0 on 400 roots of the
-sample: 120.7 candidates per root read, 0.60 ms per candidate on eight threads, and **235 bytes of
-JSON per candidate**.
+**Compute is not the constraint; the file is.** Measured on the first real run — 5,000 roots of
+the 100k development corpus at engine 0.12.0, eight threads: 150.5 candidates per root read, 0.55
+ms per candidate, and **237 bytes of JSON per candidate**.
 
-| roots                     | candidates | JSON   | CPU            |
-| ------------------------- | ---------- | ------ | -------------- |
-| 5,000                     | 0.60M      | 142 MB | 0.8 core-hours |
-| 43,692 (the whole sample) | 5.28M      | 1.2 GB | 7 core-hours   |
+| roots                           | candidates | JSON   | CPU            |
+| ------------------------------- | ---------- | ------ | -------------- |
+| 5,000                           | 0.75M      | 178 MB | 0.9 core-hours |
+| 1,231,068 (every distinct root) | 185M       | 43 GB  | 226 core-hours |
 
-A gigabyte of JSON is a gigabyte the loader holds as Python objects. Size the first corpus around
-5,000 roots; wanting a much larger one is a reason to revisit
-`playground-prerank-groups-v1`'s storage format, not the machine it runs on.
+A gigabyte of JSON is a gigabyte the loader holds as Python objects, so the file format binds long
+before the machine does. `prerank roots` projects this before the run — but the rate depends on
+the corpus: the committed public sample averages 120.7 candidates per root against the development
+corpus's 150.5, which is why the first projection came in 26% under. Re-measure when the source
+changes rather than trusting a number drawn from a different one.
 
 ## What the corpus looks like
 
-From the end-to-end run of 400 sampled roots (engine 0.12.0, teacher `hunter-baseline-v1`):
+From the first real run — 5,000 roots of the 100k development corpus, engine 0.12.0, teacher
+`hunter-baseline-v1`, retained on the run host as `20260921-prerank-corpus-dev-5k`:
 
-- 25 roots were a forced pass — no legal turn — and produced no group;
-- 375 groups, 48,298 candidates, and **173,422 turn paths collapsed as transpositions**: 78% of
-  everything the rules allow reaches a position another path already reached;
-- candidates per group: min 1, median 43, p95 520, max 1,642;
-- **180 of 375 groups are larger than the shortlist of 48.** In the other 195 a pre-ranker cannot
-  be wrong, because every candidate survives — so a rank metric has to name the subset it was
-  measured on;
-- the median group has **17 distinct target values**, so the teacher discriminates. This is the
-  question that killed the idea of a king-capture-probability leaf teacher, whose median group was
-  entirely tied.
+- 211 roots were a forced pass — no legal turn — and produced no group (4.2%);
+- 4,789 groups, 752,504 candidates, and **2,738,029 turn paths collapsed as transpositions**:
+  78.4% of everything the rules allow reaches a position another path already reached;
+- candidates per group: min 1, median 61, p95 643, max 2,420;
+- **2,643 of 4,789 groups are larger than the shortlist of 48** (55%). In the other 45% a
+  pre-ranker cannot be wrong, because every candidate survives — so a rank metric has to name the
+  subset it was measured on;
+- the median group has **26 distinct target values** and only 4.2% are tied throughout, so the
+  teacher discriminates. This is the question that killed the idea of a king-capture-probability
+  leaf teacher, whose median group was entirely tied.
+
+A corpus built from that development source is **development data**: its own manifest calls it
+"ineligible for final qualification", and the reserved temporal holdout stays untouched. Train,
+compare and measure on it; qualify elsewhere.
 
 ## Related
 

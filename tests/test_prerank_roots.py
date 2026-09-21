@@ -21,6 +21,7 @@ from dicechess_training.prerank.roots import (
     PROVENANCE_FILE,
     ROOTS_FILE,
     RootsError,
+    canonical_dice,
     distinct_roots,
     export,
     order_key,
@@ -206,3 +207,51 @@ def test_export_without_a_limit_takes_every_distinct_root(tmp_path: Path) -> Non
     record = export(SAMPLE, tmp_path)
     assert record["limit"] is None
     assert record["roots"] == record["distinct_roots"] == 43692
+
+
+# The analytics dialect writes the roll in lower case on Black's turns — the case repeats `side`,
+# which the row already carries. `schema.validate_frame` checks that dialect without rewriting
+# it, so shards written outside `ingest.convert_export` keep it. Measured on the 100k development
+# corpus: 723,499 of 1,500,477 rows, exactly the Black-to-move ones. The committed public sample
+# has none, which is why nothing noticed until a second corpus arrived.
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [("bpr", "BPR"), ("BPR", "BPR"), ("nnn", "NNN"), ("rqb", "BQR"), ("KKP", "KKP")],
+)
+def test_a_roll_is_canonical_however_the_shard_spelt_it(raw: str, canonical: str) -> None:
+    assert canonical_dice(raw) == canonical
+
+
+@pytest.mark.parametrize("bad", ["", "BP", "BPRK", "BPZ", "123"])
+def test_a_roll_that_is_not_three_piece_letters_is_refused(bad: str) -> None:
+    with pytest.raises(RootsError, match="three piece letters") as refusal:
+        canonical_dice(bad)
+    # The offending value is in the message: a corpus has a million rows, and an operator who
+    # cannot see which roll was rejected cannot find them.
+    assert repr(bad) in str(refusal.value)
+
+
+def test_one_roll_spelt_two_ways_is_one_root() -> None:
+    """Left raw, a Black-to-move root would become two roots under two spellings — and every one
+    of them would be refused on admission, after the corpus had cost its core-hours."""
+    frame = _rows(
+        ("game-a", 2, OTHER, "bnp", "b"),
+        ("game-b", 4, OTHER, "BNP", "b"),
+    )
+    roots = distinct_roots(frame)
+    assert len(roots) == 1
+    assert list(roots["dice"]) == ["BNP"]
+
+
+def test_the_written_file_carries_the_canonical_roll(tmp_path: Path) -> None:
+    roots = distinct_roots(_rows(("game-a", 2, OTHER, "rqb", "b")))
+    write_roots(roots, tmp_path / ROOTS_FILE)
+    line = (tmp_path / ROOTS_FILE).read_text(encoding="utf-8").splitlines()[1]
+    assert line.split("\t")[2] == "BQR"
+
+
+def test_normalising_does_not_move_a_corpus_that_was_already_canonical() -> None:
+    """The committed sample is upper-case and sorted throughout, so its selection — and therefore
+    the `source_sha256` of anything already built from it — must be untouched by this."""
+    roots = select(schema.read_shards(str(SAMPLE)), 400)
+    assert list(roots["dice"]) == [canonical_dice(dice) for dice in roots["dice"]]
