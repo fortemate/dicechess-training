@@ -9,6 +9,9 @@ they are pinned on lists whose right answer can be read off by eye.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
@@ -24,9 +27,12 @@ from dicechess_training.prerank.dataset import (
 )
 from dicechess_training.prerank.model import PreRankMLP, listwise_loss
 from dicechess_training.prerank.train import (
+    BOOTSTRAP_REPEATS,
     Hyperparameters,
+    _two_sided_binomial,
     baseline_scores,
     by_shortlist,
+    discordance,
     hit_vector,
     paired_interval,
     ranking_metrics,
@@ -339,3 +345,62 @@ def test_every_reported_width_is_measured_on_its_own_groups() -> None:
     for width in shape.values():
         assert 0.0 <= width["learned"] <= 1.0
         assert width["paired_vs_material"]["ci_low"] <= width["paired_vs_material"]["delta"]
+
+
+def test_the_resample_count_is_the_one_the_protocol_fixed() -> None:
+    """A preregistration names the number of resamples precisely because it is the kind of knob
+    that looks free to turn after seeing an interval. The code follows the protocol."""
+    protocol = json.loads(
+        (Path(__file__).resolve().parents[1] / "docs" / "prerank" / "protocol-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert protocol["uncertainty"]["repeats"] == BOOTSTRAP_REPEATS
+
+
+def test_training_refuses_a_validation_split_it_cannot_measure_on() -> None:
+    """Without this the first epoch's recall of zero beats the initial sentinel, becomes the best
+    epoch, and the run reports a trained model whose validation evidence does not exist."""
+    corpus = _corpus([60] * 10 + [10] * 5, ["train"] * 10 + ["validation"] * 5, seed=6)
+    with pytest.raises(ValueError, match="no group larger than the shortlist"):
+        train(corpus, Hyperparameters(max_epochs=1, k=48, seed=11))
+
+
+def test_a_width_with_no_groups_is_reported_as_unmeasured() -> None:
+    """The mean of no groups is a NaN, and a NaN in a results table is a number somebody will
+    eventually read as a measurement."""
+    corpus = _corpus([12, 20], ["validation", "validation"], seed=7)
+    shape = by_shortlist(corpus, np.random.default_rng(0).random(len(corpus.targets)), seed=1)
+    assert shape["48"] == {"groups": 0, "measured": False}
+    assert shape["8"]["measured"] is True
+    assert shape["8"]["groups"] == 2
+
+
+def test_only_the_groups_the_orderings_disagree_about_count() -> None:
+    """A paired comparison is decided by discordant pairs: groups both orderings get right, or
+    both get wrong, say nothing about which is better."""
+    candidate = np.array([True, True, False, True, False])
+    reference = np.array([True, False, True, True, False])
+    result = discordance(candidate, reference)
+    assert result["wins"] == 1
+    assert result["losses"] == 1
+    assert result["p_value"] == 1.0
+
+
+def test_an_unambiguous_win_is_unambiguous() -> None:
+    candidate = np.ones(30, dtype=bool)
+    reference = np.zeros(30, dtype=bool)
+    assert discordance(candidate, reference)["p_value"] < 1e-8
+
+
+def test_two_orderings_that_never_disagree_have_nothing_to_test() -> None:
+    same = np.array([True, False, True])
+    assert discordance(same, same) == {"wins": 0, "losses": 0, "p_value": 1.0}
+
+
+def test_the_exact_test_matches_hand_computed_tails() -> None:
+    """Ten fair flips: five heads is the most likely outcome and cannot be evidence of anything;
+    ten heads has probability 2 * 0.5**10."""
+    assert _two_sided_binomial(5, 10) == pytest.approx(1.0)
+    assert _two_sided_binomial(10, 10) == pytest.approx(2 * 0.5**10)
+    assert _two_sided_binomial(9, 10) == pytest.approx(2 * (10 + 1) * 0.5**10)

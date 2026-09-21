@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
+from math import comb
 from pathlib import Path
 
 import numpy as np
@@ -45,7 +46,11 @@ REPORTED_K = (8, 16, 48)
 #: Resamples for the paired interval. A margin over a baseline on a few hundred groups is not a
 #: result without one: this programme has already been caught once quoting a plateau that a
 #: +/-22pp interval could not have shown.
-BOOTSTRAP_REPEATS = 2000
+#:
+#: 1000 because the protocol preregistered 1000. It is the kind of number that looks free to
+#: raise afterwards, which is exactly why a preregistration names it — a knob turned after seeing
+#: a result is not a knob, and an interval is the last place to allow one.
+BOOTSTRAP_REPEATS = 1000
 BOOTSTRAP_SEED = 13
 
 
@@ -109,6 +114,38 @@ def hit_vector(corpus: Corpus, scores: np.ndarray, groups: np.ndarray, k: int) -
         order = np.argsort(-scores[rows], kind="stable")
         out[position] = bool((targets[order[:k]] == targets.max()).any())
     return out
+
+
+def discordance(candidate: np.ndarray, reference: np.ndarray) -> dict[str, float]:
+    """The groups the two orderings disagree about, and an exact test on them.
+
+    A paired comparison of two rankers is decided entirely by the groups where one keeps a best
+    candidate and the other does not; the groups they both get right or both get wrong carry no
+    information about which is better. Counting those directly gives the same comparison as the
+    bootstrap without depending on how many resamples someone drew — which matters here, because
+    at one of the reported widths the bootstrap's lower bound lands on either side of zero
+    depending on that count.
+
+    The p-value is the exact two-sided binomial on the discordant pairs, which is McNemar's test
+    without the chi-squared approximation. The protocol's bootstrap stays primary; this is the
+    same data with nothing left to a random draw.
+    """
+    wins = int((candidate & ~reference).sum())
+    losses = int((~candidate & reference).sum())
+    return {
+        "wins": wins,
+        "losses": losses,
+        "p_value": _two_sided_binomial(wins, wins + losses),
+    }
+
+
+def _two_sided_binomial(successes: int, trials: int) -> float:
+    """P(a result at least this extreme) under a fair coin, summed over both tails."""
+    if trials == 0:
+        return 1.0
+    weights = [comb(trials, k) * 0.5**trials for k in range(trials + 1)]
+    observed = weights[successes]
+    return float(min(1.0, sum(w for w in weights if w <= observed * (1 + 1e-9))))
 
 
 def paired_interval(
@@ -177,6 +214,14 @@ def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreR
     if len(fitting) == 0:
         raise ValueError("the training split has no group with an ordering to learn")
     measuring = evaluated(corpus, "validation", hyper.k)
+    if len(measuring) == 0:
+        # Without this, `ranking_metrics` returns a recall of zero over no groups, the first
+        # epoch becomes the best epoch because zero beats the initial sentinel, and the run
+        # early-stops and reports a trained model whose validation evidence does not exist.
+        raise ValueError(
+            f"the validation split has no group larger than the shortlist of {hyper.k}, "
+            "so there is nothing the ranker could be measured on"
+        )
 
     gains = all_gains(corpus)
     mean, scale = standardisation(corpus, fitting)
@@ -264,14 +309,21 @@ def by_shortlist(corpus: Corpus, scores: np.ndarray, seed: int, split: str = "va
     out = {}
     for k in REPORTED_K:
         groups = evaluated(corpus, split, k)
+        if len(groups) == 0:
+            # Said rather than averaged. The mean of no groups is a NaN, and a NaN in a results
+            # table is a number that someone will eventually read as a measurement.
+            out[str(k)] = {"groups": 0, "measured": False}
+            continue
         learned = hit_vector(corpus, scores, groups, k)
         shipped = hit_vector(corpus, material, groups, k)
         out[str(k)] = {
             "groups": int(len(groups)),
+            "measured": True,
             "learned": float(learned.mean()),
             "material_diff": float(shipped.mean()),
             "random": float(hit_vector(corpus, random_order, groups, k).mean()),
             "paired_vs_material": paired_interval(learned, shipped),
+            "discordance_vs_material": discordance(learned, shipped),
         }
     return out
 
