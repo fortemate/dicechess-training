@@ -1,12 +1,22 @@
-"""The two ends of the pre-ranker's corpus: choose the roots, then admit what came back.
+"""The pre-ranker's path from a pile of games to an artifact the engine can open.
 
-Between them sits the generator in `dicechess-hunter`, which is where the teacher lives:
+One step of it is not here. The generator lives in `dicechess-hunter`, because the label is that
+bot's own evaluation and its weights never leave that repository:
 
 ```text
 python -m dicechess_training.prerank roots  <shards-dir> <out-dir> --limit 5000
 #   ... mise run prerank:corpus -- <out-dir>/roots.tsv <profile.json> <corpus-dir>   (hunter)
 python -m dicechess_training.prerank pack   <corpus-dir> --license-file <terms.txt> --license "..."
+python -m dicechess_training.prerank train  <corpus-dir> <runs-dir>
+python -m dicechess_training.prerank export <runs-dir>/weights-seed-11.pt <artifact-dir> \
+    --model-id <name>
+python -m dicechess_training.prerank probe-pairs <artifact-dir>/model.onnx
 ```
+
+Two commands return 2 rather than 0 on a bad answer, which is different from failing: `train`
+when a run does not clear the ordering the engine already ships, and `probe-pairs` when the ranker
+does not put a hanging queen below its safe twin. Both are results, and both belong in a pipeline's
+exit status rather than in a reader's judgement.
 
 Failures print what went wrong and never a path, for the same reason the rest of the publication
 boundary does not: a corpus is private, and so is where it was built.
@@ -21,10 +31,12 @@ from pathlib import Path
 
 from dicechess_training.contracts import prerank as contract
 from dicechess_training.contracts.kcp13 import ContractError
+from dicechess_training.prerank import dataset
 from dicechess_training.prerank import export as exporter
 from dicechess_training.prerank import pack as packer
 from dicechess_training.prerank import probes as prober
 from dicechess_training.prerank import roots as rooter
+from dicechess_training.prerank import train as trainer
 from dicechess_training.prerank.groups import KINDS, LICENSE_FILE, GroupsError
 
 
@@ -116,6 +128,35 @@ def _run_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_train(args: argparse.Namespace) -> int:
+    corpus = dataset.load_corpus(args.corpus)
+    reports = trainer.fit_seeds(corpus, args.destination, seeds=tuple(args.seeds))
+    summary = trainer.across_seeds(reports)
+
+    print(f"trained {len(reports)} runs on {corpus.groups:,} groups")
+    print(f"  protocol    {trainer.PROTOCOL}  k {summary['k']}  seeds {summary['seeds']}")
+    print(f"  teacher     {corpus.manifest['teacher']['id']}")
+    print(f"  corpus      {corpus.manifest['groups_sha256'][:16]}")
+    for report in reports:
+        floor = report["baselines"]["material_diff"]["recall_at_k"]
+        best = report["validation"]
+        verdict = "admissible" if report["admissible"] else "BELOW THE FLOOR"
+        print(
+            f"  seed {report['seed']:<4} recall@{report['k']} {best['recall_at_k']:.4f}"
+            f"  material {floor:.4f}"
+            f"  rank1 {best['rank1']:.4f}"
+            f"  epoch {report['best_epoch']:<3} {verdict}"
+        )
+    learned, material = summary["learned_recall_at_k"], summary["material_recall_at_k"]
+    print(
+        f"  across      learned {learned['min']:.4f}-{learned['max']:.4f}  "
+        f"material {material['min']:.4f}-{material['max']:.4f}"
+    )
+    if summary["inadmissible"]:
+        print(f"  inadmissible seeds: {summary['inadmissible']}")
+    return 0 if not summary["inadmissible"] else 2
+
+
 def _run_probe_pairs(args: argparse.Namespace) -> int:
     report = prober.evaluate(args.model, engine_version=args.engine_version)
     print(f"probe pairs: {report['passed']}/{report['pairs']} passed")
@@ -160,6 +201,18 @@ def main(argv: list[str] | None = None) -> int:
     admit.add_argument("--kind", default=packer.DEFAULT_KIND, choices=KINDS, help="dataset origin")
     admit.set_defaults(handler=_run_pack)
 
+    fit = commands.add_parser("train", help="run the protocol's seeds against an admitted corpus")
+    fit.add_argument("corpus", type=_directory, help="a corpus that `pack` has admitted")
+    fit.add_argument("destination", type=Path, help="where to write the reports and checkpoints")
+    fit.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=list(trainer.PROTOCOL_SEEDS),
+        help="which seeds to run; the default is the five the protocol names",
+    )
+    fit.set_defaults(handler=_run_train)
+
     ship = commands.add_parser("export", help="export trained weights as a pre-ranker artifact")
     ship.add_argument("weights", type=Path, help="a checkpoint written by the training run")
     ship.add_argument("destination", type=Path, help="where to write model.onnx and manifest.json")
@@ -201,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         packer.PackError,
         rooter.RootsError,
         prober.ProbePairError,
+        trainer.TrainingError,
         GroupsError,
         ContractError,
     ) as error:
