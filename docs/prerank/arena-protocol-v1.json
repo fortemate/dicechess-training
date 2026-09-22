@@ -46,13 +46,19 @@
     "pairing": "mirrored colour pairs, so each opening position is played from both sides",
     "stopping_rule": "SPRT with bounds 0 and 20 Elo at alpha = beta = 0.05",
     "cap": "500 games per colour",
-    "cap_rationale": "The stopping rule usually ends earlier; the cap bounds the machine time when it does not. An SPRT that stops at its H1 boundary biases the point estimate away from zero, so the recorded effect size is an upper bound and the protocol says so wherever it is quoted.",
-    "report": "games, win/draw/loss, the log-likelihood ratio, the 95% interval, and the flag losses on each side",
+    "cap_rationale": "The stopping rule usually ends earlier; the cap bounds the machine time when it does not.",
+    "what_the_sprt_licenses": {
+      "the_decision": "Valid, and the only thing the decision rule reads. Accepting H0 or H1 is what a sequential test controls, at the preregistered alpha and beta.",
+      "the_effect_size": "Descriptive only. A sample stopped by a boundary is a selected sample: a run that ends at H1 carries an estimate biased away from zero, and a run that reaches the cap carries one biased toward zero. Neither is a bound — the true effect can sit on either side of what was observed — and neither is unbiased. The figure is reported so the games are on record, never as a measurement of how much stronger.",
+      "the_interval": "Nominal, and labelled as such wherever it appears. The 95% interval is a fixed-sample construction and optional stopping voids its coverage. A claim about magnitude would need a sequentially valid interval, which this protocol does not specify — so this protocol makes no claim about magnitude.",
+      "why_this_is_here": "An earlier draft called the stopped estimate an upper bound. It is not one: stopping at H1 selects favourable estimates, which biases the number without capping it."
+    },
+    "report": "games, win/draw/loss, the log-likelihood ratio, the nominal 95% interval marked as nominal, and the flag losses on each side",
     "outcome_at_cap": {
-      "primary_arm": "Inconclusive, and inconclusive is not adoption. The cap result stands as the result: 'no effect of the preregistered size detectable at this sample', with the observed difference and its interval reported as a bound rather than as a finding.",
+      "primary_arm": "Inconclusive, and inconclusive is not adoption. The cap result stands as the result: at this sample the test did not separate H0 from H1 at the preregistered error rates. The observed difference is reported under the terms above — descriptive, and biased toward zero by the very fact that the run went the distance — not as evidence that the effect is small.",
       "confirmation": "Not run. The confirmation rule is 'only if 1+0 is positive', and inconclusive is not positive.",
       "reruns": "More games against the same configuration require a new protocol version naming the larger cap in advance. Extending a run after seeing where it stopped is optional stopping, and it is the way an inconclusive result becomes a positive one without any new evidence.",
-      "prerequisite_arm": "Different, because its null is the thing being hoped for. Reaching the cap without a boundary means no strength difference of the preregistered size was detected between the two engines, which is bounded evidence rather than none — record the bound and proceed. That is more than the bump would otherwise have had."
+      "prerequisite_arm": "Different, because its null is the thing being hoped for. Reaching the cap without a boundary means the test did not detect a strength difference of the preregistered size between the two engines. That is a failure to detect at a stated resolution — weaker than a demonstration of equivalence, stronger than nothing — so record what was run and proceed. It is still more than the bump would otherwise have had."
     }
   },
   "invalidates_the_run": [
@@ -65,7 +71,7 @@
     "adopt": "SPRT accepts H1 at 1+0 and the 3+2 confirmation does not contradict it",
     "reject": "SPRT accepts H0, or the confirmation control reverses the sign",
     "note": "A pre-ranker that measures better on recall and NDCG and does not win games is not adopted. That is the entire reason this arm exists, and the metrics are not permitted to overrule it.",
-    "inconclusive": "SPRT reaches the cap without a boundary. Not adopted, and recorded as a bound on the effect rather than as evidence of no effect. The likely reading is the one the metrics already reached: at this sample the corpus and the arena both run out of resolution before the question does."
+    "inconclusive": "SPRT reaches the cap without a boundary. Not adopted, and recorded as a failure to resolve at this sample rather than as evidence of no effect. The likely reading is the one the metrics already reached: at this sample the corpus and the arena both run out of resolution before the question does."
   },
   "harness": {
     "existing": "dicechess-hunter/referee/run.sh — the engine's own arena, which owns the dice RNG, the seeds, the clocks and the rules; the script stands two containers up and points the arena at them. It already runs a hunter container against an ONNX container over the webhook protocol, with SPRT and clock presets.",

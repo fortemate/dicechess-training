@@ -16,6 +16,7 @@ admissibility floor caught it; this is the same floor.
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -41,6 +42,15 @@ from dicechess_training.prerank.model import PreRankMLP, listwise_loss
 PROTOCOL = "playground-prerank-v1"
 DEFAULT_K = 48
 DEFAULT_SEED = 11
+
+
+class TrainingError(ValueError):
+    """A corpus cannot be trained on, or measured after training.
+
+    A `ValueError` so the checks that predate it keep their meaning, and a named one so the
+    command line can turn it into a refusal without also catching every arithmetic slip inside
+    the loop. The messages say what, never where — a corpus's location is private.
+    """
 
 
 @dataclass(frozen=True)
@@ -159,13 +169,13 @@ def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreR
 
     fitting = trainable(corpus, "train")
     if len(fitting) == 0:
-        raise ValueError("the training split has no group with an ordering to learn")
+        raise TrainingError("the training split has no group with an ordering to learn")
     measuring = evaluated(corpus, "validation", hyper.k)
     if len(measuring) == 0:
         # Without this, `ranking_metrics` returns a recall of zero over no groups, the first
         # epoch becomes the best epoch because zero beats the initial sentinel, and the run
         # early-stops and reports a trained model whose validation evidence does not exist.
-        raise ValueError(
+        raise TrainingError(
             f"the validation split has no group larger than the shortlist of {hyper.k}, "
             "so there is nothing the ranker could be measured on"
         )
@@ -265,3 +275,72 @@ def by_shortlist(corpus: Corpus, scores: np.ndarray, seed: int, split: str = "va
         width["paired_vs_material"] = width.pop("recall_vs_reference")
         width["discordance_vs_material"] = width.pop("recall_discordance")
     return out
+
+
+#: The seeds `docs/prerank/protocol-v1.json` names, fixed before the first run. They are a
+#: constant rather than an argument because a run is a run of the protocol: a seed chosen after
+#: seeing a result is not a replication of anything, and five runs reported as a range is the only
+#: reading this corpus supports — the spread between these seeds is wider than the effect at
+#: several widths.
+PROTOCOL_SEEDS = (11, 23, 47, 89, 131)
+
+REPORT_FILE = "report-seed-{seed}.json"
+WEIGHTS_FILE = "weights-seed-{seed}.pt"
+
+
+def fit_seeds(
+    corpus: Corpus, destination: str | Path, seeds: tuple[int, ...] = PROTOCOL_SEEDS
+) -> list[dict]:
+    """Run the protocol's seeds against one corpus, writing each run's report and weights.
+
+    The weights are a bare `state_dict`, which is what `export.load_ranker` reads: the shapes
+    carry the architecture, so a checkpoint needs nothing beside it to be reopened. The report is
+    written whether or not the run cleared the admissibility floor — a negative result that is not
+    written down is a negative result somebody repeats.
+
+    `seeds` is open here and closed at the command line, which is the right way round: this is the
+    API a test or a one-off check uses, while the command is the one whose output gets quoted.
+    A repeated seed is refused at both, because the run is a deterministic function of its seed —
+    the second pass would overwrite the first's files and then be counted as a second run.
+    """
+    if len(set(seeds)) != len(seeds):
+        raise TrainingError("a seed appears twice; the second run would overwrite the first")
+    folder = Path(destination)
+    folder.mkdir(parents=True, exist_ok=True)
+    reports: list[dict] = []
+    for seed in seeds:
+        report, model, _ = train(corpus, Hyperparameters(seed=seed))
+        torch.save(model.state_dict(), folder / WEIGHTS_FILE.format(seed=seed))
+        (folder / REPORT_FILE.format(seed=seed)).write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        reports.append(report)
+    return reports
+
+
+def across_seeds(reports: list[dict]) -> dict:
+    """The headline as a range, never as a mean.
+
+    Averaging five runs hides the one thing a reader needs here, which is that the spread between
+    seeds is comparable to the difference being claimed. A mean also invites a p-value computed
+    from averaged counts, which is not a test of anything — an error made once in this programme
+    already, on this data.
+    """
+    if not reports:
+        raise TrainingError("no runs to summarise")
+    learned = [report["validation"]["recall_at_k"] for report in reports]
+    material = [report["baselines"]["material_diff"]["recall_at_k"] for report in reports]
+    seeds = [report["seed"] for report in reports]
+    return {
+        "seeds": seeds,
+        # Whether this is *the* protocol result or a subset of it. A single seed re-run to check a
+        # checkpoint is a useful thing to do and not a five-seed finding, and the difference has
+        # to travel with the summary rather than live in whoever ran it.
+        "complete": sorted(seeds) == sorted(PROTOCOL_SEEDS),
+        "protocol_seeds": list(PROTOCOL_SEEDS),
+        "k": reports[0]["k"],
+        "learned_recall_at_k": {"min": min(learned), "max": max(learned)},
+        "material_recall_at_k": {"min": min(material), "max": max(material)},
+        "admissible": [report["seed"] for report in reports if report["admissible"]],
+        "inadmissible": [report["seed"] for report in reports if not report["admissible"]],
+    }

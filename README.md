@@ -166,7 +166,9 @@ Two small networks train on those labels:
    exact rescore. Trained against exact rescore distributions (a luxury deterministic chess
    does not have — no noisy MCTS visit counts), distilled to the phase-1 latency budget of
    CPU and edge bots. Its rank-hit metric and A/B arena protocol cannot fail to produce a
-   number by the final presentation.
+   number by the final presentation. Built: [docs/prerank/README.md](docs/prerank/README.md)
+   covers the corpus, the training protocol, the rank metrics, the export contract and what
+   the artifact may not yet claim.
 
 Evaluation combines holdout agreement with the depth-3 teacher (MSE, rank correlation,
 log-loss/calibration) with head-to-head arena matches at fixed time controls, and ultimately
