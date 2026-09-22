@@ -40,3 +40,6 @@ runs/
 .mise.local.toml
 ~$*
 out/
+
+# Benchmark output, written beside wherever the tool was run from
+prerank-latency.json

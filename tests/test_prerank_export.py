@@ -58,6 +58,11 @@ def test_the_batch_axis_is_dynamic(tmp_path, rows: int) -> None:
     assert contract.score(path, features, engine_version=ENGINE).shape == (rows,)
 
 
+def _probe_features() -> np.ndarray:
+    corpus = json.loads(contract.golden_path(ENGINE).read_text(encoding="utf-8"))
+    return np.stack([probe["features"] for probe in corpus["probes"]]).astype(np.float32)
+
+
 def test_the_graph_agrees_with_the_model_it_came_from(tmp_path) -> None:
     """Relative to the spread of the scores, not to an absolute number.
 
@@ -68,35 +73,49 @@ def test_the_graph_agrees_with_the_model_it_came_from(tmp_path) -> None:
     """
     model = _model()
     path = export_ranker(model, tmp_path / MODEL_FILE, ENGINE)
-    features = np.stack(
-        [
-            probe["features"]
-            for probe in json.loads(contract.golden_path(ENGINE).read_text(encoding="utf-8"))[
-                "probes"
-            ]
-        ]
-    ).astype(np.float32)
+    features = _probe_features()
     spread = float(np.ptp(contract.score(path, features, engine_version=ENGINE)))
     assert probe_parity(model, path, ENGINE) < 1e-6 * max(spread, 1.0)
 
 
-def test_the_graph_orders_the_probes_exactly_as_the_model_does(tmp_path) -> None:
-    """The property that actually matters: a ranker is its ordering, and float32 rounding must
-    not be able to swap two probes."""
+def test_the_graph_does_not_invert_a_pair_the_model_separated(tmp_path) -> None:
+    """The property that actually matters, stated so that it is true.
+
+    A ranker is its ordering, so the graph must not disagree with the model about which of two
+    candidates is better. It may disagree about two candidates the model could not separate —
+    scores within the resolution of float32 arithmetic can come out either way, and an ordering
+    between them is not a decision anybody made.
+
+    An earlier version of this test demanded the *whole* permutation match, and it was flaky
+    rather than wrong: it passed three CI runs and failed the fourth on the same platform,
+    because ONNX Runtime and torch can accumulate the same sum in different orders. Asserting no
+    inversion of a *separated* pair is the same guarantee without the coin flip.
+    """
     model = _model(9)
     path = export_ranker(model, tmp_path / MODEL_FILE, ENGINE)
-    features = np.stack(
-        [
-            probe["features"]
-            for probe in json.loads(contract.golden_path(ENGINE).read_text(encoding="utf-8"))[
-                "probes"
-            ]
-        ]
-    ).astype(np.float32)
+    features = _probe_features()
     with torch.no_grad():
-        theirs = as_served(model)(torch.from_numpy(features)).reshape(-1).numpy()
+        theirs = as_served(model)(torch.from_numpy(features)).reshape(-1).numpy().astype(np.float64)
     ours = contract.score(path, features, engine_version=ENGINE)
-    assert list(np.argsort(-theirs, kind="stable")) == list(np.argsort(-ours, kind="stable"))
+
+    separated = 1e-5 * max(float(np.ptp(theirs)), 1.0)
+    inversions = [
+        (i, j)
+        for i in range(len(theirs))
+        for j in range(i + 1, len(theirs))
+        if abs(theirs[i] - theirs[j]) > separated and (theirs[i] > theirs[j]) != (ours[i] > ours[j])
+    ]
+    assert not inversions, f"the graph reordered separated probes: {inversions}"
+    # And the tie band has to be narrow enough that the test is asserting something: if every
+    # pair were "unseparated" this would pass vacuously.
+    pairs = len(theirs) * (len(theirs) - 1) // 2
+    checked = sum(
+        1
+        for i in range(len(theirs))
+        for j in range(i + 1, len(theirs))
+        if abs(theirs[i] - theirs[j]) > separated
+    )
+    assert checked > 0.9 * pairs, f"only {checked} of {pairs} pairs were separated enough to check"
 
 
 def test_the_output_is_not_squashed_into_an_interval(tmp_path) -> None:
