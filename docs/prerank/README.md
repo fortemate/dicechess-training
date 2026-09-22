@@ -121,3 +121,4 @@ compare and measure on it; qualify elsewhere.
 - `docs/prerank/protocol-v1.json` and `docs/prerank/results-v1.md` — the preregistered protocol
   and the first result.
 - `dicechess-hunter`, `docs/prerank-corpus.md` — the generator, and what it costs.
+- `docs/prerank/latency-v1.md` — what the pass costs at the seam.
