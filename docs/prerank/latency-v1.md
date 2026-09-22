@@ -15,23 +15,51 @@ full branching factor. That is why the schema was chosen for cost and the model 
 
 ## What was measured
 
-600 roots from the first corpus, every legal turn path applied, three costs timed on the same
-states: a material pass (what the engine ships), `RichFeatures.extract` per candidate (which
-material does not pay), and one ONNX Runtime call on the batch. The added cost is
-`features + inference − material`. Best of 15 repeats per root — every repeat is identical work,
-so anything above the floor is the machine doing something else.
+600 root rows from the first corpus, of which **576** have a legal turn; every legal turn path
+applied; four costs timed on the same states:
 
-### One vCPU, 512 MB container, `eclipse-temurin:25-jre`, one ORT thread
+- **material** — a material pass, one `Evaluator.evaluateMaterial` per candidate: what the engine
+  ships and what this replaces. (`ExpectimaxSearch.materialBatch` itself is `private[search]`, so
+  this is the same arithmetic through the public surface rather than that method's own number.)
+- **features** — `RichFeatures.extract` per candidate, which material does not pay.
+- **model** — one ONNX Runtime call on the batch.
+- **added** — the whole extract-and-score pass timed as _one_ measurement, minus material. The two
+  components are reported for diagnosis but never summed: their minima can fall in different
+  repetitions, so a sum of them can be smaller than any pass that actually happened.
 
-| candidates | roots | material | features |   model |    added | added per candidate |
-| ---------: | ----: | -------: | -------: | ------: | -------: | ------------------: |
-|        ≤ 8 |    76 |    0.2µs |    5.1µs |   6.0µs |   10.9µs |             2.47 µs |
-|       ≤ 32 |    48 |    0.6µs |   28.0µs |  12.8µs |   40.3µs |             1.70 µs |
-|      ≤ 128 |    60 |    2.1µs |  113.7µs |  39.0µs |  150.6µs |             1.56 µs |
-|      ≤ 512 |    54 |    8.0µs |  477.2µs | 134.3µs |  603.5µs |             1.59 µs |
-|     ≤ 4096 |   103 |   36.7µs | 2459.0µs | 625.7µs | 3048.0µs |             1.53 µs |
+Best of 15 repeats per root. Every repeat is identical work, so anything above the floor is the
+machine doing something else; the minimum is the machine's answer and the mean would be the
+laptop's.
 
-Median root, 180 candidates: **0.345 ms**. Widest root, 16,965 candidates: **29.7 ms**.
+### Environment
+
+```bash
+docker run --rm --cpus=1 --memory=512m -v "$PWD:/bench:ro" -w /tmp eclipse-temurin:25-jre \
+  java -Xmx384m -cp "/bench/lib/classes:/bench/lib/*" \
+  dicechess.training.latency.PreRankLatency /bench/model.onnx /bench/roots.tsv 15
+```
+
+One vCPU, 512 MB cgroup, **384 MB heap** — deliberately below the cgroup so ONNX Runtime's native
+allocations have room. The project's own `javaOptions` use the same heap, so `sbt run` does not
+quietly measure a two-gigabyte machine the report does not describe.
+
+### One ORT thread
+
+| candidates | roots | material |  features |    model |     added | added per candidate |
+| ---------: | ----: | -------: | --------: | -------: | --------: | ------------------: |
+|        ≤ 8 |    76 |    0.2µs |     4.7µs |    6.1µs |    11.0µs |             2.50 µs |
+|       ≤ 16 |    26 |    0.3µs |    13.0µs |    8.6µs |    21.8µs |             1.79 µs |
+|       ≤ 32 |    48 |    0.6µs |    27.4µs |   12.9µs |    39.1µs |             1.65 µs |
+|       ≤ 64 |    47 |    1.1µs |    53.7µs |   21.8µs |    75.2µs |             1.53 µs |
+|      ≤ 128 |    60 |    2.1µs |   108.1µs |   39.6µs |   146.3µs |             1.52 µs |
+|      ≤ 256 |    70 |    4.3µs |   234.4µs |   74.3µs |   304.5µs |             1.59 µs |
+|      ≤ 512 |    54 |    8.0µs |   456.8µs |  134.4µs |   581.8µs |             1.53 µs |
+|     ≤ 1024 |    72 |   15.0µs |   983.8µs |  256.7µs |  1227.4µs |             1.68 µs |
+|     ≤ 4096 |   103 |   37.6µs |  2531.2µs |  634.4µs |  3112.3µs |             1.56 µs |
+|     > 4096 |    20 |  146.9µs | 10312.0µs | 2403.2µs | 12438.5µs |             1.83 µs |
+|  **total** |   576 |          |           |          |           |                     |
+
+Median root, 180 candidates: **0.344 ms**. Widest root, 16,965 candidates: **29.8 ms**.
 
 The unpinned run is within noise of the pinned one and sometimes slower — at this size the model
 does not repay thread coordination, so pinning ORT to one thread costs nothing and removes a way
@@ -73,8 +101,13 @@ pass competes with the search for the same cores and the same cache.
 
 ```bash
 cd tools/prerank-latency
-sbt "run <model.onnx> <roots.tsv> [repeats]"
+sbt "run <model.onnx> <roots.tsv> 15"
 ```
+
+The repeat count is the third argument and defaults to 20; the table above was taken at 15, so
+pass it explicitly to reproduce those numbers. For the published environment rather than a
+developer laptop, use the container command in **Environment** above — `sbt run` forks a JVM with
+the same 384 MB heap but none of the CPU or memory limits.
 
 Pinned to engine 0.12.0 rather than parameterised: the artifact declares
 `engineCompatibility >=0.12.0`, and measuring the seam against an engine that does not have the

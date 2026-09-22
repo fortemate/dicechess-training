@@ -20,5 +20,10 @@ lazy val root = (project in file("."))
     fork := true,
     // The pre-rank pass runs inside a turn that is already using the machine. A benchmark that
     // lets the JVM and ONNX Runtime spread over every core measures a machine nobody serves on.
-    javaOptions ++= Seq("-Xmx2g", s"-Dengine.version=$engineVersion")
+    // A heap the serving containers would actually give it. The reported numbers come from a
+    // one-vCPU, 512 MB container with -Xmx384m, and a benchmark whose default is 2 GB would
+    // measure different garbage collection from the environment its own report describes. The
+    // pass streams roots, so this is ample; see docs/prerank/latency-v1.md for the container
+    // command that produced the published table.
+    javaOptions ++= Seq("-Xmx384m", s"-Dengine.version=$engineVersion")
   )
