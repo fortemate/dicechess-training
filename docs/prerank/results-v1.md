@@ -50,7 +50,13 @@ margin at 8 is three points and nobody chose it on evidence. **This is a flag, n
 optimise different things, and a search whose leaf _is_ `oracle-3` has an argument for a shortlist
 ranked by `oracle-3`. Worth its own measurement; see the open questions below.
 
-## Every metric, at every width
+## Every metric, at every width — the exported artifact
+
+**These are seed 11's numbers, measured through the exported `model.onnx`,** not the five-seed
+aggregate of the table above. That is deliberate: this is the artifact, and an artifact is what
+gets served, gated and benchmarked. It is also why the figures differ slightly from the aggregate
+— 0.6491 against 0.6426 ± 0.0065 at a shortlist of 8, which is seed 11 sitting one standard
+deviation above the mean of five.
 
 Each width is measured on the groups where a shortlist of that size can be wrong — `size > k` —
 so the rows do not share a denominator. Rank-1 and rank-2 are recall at widths 1 and 2 on their
@@ -72,7 +78,7 @@ own groups.
 
 ### The list metric resolves what recall cannot
 
-Against `material_diff`, paired on the same groups:
+The same artifact — seed 11 — against `material_diff`, paired on the same groups:
 
 | width | recall difference | 95% CI        | exact _p_ | NDCG difference | 95% CI           |
 | ----: | ----------------: | ------------- | --------: | --------------: | ---------------- |

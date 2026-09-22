@@ -13,6 +13,7 @@ import pytest
 from dicechess_training.prerank.dataset import Corpus, target_gains
 from dicechess_training.prerank.metrics import (
     REPORTED_WIDTHS,
+    discordance,
     hit_vector,
     ndcg_vector,
     paired_interval,
@@ -108,17 +109,33 @@ def test_ndcg_matches_the_definition_computed_by_hand() -> None:
 
 def test_ndcg_notices_a_near_miss_that_recall_cannot() -> None:
     """The point of reporting it beside recall: both orderings keep the best candidate inside the
-    shortlist, so recall is 1 for each, but one of them put it first."""
+    shortlist, so recall says they are equal, and one of them still put it first.
+
+    The first version of this test pushed the best candidate *out* of the shortlist, which made
+    recall differ — so it asserted the opposite of its own name while passing.
+    """
     corpus = _corpus([20], ["validation"])
     corpus.targets[:] = np.arange(20)[::-1]
     groups = np.array([0])
     first = np.arange(20)[::-1].astype(float)
     tenth = first.copy()
-    tenth[0] = -100.0  # the best candidate drops to the bottom of the kept ten
+    tenth[0] = 9.5  # between the 9th and 10th scores: last place inside the kept ten, not outside
 
     assert hit_vector(corpus, first, groups, 10)[0]
-    assert not hit_vector(corpus, tenth, groups, 10)[0]
+    assert hit_vector(corpus, tenth, groups, 10)[0], "both orderings must keep the best candidate"
     assert ndcg_vector(corpus, first, groups, 10)[0] > ndcg_vector(corpus, tenth, groups, 10)[0]
+
+
+def test_the_exact_test_survives_a_corpus_large_enough_to_overflow_a_float() -> None:
+    """`comb(trials, k) * 0.5 ** trials` raises OverflowError above about 1,030 trials, and the
+    trials here are the groups two orderings disagree about — which a larger corpus produces."""
+    many = np.zeros(1400, dtype=bool)
+    many[:900] = True
+    result = discordance(many, ~many)
+    assert result["wins"] == 900
+    assert result["losses"] == 500
+    assert 0.0 <= result["p_value"] <= 1.0
+    assert result["p_value"] < 1e-20
 
 
 # Each width can only be wrong in a group larger than it, so they do not share a denominator.

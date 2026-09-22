@@ -95,12 +95,21 @@ def discordance(candidate: np.ndarray, reference: np.ndarray) -> dict[str, float
 
 
 def _two_sided_binomial(successes: int, trials: int) -> float:
-    """P(a result at least this extreme) under a fair coin, summed over both tails."""
+    """P(a result at least this extreme) under a fair coin, summed over both tails.
+
+    The weights stay exact integers until the very end. `comb(trials, k)` is a Python int of
+    arbitrary size, and multiplying it by `0.5 ** trials` converts it to a float first — which
+    raises `OverflowError` above about 1,030 trials. That is not hypothetical at a larger corpus:
+    the trials here are the groups two orderings disagree about, and this page's own conclusion is
+    that a larger corpus is what the measurement needs. Summing integers and dividing once at the
+    end has no such ceiling, because Python divides two large integers by scaling rather than by
+    converting them.
+    """
     if trials == 0:
         return 1.0
-    weights = [comb(trials, k) * 0.5**trials for k in range(trials + 1)]
+    weights = [comb(trials, k) for k in range(trials + 1)]
     observed = weights[successes]
-    return float(min(1.0, sum(w for w in weights if w <= observed * (1 + 1e-9))))
+    return float(min(1.0, sum(w for w in weights if w <= observed) / 2**trials))
 
 
 def paired_interval(
