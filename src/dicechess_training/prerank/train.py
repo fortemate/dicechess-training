@@ -39,9 +39,10 @@ DEFAULT_K = 48
 DEFAULT_SEED = 11
 
 #: Shortlist widths worth reporting. 48 is the champion's production `candidateLimit` and the
-#: protocol's primary; 8 and 16 are what the engine's ONNX search uses, and they are where an
-#: ordering matters most, because a wide shortlist forgives a bad one.
-REPORTED_K = (8, 16, 48)
+#: protocol's primary; 8 and 24 are what the deployed ONNX bots run, and 16 is where the engine's
+#: own scaladoc measured its candidateLimit step. A wide shortlist forgives a bad ordering, so the
+#: narrow ones are where an ordering matters most.
+REPORTED_K = (8, 16, 24, 48)
 
 #: Resamples for the paired interval. A margin over a baseline on a few hundred groups is not a
 #: result without one: this programme has already been caught once quoting a plateau that a
@@ -180,6 +181,31 @@ def baseline_scores(corpus: Corpus, name: str, seed: int = DEFAULT_SEED) -> np.n
     if name == "random":
         return np.random.default_rng(seed).random(len(corpus.targets))
     raise ValueError(f"unknown baseline {name!r}")
+
+
+def onnx_scores(corpus: Corpus, model_path: str | Path, batch: int = 65536) -> np.ndarray:
+    """Score every candidate with an ONNX model that already exists.
+
+    For measuring an ordering somebody is *already serving*. The corpus carries `rich-9-v1`
+    features, which is also what the deployed value models consume, so a production pre-ranker can
+    be put on the same footing as this one without re-deriving anything — and a baseline that is
+    actually deployed is worth more than a proxy for it.
+
+    The model is run as-is, not through `contracts.prerank`: a value model is not a pre-ranking
+    artifact and would fail that contract on its role, which is the point of the contract. Only
+    its ordering is used.
+    """
+    import onnxruntime as ort
+
+    session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    input_name = session.get_inputs()[0].name
+    output_name = session.get_outputs()[0].name
+    out = np.empty(len(corpus.targets), dtype=np.float64)
+    for start in range(0, len(out), batch):
+        stop = min(start + batch, len(out))
+        block = corpus.features[start:stop]
+        out[start:stop] = session.run([output_name], {input_name: block})[0].reshape(-1)
+    return out
 
 
 def _batch(corpus: Corpus, gains: np.ndarray, groups: np.ndarray):

@@ -47,6 +47,10 @@ mise run prerank:corpus -- <work-dir>/roots.tsv configs/profiles/baseline-v1.jso
 # 3. write the manifest and admit the result
 uv run python -m dicechess_training.prerank pack <corpus-dir> \
     --license-file <terms.txt> --license "Fortemate owner-controlled; not for redistribution"
+
+# 4. train, then export the weights as an artifact the engine's seam can open
+uv run python -m dicechess_training.prerank export <weights.pt> <artifact-dir> \
+    --model-id <name> --provenance protocol=playground-prerank-v1
 ```
 
 Step 1 writes `roots.tsv` — tab-separated `game_id, fen, dice, side` — and
@@ -114,4 +118,6 @@ compare and measure on it; qualify elsewhere.
 - `docs/decisions/0001-playground-train-serve-contract.md` — the train/serve contract this follows.
 - `dicechess_training.prerank.groups` — the `playground-prerank-groups-v1` contract itself.
 - `dicechess_training.contracts.prerank` — what the trained artifact must be.
+- `docs/prerank/protocol-v1.json` and `docs/prerank/results-v1.md` — the preregistered protocol
+  and the first result.
 - `dicechess-hunter`, `docs/prerank-corpus.md` — the generator, and what it costs.

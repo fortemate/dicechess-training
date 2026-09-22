@@ -19,6 +19,9 @@ import json
 import sys
 from pathlib import Path
 
+from dicechess_training.contracts import prerank as contract
+from dicechess_training.contracts.kcp13 import ContractError
+from dicechess_training.prerank import export as exporter
 from dicechess_training.prerank import pack as packer
 from dicechess_training.prerank import roots as rooter
 from dicechess_training.prerank.groups import KINDS, LICENSE_FILE, GroupsError
@@ -91,6 +94,27 @@ def _run_pack(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_export(args: argparse.Namespace) -> int:
+    model = exporter.load_ranker(args.weights)
+    provenance = dict(entry.split("=", 1) for entry in args.provenance)
+    manifest = exporter.write_package(
+        model,
+        args.destination,
+        model_id=args.model_id,
+        engine_compatibility=args.engine_compatibility,
+        provenance=provenance,
+        engine_version=args.engine_version,
+    )
+    graph = Path(args.destination) / exporter.MODEL_FILE
+    parity = exporter.probe_parity(model, graph, args.engine_version)
+    print(f"exported {manifest['modelId']} as {manifest['modelRole']}")
+    print(f"  manifest    {manifest['manifestVersion']}  schema {manifest['featureSchema']}")
+    print(f"  engine      {manifest['engineCompatibility']}")
+    print(f"  modelSha256 {manifest['modelSha256']}")
+    print(f"  probe parity against the checkpoint: {parity:.3g}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dicechess_training.prerank", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -116,10 +140,33 @@ def main(argv: list[str] | None = None) -> int:
     admit.add_argument("--kind", default=packer.DEFAULT_KIND, choices=KINDS, help="dataset origin")
     admit.set_defaults(handler=_run_pack)
 
+    ship = commands.add_parser("export", help="export trained weights as a pre-ranker artifact")
+    ship.add_argument("weights", type=Path, help="a checkpoint written by the training run")
+    ship.add_argument("destination", type=Path, help="where to write model.onnx and manifest.json")
+    ship.add_argument("--model-id", required=True, help="what to call this artifact")
+    ship.add_argument(
+        "--engine-compatibility",
+        default=">=" + contract.DEFAULT_ENGINE_VERSION,
+        help="the engine range this artifact is for",
+    )
+    ship.add_argument(
+        "--engine-version",
+        default=contract.DEFAULT_ENGINE_VERSION,
+        help="the engine whose committed golden fixes the feature layout",
+    )
+    ship.add_argument(
+        "--provenance",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="recorded in the manifest; repeatable",
+    )
+    ship.set_defaults(handler=_run_export)
+
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (packer.PackError, rooter.RootsError, GroupsError) as error:
+    except (packer.PackError, rooter.RootsError, GroupsError, ContractError) as error:
         # These messages are written to say what, never where — see the module docstring.
         print(f"refused: {error}", file=sys.stderr)
         return 1
