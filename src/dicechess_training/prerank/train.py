@@ -297,7 +297,14 @@ def fit_seeds(
     carry the architecture, so a checkpoint needs nothing beside it to be reopened. The report is
     written whether or not the run cleared the admissibility floor — a negative result that is not
     written down is a negative result somebody repeats.
+
+    `seeds` is open here and closed at the command line, which is the right way round: this is the
+    API a test or a one-off check uses, while the command is the one whose output gets quoted.
+    A repeated seed is refused at both, because the run is a deterministic function of its seed —
+    the second pass would overwrite the first's files and then be counted as a second run.
     """
+    if len(set(seeds)) != len(seeds):
+        raise TrainingError("a seed appears twice; the second run would overwrite the first")
     folder = Path(destination)
     folder.mkdir(parents=True, exist_ok=True)
     reports: list[dict] = []
@@ -323,8 +330,14 @@ def across_seeds(reports: list[dict]) -> dict:
         raise TrainingError("no runs to summarise")
     learned = [report["validation"]["recall_at_k"] for report in reports]
     material = [report["baselines"]["material_diff"]["recall_at_k"] for report in reports]
+    seeds = [report["seed"] for report in reports]
     return {
-        "seeds": [report["seed"] for report in reports],
+        "seeds": seeds,
+        # Whether this is *the* protocol result or a subset of it. A single seed re-run to check a
+        # checkpoint is a useful thing to do and not a five-seed finding, and the difference has
+        # to travel with the summary rather than live in whoever ran it.
+        "complete": sorted(seeds) == sorted(PROTOCOL_SEEDS),
+        "protocol_seeds": list(PROTOCOL_SEEDS),
         "k": reports[0]["k"],
         "learned_recall_at_k": {"min": min(learned), "max": max(learned)},
         "material_recall_at_k": {"min": min(material), "max": max(material)},

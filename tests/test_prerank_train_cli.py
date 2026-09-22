@@ -229,3 +229,43 @@ def test_a_corpus_with_nothing_to_measure_is_refused_without_a_path(
     captured = capsys.readouterr()
     assert "refused: the validation split has no group larger than the shortlist" in captured.err
     assert str(tmp_path) not in captured.err
+
+
+def test_a_repeated_seed_is_refused_rather_than_run_twice(tmp_path: Path) -> None:
+    """The run is a deterministic function of its seed, so the second pass would overwrite the
+    first's files and then be counted as a second run."""
+    corpus = load_corpus(_corpus(tmp_path / "corpus"))
+    with pytest.raises(TrainingError, match="appears twice"):
+        fit_seeds(corpus, tmp_path / "runs", seeds=(11, 11))
+
+
+def test_the_command_line_cannot_invent_a_seed(capsys: pytest.CaptureFixture[str]) -> None:
+    """A seed outside the preregistered five is not a replication of anything, so the command
+    does not accept one. `fit_seeds` still does — the library is the escape hatch."""
+    with pytest.raises(SystemExit):
+        main(["train", ".", "runs", "--seeds", "7"])
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_a_subset_of_the_seeds_is_reported_as_a_check_not_a_result(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Re-running one recorded seed is a useful thing to do and is not the five-seed finding."""
+    corpus = _corpus(tmp_path / "corpus")
+    assert main(["train", str(corpus), str(tmp_path / "runs"), "--seeds", "11"]) == 0
+    assert "PARTIAL     1 of 5 protocol seeds" in capsys.readouterr().out
+
+
+def test_a_full_run_is_not_labelled_partial() -> None:
+    reports = [
+        {
+            "seed": seed,
+            "k": 48,
+            "validation": {"recall_at_k": 0.7},
+            "baselines": {"material_diff": {"recall_at_k": 0.5}},
+            "admissible": True,
+        }
+        for seed in PROTOCOL_SEEDS
+    ]
+    assert across_seeds(reports)["complete"] is True
+    assert across_seeds(reports[:2])["complete"] is False

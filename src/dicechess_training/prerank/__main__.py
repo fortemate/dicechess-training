@@ -135,6 +135,11 @@ def _run_train(args: argparse.Namespace) -> int:
 
     print(f"trained {len(reports)} runs on {corpus.groups:,} groups")
     print(f"  protocol    {trainer.PROTOCOL}  k {summary['k']}  seeds {summary['seeds']}")
+    if not summary["complete"]:
+        print(
+            f"  PARTIAL     {len(reports)} of {len(summary['protocol_seeds'])} protocol seeds — "
+            "a check, not a protocol result"
+        )
     print(f"  teacher     {corpus.manifest['teacher']['id']}")
     print(f"  corpus      {corpus.manifest['groups_sha256'][:16]}")
     for report in reports:
@@ -208,8 +213,13 @@ def main(argv: list[str] | None = None) -> int:
         "--seeds",
         type=int,
         nargs="+",
+        choices=trainer.PROTOCOL_SEEDS,
         default=list(trainer.PROTOCOL_SEEDS),
-        help="which seeds to run; the default is the five the protocol names",
+        # Narrowing the protocol's five, never adding to them. Running one of them again is how a
+        # recorded checkpoint gets checked; inventing a sixth after seeing the five is how a run
+        # stops being a replication of anything, so the command does not offer it. `fit_seeds`
+        # takes any seeds — the library is the escape hatch and the command is the quotable one.
+        help="run a subset of the protocol's five seeds; the default is all of them",
     )
     fit.set_defaults(handler=_run_train)
 

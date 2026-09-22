@@ -179,11 +179,25 @@ The same command reports it, and `prerank.metrics` computes it for an ordering t
 trained here — a deployed ONNX model, or a single feature column — so a baseline that is actually
 served can be put on the same footing.
 
-**Each width has its own denominator.** A ranker can only be wrong in a group with more candidates
-than the shortlist keeps, so every width is measured on `size > k` and the group count is reported
-beside every number. On the first corpus that is 473 groups at a shortlist of 1 and 264 at 48.
-Reporting them against one denominator would make rank-1 look harder than it is and recall-at-48
-easier.
+**Each width has its own denominator, inside one split.** Two subsettings compose here, and which
+is which matters, because one shortlist yields a different group count depending on the population
+it is applied to. First the split: metrics are reported on the **validation** groups, 489 of the
+first corpus's 4,789. Then the width: a ranker can only be wrong in a group with more candidates
+than the shortlist keeps, so each width is measured on the validation groups with `size > k`.
+
+|   k | validation groups measured |
+| --: | -------------------------: |
+|   1 |                        473 |
+|   2 |                        463 |
+|   8 |                        399 |
+|  16 |                        364 |
+|  24 |                        335 |
+|  48 |                        264 |
+
+So the 264 here and the 2,643 in the corpus section are the same rule applied to different
+populations — 2,643 of all 4,789 groups exceed a shortlist of 48, and 264 of the 489 validation
+groups do. Every reported number carries its own group count for exactly this reason: collapsing
+the widths onto one denominator would make rank-1 look harder than it is and recall-at-48 easier.
 
 **Ties are settled by value, never by index.** A group can hold several candidates the teacher
 scored identically and any of them is a right answer; scoring against one chosen index would mark
