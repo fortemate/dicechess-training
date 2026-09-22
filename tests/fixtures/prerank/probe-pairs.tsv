@@ -1,0 +1,17 @@
+id	fen	tags	note
+pawn-d4-blunder	4k3/8/8/4p3/3Q4/8/8/4K3 w - -	en-prise pawn-attacker	White queen d4 with the enemy pawn on e5, which attacks it.
+pawn-d4-safe	4k3/8/4p3/8/3Q4/8/8/4K3 w - -	safe-twin pawn-attacker	The same queen on d4 with that pawn one rank back on e6, attacking nothing.
+pawn-e4-blunder	4k3/8/8/3p4/4Q3/8/8/4K3 w - -	en-prise pawn-attacker	White queen e4 with the enemy pawn on d5, which attacks it.
+pawn-e4-safe	4k3/8/3p4/8/4Q3/8/8/4K3 w - -	safe-twin pawn-attacker	The same queen on e4 with that pawn on d6.
+knight-d3-blunder	4k3/8/8/2n5/8/3Q4/8/4K3 w - -	en-prise knight-attacker	White queen d3 with the enemy knight on c5, a knight's move away.
+knight-d3-safe	4k3/8/8/7n/8/3Q4/8/4K3 w - -	safe-twin knight-attacker	The same queen on d3 with that knight on h5.
+rook-d4-blunder	4k3/8/3r4/8/3Q4/8/8/4K3 w - -	en-prise rook-attacker	White queen d4 with the enemy rook on d6, sharing the file.
+rook-d4-safe	4k3/8/5r2/8/3Q4/8/8/4K3 w - -	safe-twin rook-attacker	The same queen on d4 with that rook on f6.
+rook-e5-blunder	4k3/8/8/4Q3/8/8/4r3/K7 w - -	en-prise rook-attacker	White queen e5 with the enemy rook on e2, sharing the file; the White king is on a1 so the rook bears on the queen alone.
+rook-e5-safe	4k3/8/8/4Q3/8/8/6r1/K7 w - -	safe-twin rook-attacker	The same queen on e5 with that rook on g2.
+bishop-d4-blunder	4k3/8/8/4b3/3Q4/8/8/4K3 w - -	en-prise bishop-attacker	White queen d4 with the enemy bishop on e5, sharing the diagonal.
+bishop-d4-safe	4k3/8/4b3/8/3Q4/8/8/4K3 w - -	safe-twin bishop-attacker	The same queen on d4 with that bishop on e6.
+pawn-d4-twin-blunder	4k3/8/8/3q4/4P3/8/8/4K3 b - -	en-prise pawn-attacker twin	Colour-swapped rank-mirror of pawn-d4-blunder: Black to move, same shape.
+pawn-d4-twin-safe	4k3/8/8/3q4/8/4P3/8/4K3 b - -	safe-twin pawn-attacker twin	Colour-swapped rank-mirror of pawn-d4-safe.
+rook-d4-twin-blunder	4k3/8/8/3q4/8/3R4/8/4K3 b - -	en-prise rook-attacker twin	Colour-swapped rank-mirror of rook-d4-blunder.
+rook-d4-twin-safe	4k3/8/8/3q4/8/5R2/8/4K3 b - -	safe-twin rook-attacker twin	Colour-swapped rank-mirror of rook-d4-safe.

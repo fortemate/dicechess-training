@@ -1,0 +1,138 @@
+{
+  "schema": "rich-9-v1",
+  "perspective": "side-to-move",
+  "engineVersion": "0.12.0",
+  "engineArtifact": "com.fortemate:dicechess-engine_3:0.12.0",
+  "generator": "tools/kcp13-golden (dicechess.training.golden.Kcp13Golden)",
+  "columns": ["p_diff", "n_diff", "b_diff", "r_diff", "q_diff", "material_diff", "total_material", "mobility_diff", "king_safety_diff"],
+  "probes": [
+    {
+      "id": "pawn-d4-blunder",
+      "fen": "4k3/8/8/4p3/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["en-prise", "pawn-attacker"],
+      "note": "White queen d4 with the enemy pawn on e5, which attacks it.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 22.0, 0.0]
+    },
+    {
+      "id": "pawn-d4-safe",
+      "fen": "4k3/8/4p3/8/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["safe-twin", "pawn-attacker"],
+      "note": "The same queen on d4 with that pawn one rank back on e6, attacking nothing.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 26.0, 0.0]
+    },
+    {
+      "id": "pawn-e4-blunder",
+      "fen": "4k3/8/8/3p4/4Q3/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["en-prise", "pawn-attacker"],
+      "note": "White queen e4 with the enemy pawn on d5, which attacks it.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 21.0, 2000.0]
+    },
+    {
+      "id": "pawn-e4-safe",
+      "fen": "4k3/8/3p4/8/4Q3/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["safe-twin", "pawn-attacker"],
+      "note": "The same queen on e4 with that pawn on d6.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 25.0, 2000.0]
+    },
+    {
+      "id": "knight-d3-blunder",
+      "fen": "4k3/8/8/2n5/8/3Q4/8/4K3 w - -",
+      "side": "w",
+      "tags": ["en-prise", "knight-attacker"],
+      "note": "White queen d3 with the enemy knight on c5, a knight's move away.",
+      "features": [0.0, -1.0, 0.0, 0.0, 1.0, 6.0, 12.0, 17.0, 0.0]
+    },
+    {
+      "id": "knight-d3-safe",
+      "fen": "4k3/8/8/7n/8/3Q4/8/4K3 w - -",
+      "side": "w",
+      "tags": ["safe-twin", "knight-attacker"],
+      "note": "The same queen on d3 with that knight on h5.",
+      "features": [0.0, -1.0, 0.0, 0.0, 1.0, 6.0, 12.0, 21.0, 0.0]
+    },
+    {
+      "id": "rook-d4-blunder",
+      "fen": "4k3/8/3r4/8/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["en-prise", "rook-attacker"],
+      "note": "White queen d4 with the enemy rook on d6, sharing the file.",
+      "features": [0.0, 0.0, 0.0, -1.0, 1.0, 4.0, 14.0, 14.0, 0.0]
+    },
+    {
+      "id": "rook-d4-safe",
+      "fen": "4k3/8/5r2/8/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["safe-twin", "rook-attacker"],
+      "note": "The same queen on d4 with that rook on f6.",
+      "features": [0.0, 0.0, 0.0, -1.0, 1.0, 4.0, 14.0, 11.0, 0.0]
+    },
+    {
+      "id": "rook-e5-blunder",
+      "fen": "4k3/8/8/4Q3/8/8/4r3/K7 w - -",
+      "side": "w",
+      "tags": ["en-prise", "rook-attacker"],
+      "note": "White queen e5 with the enemy rook on e2, sharing the file; the White king is on a1 so the rook bears on the queen alone.",
+      "features": [0.0, 0.0, 0.0, -1.0, 1.0, 4.0, 14.0, 12.0, 2000.0]
+    },
+    {
+      "id": "rook-e5-safe",
+      "fen": "4k3/8/8/4Q3/8/8/6r1/K7 w - -",
+      "side": "w",
+      "tags": ["safe-twin", "rook-attacker"],
+      "note": "The same queen on e5 with that rook on g2.",
+      "features": [0.0, 0.0, 0.0, -1.0, 1.0, 4.0, 14.0, 10.0, 2000.0]
+    },
+    {
+      "id": "bishop-d4-blunder",
+      "fen": "4k3/8/8/4b3/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["en-prise", "bishop-attacker"],
+      "note": "White queen d4 with the enemy bishop on e5, sharing the diagonal.",
+      "features": [0.0, 0.0, -1.0, 0.0, 1.0, 6.0, 12.0, 14.0, 0.0]
+    },
+    {
+      "id": "bishop-d4-safe",
+      "fen": "4k3/8/4b3/8/3Q4/8/8/4K3 w - -",
+      "side": "w",
+      "tags": ["safe-twin", "bishop-attacker"],
+      "note": "The same queen on d4 with that bishop on e6.",
+      "features": [0.0, 0.0, -1.0, 0.0, 1.0, 6.0, 12.0, 16.0, 0.0]
+    },
+    {
+      "id": "pawn-d4-twin-blunder",
+      "fen": "4k3/8/8/3q4/4P3/8/8/4K3 b - -",
+      "side": "b",
+      "tags": ["en-prise", "pawn-attacker", "twin"],
+      "note": "Colour-swapped rank-mirror of pawn-d4-blunder: Black to move, same shape.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 22.0, 0.0]
+    },
+    {
+      "id": "pawn-d4-twin-safe",
+      "fen": "4k3/8/8/3q4/8/4P3/8/4K3 b - -",
+      "side": "b",
+      "tags": ["safe-twin", "pawn-attacker", "twin"],
+      "note": "Colour-swapped rank-mirror of pawn-d4-safe.",
+      "features": [-1.0, 0.0, 0.0, 0.0, 1.0, 8.0, 10.0, 26.0, 0.0]
+    },
+    {
+      "id": "rook-d4-twin-blunder",
+      "fen": "4k3/8/8/3q4/8/3R4/8/4K3 b - -",
+      "side": "b",
+      "tags": ["en-prise", "rook-attacker", "twin"],
+      "note": "Colour-swapped rank-mirror of rook-d4-blunder.",
+      "features": [0.0, 0.0, 0.0, -1.0, 1.0, 4.0, 14.0, 14.0, 0.0]
+    },
+    {
+      "id": "rook-d4-twin-safe",
+      "fen": "4k3/8/8/3q4/8/5R2/8/4K3 b - -",
+      "side": "b",
+      "tags": ["safe-twin", "rook-attacker", "twin"],
+      "note": "Colour-swapped rank-mirror of rook-d4-safe.",
+      "features": [0.0, 0.0, 0.0, -1.0, 1.0, 4.0, 14.0, 11.0, 0.0]
+    }
+  ]
+}

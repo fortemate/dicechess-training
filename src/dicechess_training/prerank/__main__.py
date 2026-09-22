@@ -23,6 +23,7 @@ from dicechess_training.contracts import prerank as contract
 from dicechess_training.contracts.kcp13 import ContractError
 from dicechess_training.prerank import export as exporter
 from dicechess_training.prerank import pack as packer
+from dicechess_training.prerank import probes as prober
 from dicechess_training.prerank import roots as rooter
 from dicechess_training.prerank.groups import KINDS, LICENSE_FILE, GroupsError
 
@@ -115,6 +116,25 @@ def _run_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_probe_pairs(args: argparse.Namespace) -> int:
+    report = prober.evaluate(args.model, engine_version=args.engine_version)
+    print(f"probe pairs: {report['passed']}/{report['pairs']} passed")
+    for result in report["results"]:
+        verdict = "pass" if result["passed"] else "FAIL"
+        print(
+            f"  {result['pair']:24} safe {result['safe']:+9.4f}  "
+            f"blunder {result['blunder']:+9.4f}  margin {result['margin']:+9.4f}  {verdict}"
+        )
+    if report["failed"]:
+        seen = prober.visible_differences(args.engine_version)
+        print()
+        print("  what rich-9 sees of the failing pairs — the schema has no safety column:")
+        for result in report["results"]:
+            if not result["passed"]:
+                print(f"    {result['pair']:24} {seen[result['pair']]}")
+    return 0 if report["failed"] == 0 else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dicechess_training.prerank", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -163,10 +183,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     ship.set_defaults(handler=_run_export)
 
+    gate = commands.add_parser(
+        "probe-pairs", help="does the ranker put a hanging queen below its safe twin"
+    )
+    gate.add_argument("model", type=Path, help="an exported pre-ranker artifact")
+    gate.add_argument(
+        "--engine-version",
+        default=contract.DEFAULT_ENGINE_VERSION,
+        help="the engine whose committed probe-pair corpus to use",
+    )
+    gate.set_defaults(handler=_run_probe_pairs)
+
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
-    except (packer.PackError, rooter.RootsError, GroupsError, ContractError) as error:
+    except (
+        packer.PackError,
+        rooter.RootsError,
+        prober.ProbePairError,
+        GroupsError,
+        ContractError,
+    ) as error:
         # These messages are written to say what, never where — see the module docstring.
         print(f"refused: {error}", file=sys.stderr)
         return 1
