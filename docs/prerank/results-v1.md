@@ -74,6 +74,25 @@ shortlist of 48 at all. More seeds cannot fix that; more validation groups can.
 a temporal holdout beyond that; neither was touched. This corpus is development data by its own
 manifest, so these numbers can guide development and cannot qualify anything.
 
+## The artifact
+
+Seed 11 is exported as `prerank-dev-5k-seed11`: `model.onnx` of 12,851 bytes and a manifest 1.1.0
+declaring `modelRole: move-prerank`, `featureSchema: rich-9-v1`, `featureCount: 9` and
+`modelSha256 bdb9300d…`. No `calibration` block — an ordering has nothing to calibrate, and the
+contract refuses one on this role.
+
+**The numbers above are the artifact's, not the checkpoint's.** Training ran in float64 and the
+contract's tensors are FLOAT, so the export narrows the arithmetic, and a comparison between two
+nearly equal scores can flip when it does. Re-measured through the exported graph over all 752,504
+candidates: scores agree with the checkpoint to 4.4e-06, and **not one group changes its outcome
+at any of the three widths**. On the engine's own golden probes the graph and the model agree to
+9.5e-07.
+
+The bytes are a function of the model rather than of the machine: exporting the same checkpoint
+twice gives the same digest, because the absolute source paths `torch.onnx.export(dynamo=True)`
+writes onto every node are stripped — the defect that left every package built before #60
+unrecoverable.
+
 ## Training behaviour
 
 Four seconds per seed on a laptop. The loss plateaus by the fourth epoch or so and the best
