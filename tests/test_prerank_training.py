@@ -404,3 +404,17 @@ def test_the_exact_test_matches_hand_computed_tails() -> None:
     assert _two_sided_binomial(5, 10) == pytest.approx(1.0)
     assert _two_sided_binomial(10, 10) == pytest.approx(2 * 0.5**10)
     assert _two_sided_binomial(9, 10) == pytest.approx(2 * (10 + 1) * 0.5**10)
+
+
+def test_an_already_deployed_ordering_can_be_measured_on_the_same_footing(tmp_path) -> None:
+    """The corpus carries the features the deployed value models consume, so a pre-ranker that is
+    already in production can be scored here rather than approximated by a proxy for it."""
+    from dicechess_training.prerank.export import export_ranker
+    from dicechess_training.prerank.model import PreRankMLP
+    from dicechess_training.prerank.train import onnx_scores
+
+    corpus = _corpus([20, 30], ["validation", "validation"], seed=8)
+    graph = export_ranker(PreRankMLP(9, [8]).double(), tmp_path / "model.onnx")
+    scores = onnx_scores(corpus, graph)
+    assert scores.shape == (len(corpus.targets),)
+    assert np.isfinite(scores).all()
