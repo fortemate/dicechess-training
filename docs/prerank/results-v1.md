@@ -27,8 +27,7 @@ The bold widths are deployed: `dexus-atlas-1` runs `ORACLE_CANDIDATE_LIMIT=8`, a
 `dicechess-bot-gcp-onnx` and `-4` run 24. 16 is not deployed anywhere; it is kept because it is
 where the engine's own scaladoc measured its `candidateLimit` step.
 
-`rank1` — the student's own first choice holding the teacher's maximum — is 0.2598 ± 0.0039
-against 0.2045 for `material_diff` and 0.0152 for random.
+The full metric table, including the rank-1 and rank-2 hit rates and the list metric, is below.
 
 Each width is measured only on groups larger than it, so the four rows do not share a
 denominator: a group of 20 candidates can be ranked wrong at a shortlist of 8 and cannot be at 48.
@@ -50,6 +49,63 @@ margin at 8 is three points and nobody chose it on evidence. **This is a flag, n
 `oracle-3` is a win-probability model and the teacher here is hunter's evaluation, so the two
 optimise different things, and a search whose leaf _is_ `oracle-3` has an argument for a shortlist
 ranked by `oracle-3`. Worth its own measurement; see the open questions below.
+
+## Every metric, at every width
+
+Each width is measured on the groups where a shortlist of that size can be wrong — `size > k` —
+so the rows do not share a denominator. Rank-1 and rank-2 are recall at widths 1 and 2 on their
+own groups.
+
+|      width | groups | recall: learned | `oracle-3` | material | random | NDCG: learned | `oracle-3` | material |
+| ---------: | -----: | --------------: | ---------: | -------: | -----: | ------------: | ---------: | -------: |
+| 1 (rank-1) |    473 |      **0.3362** |     0.2664 |   0.2833 | 0.0867 |        0.3882 |     0.3106 |   0.3253 |
+| 2 (rank-2) |    463 |      **0.4471** |     0.3650 |   0.3499 | 0.1166 |        0.4124 |     0.3346 |   0.3364 |
+|          8 |    399 |      **0.6491** |     0.5539 |   0.5238 | 0.2732 |        0.4659 |     0.3822 |   0.3727 |
+|         16 |    364 |      **0.7445** |     0.6346 |   0.6868 | 0.3791 |        0.4949 |     0.4040 |   0.4110 |
+|         24 |    335 |      **0.7910** |     0.6955 |   0.7522 | 0.4299 |        0.5124 |     0.4221 |   0.4250 |
+|         48 |    264 |      **0.8682** |     0.7917 |   0.8182 | 0.5189 |        0.5188 |     0.4240 |   0.4436 |
+
+> An earlier version of this page quoted `rank1` as 0.2598. That figure was measured on the groups
+> larger than 48 — the hardest subset — because the training report reused one denominator for
+> every metric. On its own groups the rank-1 hit rate is **0.3362**. The number was not wrong, it
+> was answering a narrower question than its name suggests.
+
+### The list metric resolves what recall cannot
+
+Against `material_diff`, paired on the same groups:
+
+| width | recall difference | 95% CI        | exact _p_ | NDCG difference | 95% CI           |
+| ----: | ----------------: | ------------- | --------: | --------------: | ---------------- |
+|     1 |           +5.3 pp | [+1.3, +9.3]  |     0.019 |          +0.063 | [+0.024, +0.100] |
+|     2 |           +9.7 pp | [+5.2, +14.0] |     0.000 |          +0.076 | [+0.041, +0.111] |
+|     8 |          +12.5 pp | [+7.3, +17.8] |     0.000 |          +0.093 | [+0.061, +0.125] |
+|    16 |           +5.8 pp | [+0.3, +10.7] |     0.040 |          +0.084 | [+0.049, +0.118] |
+|    24 |           +3.9 pp | [−1.2, +8.7]  |     0.171 |          +0.087 | [+0.056, +0.120] |
+|    48 |           +5.3 pp | [+0.8, +10.2] |     0.049 |          +0.075 | [+0.041, +0.109] |
+
+**At a shortlist of 24 recall cannot tell the two orderings apart and NDCG can.** Recall's interval
+crosses zero and its exact test gives 0.171; NDCG's interval is nowhere near zero at any width.
+
+That is not a contradiction, it is the difference between the two questions. Recall is binary and
+largely saturated — at 48 both orderings keep a best candidate four times in five, so only the
+discordant minority carries any information, and there are 44 such groups. NDCG uses where _every_
+candidate landed, so the same 335 groups carry far more of it.
+
+So the honest summary is two sentences rather than one. **By the list metric the learned ranker is
+better than the ordering the engine ships at every width tested.** Whether it more often keeps a
+best candidate _inside the cut_ is established up to a shortlist of 16 and not resolved at 24,
+where this corpus runs out of discordant groups.
+
+### Calibration
+
+Deliberately absent, and the definition of done's "where meaningful" is the reason. An ordering is
+invariant to every monotone transform of the scores, so there is no quantity a calibration curve
+could be drawn against: the model is never asked how good a candidate is, only which of two is
+better. `contracts.prerank` makes the same point structurally by refusing a `calibration` block on
+this role — a model that needed one would be a value model wearing the wrong name.
+
+What is usually wanted from calibration here is "how good is the whole list, not just the top
+pick", and that is what NDCG answers.
 
 ## What the numbers mean, and what they do not
 
