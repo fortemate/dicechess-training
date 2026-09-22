@@ -123,3 +123,4 @@ compare and measure on it; qualify elsewhere.
 - `dicechess-hunter`, `docs/prerank-corpus.md` — the generator, and what it costs.
 - `docs/prerank/latency-v1.md` — what the pass costs at the seam.
 - `docs/prerank/probe-pairs-v1.md` — the hanging-queen gate, and what it says about the schema.
+- `docs/prerank/arena-protocol-v1.json` — how strength gets decided, and what it is blocked on.

@@ -1,0 +1,77 @@
+{
+  "protocol_version": "playground-prerank-arena-v1",
+  "issue": "dicechess-training#9",
+  "question": "Does serving the learned pre-ranker make a bot win more games than the ordering it replaces, at a real clock?",
+  "why_it_is_separate_from_the_metrics": "Recall and NDCG say the ranker agrees with the teacher more often. Strength is a different claim and the corpus cannot support it: the metrics hold the search constant and ignore the clock, while the pre-rank pass is paid out of the turn budget before the deadline is consulted. A ranker that orders better and costs more can lose. Only a game decides, which is why this protocol exists and why nothing in results-v1.md is allowed to stand in for it.",
+
+  "arms": {
+    "prerequisite": {
+      "name": "engine-bump",
+      "compares": "dicechess-bot-gcp-onnx on engine 0.12.0 against the same bot on 0.12.2, every other setting identical",
+      "why": "The pre-ranker seam (`PreRankModel`) first exists in engine v0.12.1, so the bot must move off 0.12.0 before the real arm can run at all. That bump is not neutral: v0.12.0..v0.12.2 includes `fix: preserve en passant through occupied target`, a rules change, alongside graph validation at session construction. Moving a production bot's engine is exactly the class of change this organisation asks for arena evidence on — the same point that went unmeasured when Dependabot moved hunter from 0.9.1 to 0.12.0.",
+      "run_first": true,
+      "stop_on": "If the bump costs measurable strength, the pre-ranker arm is blocked on understanding why rather than on scheduling."
+    },
+    "primary": {
+      "name": "prerank-slot",
+      "compares": "the same bot image and engine, twice, differing only in what fills the pre-rank slot",
+      "control": "`material` — the engine's default `ExpectimaxSearch.materialBatch`, which is what dicechess-bot-gcp-onnx and -4 run today",
+      "treatment": "the exported `move-prerank` package, loaded through `PreRankModel.fromPackage`",
+      "also_worth_running": "`PRE_RANK_WITH_MODEL=true`, the leaf model reused as a pre-ranker, which is what dexus-atlas-1 runs. It is the incumbent for that bot and the corpus says it orders worse than material at three of four widths, so its arena result is interesting whichever way it falls."
+    }
+  },
+
+  "held_constant": [
+    "the bot image, so the two sides differ by configuration and not by build",
+    "the leaf model and the rescore model, with their digests recorded",
+    "`ORACLE_CANDIDATE_LIMIT`, because width is a lever of its own and a width verdict measured while something else moved is not a verdict",
+    "the opening book, the transposition table settings, the time policy and the overhead buffer",
+    "the arena's dice seeds, which the engine owns; mirrored colour pairs mean both sides face the same rolls"
+  ],
+
+  "clock": {
+    "primary": "1+0",
+    "why": "Fixed time, and the harshest control for a treatment that spends time. The pre-rank pass costs about 1.5 microseconds per candidate and 30 ms on the widest root measured, so at a long control its cost disappears and only ordering quality is tested. If the learned ranker wins at 1+0 it wins where the cost is hardest to hide.",
+    "confirmation": "3+2",
+    "confirmation_rule": "Run only if 1+0 is positive, and report both. A verdict at one control is a verdict at that control — hunter's own scaladoc records a width comparison whose sign flipped between an untimed and a clocked run."
+  },
+
+  "sampling": {
+    "pairing": "mirrored colour pairs, so each opening position is played from both sides",
+    "stopping_rule": "SPRT with bounds 0 and 20 Elo at alpha = beta = 0.05",
+    "cap": "500 games per colour",
+    "cap_rationale": "The stopping rule usually ends earlier; the cap bounds the machine time when it does not. An SPRT that stops at its H1 boundary biases the point estimate away from zero, so the recorded effect size is an upper bound and the protocol says so wherever it is quoted.",
+    "report": "games, win/draw/loss, the log-likelihood ratio, the 95% interval, and the flag losses on each side"
+  },
+
+  "invalidates_the_run": [
+    "any flag loss attributable to the harness rather than the bot, because a bot that never answered did not play",
+    "a difference in the recorded model digests between the two sides",
+    "the two sides resolving different engine versions",
+    "a container restart mid-run, which resets the transposition table and is not a property of either configuration"
+  ],
+
+  "decision_rule": {
+    "adopt": "SPRT accepts H1 at 1+0 and the 3+2 confirmation does not contradict it",
+    "reject": "SPRT accepts H0, or the confirmation control reverses the sign",
+    "note": "A pre-ranker that measures better on recall and NDCG and does not win games is not adopted. That is the entire reason this arm exists, and the metrics are not permitted to overrule it."
+  },
+
+  "harness": {
+    "existing": "dicechess-hunter/referee/run.sh — the engine's own arena, which owns the dice RNG, the seeds, the clocks and the rules; the script stands two containers up and points the arena at them. It already runs a hunter container against an ONNX container over the webhook protocol, with SPRT and clock presets.",
+    "change_needed": "The compose file pairs hunter with one ONNX service. This arena needs the same ONNX image twice with different environments, which is a compose change rather than a new harness.",
+    "do_not": "Write a second arena. Nothing here should reimplement a game loop; the engine owns the rules and the dice."
+  },
+
+  "blocked_on": {
+    "capability": "dicechess-bot-gcp-onnx cannot be told to use a dedicated pre-ranker. `PRE_RANK_WITH_MODEL` is a boolean that reuses the leaf model, and the bot pins engine 0.12.0, which predates `PreRankModel`.",
+    "required_change": "Move the bot to engine >= 0.12.1 and add configuration for a pre-rank package directory, wired through `PreRankModel.fromPackage`, defaulting to off.",
+    "already_verified": "The artifact itself is ready: `ModelPackage.load` accepts the exported `model.onnx` + `manifest.json` with role `move-prerank` and 9 features, `PreRankModel.fromPackage` accepts the package, and the same loader refuses it when asked for `position-value`. So the seam and the artifact agree; only the host does not know how to ask."
+  },
+
+  "not_covered": [
+    "hunter, whose first phase is `HunterEval.cheapScore` and which does not use this seam",
+    "any claim about strength at controls other than the two above",
+    "whether a different candidate limit would suit the learned ranker better — width is a separate lever and mixing it in would confound this"
+  ]
+}
