@@ -1,0 +1,135 @@
+{
+  "protocol_version": "playground-prerank-v1",
+  "issue": "dicechess-training#9",
+  "task": "listwise ranking of the legal turns available at one root, so that a shortlist of fixed size contains the turns the expensive evaluation would have chosen",
+  "perspective": "side-to-move",
+  "feature_schema": "rich-9-v1",
+  "engine_version": "0.12.0",
+  "dataset_schema": "playground-prerank-groups-v1",
+  "teacher": {
+    "id": "hunter-baseline-v1",
+    "expression": "SearchScoring.scorePath(root, path, HunterEval.fullScore)",
+    "note": "the champion's own expensive evaluation; the student exists to choose which candidates get it"
+  },
+  "model": {
+    "family": "mlp",
+    "hidden_dims": [32, 32],
+    "activation": "relu",
+    "output": "one unbounded score per candidate",
+    "output_activation": "none",
+    "output_rationale": "an ordering is invariant to monotone transforms, so there is nothing to calibrate; a sigmoid would compress exactly the distinctions the ranker exists to make, and `contracts.prerank` refuses a calibration block for the same reason",
+    "capacity_rationale": "narrower than the evaluator's 64x64 because this runs on every legal turn before the search consults its deadline, and the schema was already chosen for cost; 9 inputs do not need more",
+    "feature_standardisation": "train-statistics, carried inside the model as a constant affine transform so the serving contract keeps taking raw features",
+    "optimizer": "adam",
+    "learning_rate": 0.001,
+    "batch_groups": 64,
+    "max_epochs": 40,
+    "early_stopping": {
+      "metric": "validation_recall_at_k",
+      "patience": 5,
+      "restore": "best-epoch-weights"
+    }
+  },
+  "loss": {
+    "name": "listnet-cross-entropy",
+    "formula": "-sum_i P_i * log softmax(s)_i, per group",
+    "target_distribution": {
+      "gain": "1 / rank**2",
+      "rank": "1-based rank of the candidate's target within its group, descending, ties at the average rank",
+      "normalisation": "gains divided by their sum within the group",
+      "rationale": [
+        "the mass sits where the metric looks: the search rescores every shortlisted candidate with the expensive evaluation and takes the best, so the only candidate that has to survive the cut is the maximum, and an inverse-square discount holds 98.8% of the target mass inside the top 48 at every group size the corpus has",
+        "the shape does not move with the list's length: the best candidate carries 0.608 of the mass at 61 candidates and at 2,420 alike, so a long list teaches the same lesson about its top few as a short one",
+        "scale-free: targets are in the teacher's private units and their spread varies by orders of magnitude between groups, which a softmax over raw values would turn into a per-group temperature nobody chose",
+        "sentinel-free: a king capture carries TerminalWinScore (2^31-1) and no magnitude is used, so the sentinel ranks first and needs no mapping",
+        "tie-honest: a group whose candidates all score the same becomes a uniform target, which asks the model to be flat there rather than to invent an order"
+      ],
+      "rejected_before_any_run": {
+        "note": "the NDCG discount was written into this protocol first and measured out of it before the model was trained even once; the numbers below are properties of the gain function, not results",
+        "share_of_target_mass_inside_top_48": {
+          "uniform": {
+            "61": 0.787,
+            "200": 0.24,
+            "643": 0.075,
+            "2420": 0.02
+          },
+          "1 / log2(rank + 1)": {
+            "61": 0.848,
+            "200": 0.36,
+            "643": 0.146,
+            "2420": 0.049
+          },
+          "1 / rank": {
+            "61": 0.949,
+            "200": 0.759,
+            "643": 0.633,
+            "2420": 0.533
+          },
+          "1 / rank**2": {
+            "61": 0.997,
+            "200": 0.99,
+            "643": 0.988,
+            "2420": 0.988
+          }
+        },
+        "why_not_log": "on the large groups, the only ones the metric is measured on, it is barely distinguishable from not ranking at all",
+        "why_not_harmonic": "it makes the best candidate of a long list worth half of the best candidate of a short one, weighting the hard groups down exactly when they matter most",
+        "why_not_one_hot": "it is the limit of this family and says nothing about the rest of the ordering; the inverse square keeps a graded head (0.61, 0.15, 0.07, 0.04) while still spending almost nothing outside the shortlist"
+      }
+    },
+    "groups_used": "every group with two or more candidates; a single-candidate group has no ordering to learn"
+  },
+  "split": {
+    "method": "game-level-sha256",
+    "formula": "int(sha256(\"playground-v1:\" + game_id), 16) % 10000",
+    "train_cutoff": 8000,
+    "val_cutoff": 9000,
+    "test_policy": "reserved-holdout-excluded-from-selection",
+    "unit": "whole group; a root's own candidates are the thing being ordered and cannot be split",
+    "leakage_note": "a root occurs once in a corpus by construction, because its group id is derived from its position and roll"
+  },
+  "seeds": [11, 23, 47, 89, 131],
+  "metrics": {
+    "primary": "recall_at_k",
+    "definitions": {
+      "recall_at_k": "share of evaluated groups in which some candidate holding the teacher's maximum target is inside the student's top K",
+      "rank1": "share in which the student's own top candidate holds the teacher's maximum target",
+      "ndcg_at_k": "normalised discounted cumulative gain at K over the same gains the loss uses"
+    },
+    "k": 48,
+    "k_rationale": "the production candidateLimit of the champion's search",
+    "evaluated_groups": "only groups with more than K candidates",
+    "evaluated_groups_rationale": "in a group no larger than the shortlist every candidate survives and the ranker cannot be wrong; including those groups would flatter every figure by the share of the corpus they make up, which in the first corpus is 45%",
+    "tie_policy": "by target value, never by index: a group can have several candidates holding the maximum"
+  },
+  "baselines": {
+    "material_diff": {
+      "definition": "order candidates by the `material_diff` column, descending",
+      "why": "this is the engine's shipped pre-ranker — `ExpectimaxSearch.materialBatch` — and it is computable from the corpus without a second label, so the question 'is a learned ranker worth anything' has an answer from the same data"
+    },
+    "random": {
+      "definition": "order candidates by a seeded permutation",
+      "why": "a lower bound; recall at K of a random order is about K/N, which says how much of any result is the shortlist being generous rather than the ranker being right"
+    },
+    "not_available": {
+      "cheap_score": "the champion's own phase-1 ranker, `HunterEval.cheapScore`, is the ranker a learned model would actually replace in that bot, and it is a stronger baseline than material alone. The corpus carries only the expensive target, so it cannot be measured here; adding it is a change to the dataset contract and a regeneration, not a tuning decision."
+    }
+  },
+  "admissibility": {
+    "reference": "material_diff",
+    "metric": "recall_at_k",
+    "require_candidate_better_than_reference": true,
+    "rationale": "the ablation of #17 produced arms worse than a constant and only a floor caught it; a learned ranker that does not beat the ordering the engine already ships is a negative result to report, not a starting point to tune from"
+  },
+  "uncertainty": {
+    "method": "group-bootstrap-percentile-95",
+    "repeats": 1000,
+    "seed": 13,
+    "status": "deferred to the metrics work; this protocol fixes the definition so the later numbers are comparable"
+  },
+  "deferred": [
+    "ndcg_at_k and bootstrap intervals — reported by the metrics work, defined here so they cannot be chosen after seeing a result",
+    "serving latency at the seam, which decides whether the capacity above is affordable",
+    "a fixed-time arena, which is the only thing that can say the ranker makes the bot stronger rather than more accurate"
+  ]
+}
