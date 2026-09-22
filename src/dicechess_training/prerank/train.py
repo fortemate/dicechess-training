@@ -16,9 +16,7 @@ admissibility floor caught it; this is the same floor.
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass
-from math import comb
 from pathlib import Path
 
 import numpy as np
@@ -28,31 +26,21 @@ from dicechess_training.prerank.dataset import (
     Corpus,
     all_gains,
     evaluated,
-    load_corpus,
     standardisation,
     trainable,
+)
+from dicechess_training.prerank.metrics import (
+    REPORTED_WIDTHS,
+    hit_vector,
+)
+from dicechess_training.prerank.metrics import (
+    report as metrics_report,
 )
 from dicechess_training.prerank.model import PreRankMLP, listwise_loss
 
 PROTOCOL = "playground-prerank-v1"
 DEFAULT_K = 48
 DEFAULT_SEED = 11
-
-#: Shortlist widths worth reporting. 48 is the champion's production `candidateLimit` and the
-#: protocol's primary; 8 and 24 are what the deployed ONNX bots run, and 16 is where the engine's
-#: own scaladoc measured its candidateLimit step. A wide shortlist forgives a bad ordering, so the
-#: narrow ones are where an ordering matters most.
-REPORTED_K = (8, 16, 24, 48)
-
-#: Resamples for the paired interval. A margin over a baseline on a few hundred groups is not a
-#: result without one: this programme has already been caught once quoting a plateau that a
-#: +/-22pp interval could not have shown.
-#:
-#: 1000 because the protocol preregistered 1000. It is the kind of number that looks free to
-#: raise afterwards, which is exactly why a preregistration names it — a knob turned after seeing
-#: a result is not a knob, and an interval is the last place to allow one.
-BOOTSTRAP_REPEATS = 1000
-BOOTSTRAP_SEED = 13
 
 
 @dataclass(frozen=True)
@@ -99,73 +87,6 @@ def ranking_metrics(
             firsts += 1
     total = max(len(groups), 1)
     return {"recall_at_k": hits / total, "rank1": firsts / total, "groups": float(len(groups))}
-
-
-def hit_vector(corpus: Corpus, scores: np.ndarray, groups: np.ndarray, k: int) -> np.ndarray:
-    """Per group, whether a shortlist of `k` under this ordering keeps a best candidate.
-
-    The vector rather than its mean, because the comparison against a baseline is *paired*: both
-    orderings are measured on the same groups, and the interval on their difference is much
-    tighter than two independent intervals would suggest.
-    """
-    out = np.zeros(len(groups), dtype=bool)
-    for position, group in enumerate(groups):
-        rows = corpus.rows(group)
-        targets = corpus.targets[rows]
-        order = np.argsort(-scores[rows], kind="stable")
-        out[position] = bool((targets[order[:k]] == targets.max()).any())
-    return out
-
-
-def discordance(candidate: np.ndarray, reference: np.ndarray) -> dict[str, float]:
-    """The groups the two orderings disagree about, and an exact test on them.
-
-    A paired comparison of two rankers is decided entirely by the groups where one keeps a best
-    candidate and the other does not; the groups they both get right or both get wrong carry no
-    information about which is better. Counting those directly gives the same comparison as the
-    bootstrap without depending on how many resamples someone drew — which matters here, because
-    at one of the reported widths the bootstrap's lower bound lands on either side of zero
-    depending on that count.
-
-    The p-value is the exact two-sided binomial on the discordant pairs, which is McNemar's test
-    without the chi-squared approximation. The protocol's bootstrap stays primary; this is the
-    same data with nothing left to a random draw.
-    """
-    wins = int((candidate & ~reference).sum())
-    losses = int((~candidate & reference).sum())
-    return {
-        "wins": wins,
-        "losses": losses,
-        "p_value": _two_sided_binomial(wins, wins + losses),
-    }
-
-
-def _two_sided_binomial(successes: int, trials: int) -> float:
-    """P(a result at least this extreme) under a fair coin, summed over both tails."""
-    if trials == 0:
-        return 1.0
-    weights = [comb(trials, k) * 0.5**trials for k in range(trials + 1)]
-    observed = weights[successes]
-    return float(min(1.0, sum(w for w in weights if w <= observed * (1 + 1e-9))))
-
-
-def paired_interval(
-    candidate: np.ndarray,
-    reference: np.ndarray,
-    repeats: int = BOOTSTRAP_REPEATS,
-    seed: int = BOOTSTRAP_SEED,
-) -> dict[str, float]:
-    """A percentile interval on the mean paired difference, resampling whole groups."""
-    difference = candidate.astype(float) - reference.astype(float)
-    rng = np.random.default_rng(seed)
-    draws = np.array(
-        [
-            difference[rng.integers(0, len(difference), len(difference))].mean()
-            for _ in range(repeats)
-        ]
-    )
-    low, high = np.percentile(draws, [2.5, 97.5])
-    return {"delta": float(difference.mean()), "ci_low": float(low), "ci_high": float(high)}
 
 
 def baseline_scores(corpus: Corpus, name: str, seed: int = DEFAULT_SEED) -> np.ndarray:
@@ -324,45 +245,23 @@ def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreR
 
 
 def by_shortlist(corpus: Corpus, scores: np.ndarray, seed: int, split: str = "validation") -> dict:
-    """Recall at each reported width, with a paired interval against the shipped ordering.
+    """Recall and NDCG at each reported width, against the ordering the engine ships.
 
-    One width is a headline; three are a shape. A wide shortlist forgives a bad ordering — a
+    One width is a headline; several are a shape. A wide shortlist forgives a bad ordering — a
     random order already keeps the best candidate half the time at 48 — so a figure quoted at one
     width says as much about the width as about the ranker.
     """
     material = baseline_scores(corpus, "material_diff")
     random_order = baseline_scores(corpus, "random", seed)
-    out = {}
-    for k in REPORTED_K:
-        groups = evaluated(corpus, split, k)
-        if len(groups) == 0:
-            # Said rather than averaged. The mean of no groups is a NaN, and a NaN in a results
-            # table is a number that someone will eventually read as a measurement.
-            out[str(k)] = {"groups": 0, "measured": False}
+    out = metrics_report(corpus, scores, split, REPORTED_WIDTHS, reference=material)
+    for k in REPORTED_WIDTHS:
+        width = out[str(k)]
+        if not width.get("measured"):
             continue
-        learned = hit_vector(corpus, scores, groups, k)
-        shipped = hit_vector(corpus, material, groups, k)
-        out[str(k)] = {
-            "groups": int(len(groups)),
-            "measured": True,
-            "learned": float(learned.mean()),
-            "material_diff": float(shipped.mean()),
-            "random": float(hit_vector(corpus, random_order, groups, k).mean()),
-            "paired_vs_material": paired_interval(learned, shipped),
-            "discordance_vs_material": discordance(learned, shipped),
-        }
+        groups = evaluated(corpus, split, k)
+        width["random"] = float(hit_vector(corpus, random_order, groups, k).mean())
+        width["material_diff"] = width.pop("reference_recall_at_k")
+        width["learned"] = width["recall_at_k"]
+        width["paired_vs_material"] = width.pop("recall_vs_reference")
+        width["discordance_vs_material"] = width.pop("recall_discordance")
     return out
-
-
-def run(directory, destination=None, hyper: Hyperparameters = DEFAULTS) -> dict:
-    """Load, train, and write the report and the weights beside each other."""
-    corpus = load_corpus(directory)
-    report, model, _ = train(corpus, hyper)
-    if destination is not None:
-        destination = Path(destination)
-        destination.mkdir(parents=True, exist_ok=True)
-        (destination / f"report-seed-{hyper.seed}.json").write_text(
-            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
-        torch.save(model.state_dict(), destination / f"weights-seed-{hyper.seed}.pt")
-    return report

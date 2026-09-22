@@ -25,16 +25,18 @@ from dicechess_training.prerank.dataset import (
     target_gains,
     trainable,
 )
-from dicechess_training.prerank.model import PreRankMLP, listwise_loss
-from dicechess_training.prerank.train import (
+from dicechess_training.prerank.metrics import (
     BOOTSTRAP_REPEATS,
-    Hyperparameters,
     _two_sided_binomial,
-    baseline_scores,
-    by_shortlist,
     discordance,
     hit_vector,
     paired_interval,
+)
+from dicechess_training.prerank.model import PreRankMLP, listwise_loss
+from dicechess_training.prerank.train import (
+    Hyperparameters,
+    baseline_scores,
+    by_shortlist,
     ranking_metrics,
     train,
 )
@@ -343,6 +345,8 @@ def test_every_reported_width_is_measured_on_its_own_groups() -> None:
     assert shape["16"]["groups"] == 3
     assert shape["48"]["groups"] == 2
     for width in shape.values():
+        if not width.get("measured"):
+            continue
         assert 0.0 <= width["learned"] <= 1.0
         assert width["paired_vs_material"]["ci_low"] <= width["paired_vs_material"]["delta"]
 
