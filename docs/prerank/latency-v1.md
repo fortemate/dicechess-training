@@ -92,7 +92,10 @@ of that too.
 **x86.** This ran on Apple silicon, in a container, and the bots run on Cloud Run. The lab's x86
 host was offline when this was measured, so the architecture the production bots actually use is
 still untested. The margin is large enough — 1.5% of budget at the worst root — that a 5×
-slower machine would still fit, but that is an argument, not a measurement.
+slower machine would still fit, but that is an argument, not a measurement. Tracked as
+[#76](https://github.com/fortemate/dicechess-training/issues/76), which asks for this same table
+under the same container limits and repeat count, because a second table taken at different
+settings answers a different question.
 
 **A real turn.** This times the pass in isolation. It does not observe a bot playing, where the
 pass competes with the search for the same cores and the same cache.

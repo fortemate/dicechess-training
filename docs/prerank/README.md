@@ -279,7 +279,7 @@ has the table.
 
 **x86 is unmeasured.** The benchmark ran on Apple silicon and the production bots run on Cloud Run.
 The margin is wide enough that a 5× slower machine would still fit, but that is an argument, not a
-measurement.
+measurement. Tracked as [#76](https://github.com/fortemate/dicechess-training/issues/76).
 
 **No host can currently be told to use a dedicated pre-ranker.** `dicechess-bot-gcp-onnx` pins
 engine 0.12.0 and its only switch is the `PRE_RANK_WITH_MODEL` boolean. Wiring is
