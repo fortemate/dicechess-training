@@ -20,7 +20,9 @@ them, designed to scale from a single workstation to an HPC cluster.
 >       ([#3](https://github.com/fortemate/dicechess-training/issues/3))
 > - [x] Training data schema v0: provenance-first Parquet shards, rawboard-768 + dice encoding
 >       ([#2](https://github.com/fortemate/dicechess-training/issues/2))
-> - [ ] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot
+> - [x] Engine hooks: ONNX evaluator at chance nodes and a learned pre-ranker slot
+>       ([engine #78](https://github.com/fortemate/dicechess-engine/issues/78), landed in
+>       engine 0.12.1)
 > - [x] Public bot-vs-bot sample dataset collected from publicly observable games on an
 >       independent platform
 >       ([#4](https://github.com/fortemate/dicechess-training/issues/4))
@@ -56,6 +58,13 @@ records the inventory, keeps `kcp-13` as the reference baseline, and defers the 
 Python side and fails closed on any mismatch; the feature values themselves are never reimplemented here —
 `tests/fixtures/kcp13/` holds the golden vectors written by the engine through
 [`tools/kcp13-golden`](tools/kcp13-golden/README.md) (`mise run golden:kcp13`, needs a JDK and sbt).
+
+A second contract is defined here and consumed by the engine rather than by that service:
+`move-prerank` over the 9-feature `rich-9` schema — one score per candidate turn, loaded into the
+search's pre-ranking seam through `PreRankModel`. `dicechess_training.contracts.prerank` pins it
+and refuses a `calibration` block on the role, because an ordering has nothing to calibrate.
+[docs/prerank/README.md](docs/prerank/README.md) covers the whole path from corpus to artifact,
+including what a deployer has to know before serving one.
 
 ## Playground evaluation benchmark
 

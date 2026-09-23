@@ -166,15 +166,43 @@ Four seconds per seed on a laptop. The loss plateaus by the fourth epoch or so a
 validation epoch lands between 3 and 7, which is worth remembering when the corpus grows: the
 capacity chosen for serving cost is not the thing currently limiting the result.
 
-## What has to happen before this is worth serving
+## What it would take to serve this, and where each part stands
 
-1. **A larger corpus**, which is now the binding constraint on the measurement rather than on the
-   model. 5,000 roots gave 264 groups at the production width and only 44 that discriminate.
-2. **Latency at the seam.** The model scores every legal turn before the search consults its
-   deadline — up to 2,420 at one root. A 32×32 MLP was chosen for that reason and has never been
-   measured there.
-3. **A fixed-time arena.** Recall of a teacher's choice is not strength. The only thing that can
-   say this makes a bot win more games is a game.
-4. **The probe-pair gate.** Authored position pairs differing only in whether a piece hangs, to
-   check the ranker orders them the obvious way — carried over from `dicechess-ev#1`.
-5. **`cheapScore` in the corpus**, if the champion rather than the ONNX family is the target.
+This list was written when the table above was the only evidence there was. Three of the five have
+since been answered, and one of them did not answer the question it was asked.
+
+1. **A larger corpus** — _open_, and still the binding constraint on the measurement rather than on
+   the model. 5,000 roots gave 264 groups at the production width and only 44 that discriminate
+   between the two orderings.
+2. **Latency at the seam** — _measured, and affordable._ About 1.5 µs per candidate: 0.344 ms at
+   the median root and 29.8 ms at the widest, in a one-vCPU container at one ORT thread. Feature
+   extraction is ~80% of it and inference ~20%, so the size of the network is not what this costs
+   and making the pass cheaper starts with the extractor. `latency-v1.md` has the table; x86, the
+   architecture the bots actually run on, is still untested
+   ([#76](https://github.com/fortemate/dicechess-training/issues/76)).
+3. **A fixed-time arena** — _preregistered, not run._ `arena-protocol-v1.json` fixes the arms, the
+   clock, the stopping rule, what a cap means and what the SPRT does and does not license, all
+   before anyone sees a game. It is blocked on `dicechess-bot-gcp-onnx#56`: no host can currently
+   be told to load a dedicated pre-rank package.
+4. **The probe-pair gate** — _built, and it answered something other than the question._ The ranker
+   goes from the engine's 0 of 8 to 5 of 8, which is also what production already serves. The
+   remaining three are not a training failure to fix with more data: within every certified pair
+   the nine `rich-9` columns are identical except `mobility_diff`, because `rich-9` is `kcp-13`
+   without its capture-probability columns and those were dropped for cost. **No `rich-9` ranker
+   can pass this gate for the right reason** — a finding about the schema, not about the model.
+   `probe-pairs-v1.md` has it.
+5. **`cheapScore` in the corpus** — _open_, and only relevant if the champion rather than the ONNX
+   family is the target.
+
+Two things arrived that this list did not ask for. The rank metrics now cover every width with
+paired intervals and an exact test, which produced a result of their own: **NDCG separates the two
+orderings at a shortlist of 24 where recall cannot** — recall's interval crosses zero there and
+NDCG's is nowhere near it. And `prerank train` makes the run above reproducible from the
+repository: re-running it with the protocol's seed 11 writes the checkpoint this artifact was
+exported from, byte for byte.
+
+One further question came out of the numbers rather than the plan: `oracle-3`, the model a
+production bot already pre-ranks with, orders worse than plain material at three of four widths —
+measured here against hunter's teacher, which is not the objective that bot's own search optimises.
+That is a flag rather than a verdict, and it has its own issue
+([#70](https://github.com/fortemate/dicechess-training/issues/70)).

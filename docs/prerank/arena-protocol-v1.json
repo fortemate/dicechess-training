@@ -81,6 +81,7 @@
   "blocked_on": {
     "capability": "dicechess-bot-gcp-onnx cannot be told to use a dedicated pre-ranker. `PRE_RANK_WITH_MODEL` is a boolean that reuses the leaf model, and the bot pins engine 0.12.0, which predates `PreRankModel`.",
     "required_change": "Move the bot to engine >= 0.12.1 and add configuration for a pre-rank package directory, wired through `PreRankModel.fromPackage`, defaulting to off.",
+    "tracked_as": "dicechess-bot-gcp-onnx#56",
     "already_verified": "The artifact itself is ready: `ModelPackage.load` accepts the exported `model.onnx` + `manifest.json` with role `move-prerank` and 9 features, `PreRankModel.fromPackage` accepts the package, and the same loader refuses it when asked for `position-value`. So the seam and the artifact agree; only the host does not know how to ask."
   },
   "not_covered": [
