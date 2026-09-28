@@ -50,3 +50,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: .venv/bin/python scripts/check_enrichment.py
+
+      - name: Synthetic complete-turn replay audit
+        working-directory: tools/prerank-replay
+        run: sbt -batch test
