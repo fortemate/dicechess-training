@@ -546,10 +546,15 @@ def test_bootstrap_repeat_budget(repeats):
         confidence([0, 1], [0.1, 0.9], ["a", "b"], repeats=repeats)
 
 
-def test_cli_output_cannot_overwrite_existing_file(tmp_path, capsys):
+def test_cli_output_cannot_overwrite_existing_file(tmp_path, capsys, monkeypatch):
+    import shutil
+
+    data = tmp_path / "data"
+    shutil.copytree(FIXTURE, data)
+    monkeypatch.chdir(tmp_path)
     output = tmp_path / "keep.json"
     output.write_text("preserve this")
-    assert main(["--data", str(FIXTURE), "--output", str(output)]) == 2
+    assert main(["--data", str(data), "--output", str(output)]) == 2
     assert output.read_text() == "preserve this"
     assert "invalid-benchmark-input" in capsys.readouterr().out
 
@@ -623,3 +628,56 @@ def test_a_golden_digest_that_does_not_match_its_engine_is_refused(tmp_path):
     save_data(data, manifest, core.read_json(data / "rows.json"))
     with pytest.raises(ValueError, match="golden digest mismatch"):
         core.load_dataset(data)
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "--data",
+        "--candidate",
+        "--development-data",
+        "--seal",
+        "--reference",
+        "--serving-evidence",
+        "--output",
+    ],
+)
+@pytest.mark.parametrize("escape", ["absolute", "parent", "symlink", "prefix"])
+def test_cli_refuses_paths_outside_workspace(tmp_path, monkeypatch, capsys, argument, escape):
+    from dicechess_training.benchmark import __main__ as cli
+
+    workspace = tmp_path / "work"
+    workspace.mkdir()
+    outside = tmp_path / "work-other"
+    outside.mkdir()
+    (workspace / "link").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(workspace)
+    paths = {
+        "absolute": str(outside / "input"),
+        "parent": "../work-other/input",
+        "symlink": "link/input",
+        "prefix": str(outside),
+    }
+
+    def unexpected_evaluation(*args, **kwargs):
+        pytest.fail("escaped path reached evaluation")
+
+    monkeypatch.setattr(cli, "evaluate", unexpected_evaluation)
+    assert cli.main(["--data", ".", argument, paths[escape]]) == 2
+    assert "invalid-benchmark-input" in capsys.readouterr().out
+
+
+def test_cli_allows_paths_inside_workspace(tmp_path, monkeypatch, capsys):
+    from dicechess_training.benchmark import __main__ as cli
+
+    monkeypatch.chdir(tmp_path)
+    received = []
+
+    def evaluate(data, candidate, **kwargs):
+        received.append((data, kwargs["seal_path"]))
+        return {"schema": "test"}
+
+    monkeypatch.setattr(cli, "evaluate", evaluate)
+    assert cli.main(["--data", ".", "--seal", str(tmp_path / "seal.json")]) == 0
+    assert received == [(tmp_path.resolve(), (tmp_path / "seal.json").resolve())]
+    assert json.loads(capsys.readouterr().out) == {"schema": "test"}

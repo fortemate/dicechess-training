@@ -47,7 +47,7 @@ def load_ranker(weights: str | Path) -> PreRankMLP:
     whether the model carries its own scaler. A checkpoint that needed a separate note saying how
     to read it would be a checkpoint that outlives the note.
     """
-    state = torch.load(Path(weights), map_location="cpu")
+    state = torch.load(Path(weights), map_location="cpu", weights_only=True)
     linears = sorted(
         (key for key in state if key.startswith("net.") and key.endswith(".weight")),
         key=lambda key: int(key.split(".")[1]),

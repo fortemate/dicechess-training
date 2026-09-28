@@ -224,9 +224,14 @@ def _publish(
                 f"{path_in_repo}/*",
             ]
         )
-        published = Path(workspace) / path_in_repo
+        published = (Path(workspace) / path_in_repo).resolve()
+        if not published.is_relative_to(Path(workspace).resolve()):
+            raise HubError("published copy is outside the verification directory")
         for name in files:
-            if not (published / name).is_file():
+            target = (published / name).resolve()
+            if not target.is_relative_to(published):
+                raise HubError("published file is outside the verification directory")
+            if not target.is_file():
                 raise HubError(f"published copy is missing {name}")
         actual = digests(published, files)
 

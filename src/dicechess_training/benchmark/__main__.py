@@ -12,17 +12,25 @@ class SafeParser(argparse.ArgumentParser):
         raise ValueError("invalid CLI arguments")
 
 
+def _workspace_path(raw: str) -> Path:
+    """CLI file arguments stay under the invocation directory, including symlinks."""
+    resolved = Path(raw).resolve()
+    if not resolved.is_relative_to(Path.cwd().resolve()):
+        raise ValueError("path is outside the working directory")
+    return resolved
+
+
 def main(argv=None):
     parser = SafeParser(description=__doc__)
-    parser.add_argument("--data", required=True)
-    parser.add_argument("--candidate")
+    parser.add_argument("--data", type=_workspace_path, required=True)
+    parser.add_argument("--candidate", type=_workspace_path)
     parser.add_argument("--mode", choices=("development", "final"), default="development")
-    parser.add_argument("--development-data")
-    parser.add_argument("--seal")
+    parser.add_argument("--development-data", type=_workspace_path)
+    parser.add_argument("--seal", type=_workspace_path)
     parser.add_argument("--seal-sha256")
-    parser.add_argument("--reference", action="append", default=[])
-    parser.add_argument("--serving-evidence")
-    parser.add_argument("--output")
+    parser.add_argument("--reference", type=_workspace_path, action="append", default=[])
+    parser.add_argument("--serving-evidence", type=_workspace_path)
+    parser.add_argument("--output", type=_workspace_path)
     try:
         args = parser.parse_args(argv)
         report = evaluate(
