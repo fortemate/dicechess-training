@@ -269,3 +269,49 @@ def test_a_full_run_is_not_labelled_partial() -> None:
     ]
     assert across_seeds(reports)["complete"] is True
     assert across_seeds(reports[:2])["complete"] is False
+
+
+def test_bounded_cli_writes_checkpoint_then_resume_finishes(tmp_path, capsys):
+    corpus = _corpus(tmp_path / "corpus")
+    first = tmp_path / "segment"
+    assert (
+        main(
+            [
+                "train",
+                str(corpus),
+                str(first),
+                "--seeds",
+                "11",
+                "--device",
+                "cpu",
+                "--stop-after-epochs",
+                "1",
+            ]
+        )
+        == 0
+    )
+    assert "PAUSED" in capsys.readouterr().out
+    checkpoint = first / "checkpoint-seed-11.pt"
+    assert checkpoint.is_file()
+    assert not (first / "weights-seed-11.pt").exists()
+    second = tmp_path / "completed"
+    assert (
+        main(
+            [
+                "train",
+                str(corpus),
+                str(second),
+                "--seeds",
+                "11",
+                "--device",
+                "cpu",
+                "--resume",
+                str(checkpoint),
+            ]
+        )
+        == 0
+    )
+    assert (second / "weights-seed-11.pt").is_file()
+    report = json.loads((second / "report-seed-11.json").read_text())
+    assert report["history"][0]["epoch"] == 1
+    assert len(report["history"]) > 1

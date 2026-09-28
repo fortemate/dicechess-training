@@ -15,18 +15,32 @@ dependencies = [
   "onnxscript>=0.7.1",
 ]
 
-# Linux resolves torch from the CPU-only index: dev boxes and CI have no CUDA,
-# and the PyPI build drags in gigabytes of accelerator packages. Accelerated
-# environments (CUDA or ROCm) resolve an accelerator torch build as needed.
+[project.optional-dependencies]
+cu128 = ["torch>=2.9; sys_platform == 'linux'"]
+
+# CPU remains the Linux default. Explicit --extra cu128 selects CUDA for training.
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torch = [
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'", group = "cpu" },
+  { index = "pytorch-cu128", marker = "sys_platform == 'linux'", extra = "cu128" },
+]
+
+[tool.uv]
+default-groups = ["dev", "cpu"]
+conflicts = [[{ group = "cpu" }, { extra = "cu128" }]]
 
 [dependency-groups]
+cpu = ["torch>=2.9"]
 dev = [
   "jsonschema>=4.23",
   "pytest>=8.0",
