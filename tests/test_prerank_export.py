@@ -8,6 +8,7 @@ beside it. None of them looks wrong until something far away refuses to load, so
 from __future__ import annotations
 
 import json
+import pickle
 
 import numpy as np
 import pytest
@@ -217,3 +218,23 @@ def test_an_empty_checkpoint_is_refused(tmp_path) -> None:
     torch.save({}, tmp_path / "weights.pt")
     with pytest.raises(ValueError, match="no layers"):
         load_ranker(tmp_path / "weights.pt")
+
+
+def _rebuild_non_tensor_checkpoint():
+    raise AssertionError("checkpoint code must never execute")
+
+
+class _NonTensorCheckpoint:
+    def __reduce__(self):
+        # An executable constructor must be rejected before it can run.
+        return (_rebuild_non_tensor_checkpoint, ())
+
+
+def test_checkpoint_objects_are_refused_even_when_environment_disables_the_default(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+    weights = tmp_path / "objects.pt"
+    torch.save(_NonTensorCheckpoint(), weights)
+    with pytest.raises(pickle.UnpicklingError, match="Weights only load failed"):
+        load_ranker(weights)

@@ -398,3 +398,25 @@ def test_the_cli_turns_a_missing_card_into_a_refusal_not_a_traceback(package, ca
     assert json.loads(captured.err)["published"] is False
     assert "model-card.md" in json.loads(captured.err)["error"]
     assert str(package) not in captured.err
+
+
+@pytest.mark.parametrize("link_directory", [True, False])
+def test_downloaded_symlinks_cannot_escape_verification_workspace(bundle, link_directory):
+    class LinkedDownload(FakeHub):
+        def __call__(self, command):
+            if command[0] != "download":
+                return super().__call__(command)
+            local = Path(command[command.index("--local-dir") + 1])
+            published = local / DESTINATION
+            if link_directory:
+                published.parent.mkdir(parents=True)
+                published.symlink_to(bundle, target_is_directory=True)
+            else:
+                published.mkdir(parents=True)
+                for name in hub.BUNDLE_FILES:
+                    (published / name).symlink_to(bundle / name)
+            return ""
+
+    client = LinkedDownload()
+    with pytest.raises(hub.HubError, match="outside the verification directory"):
+        hub.publish_bundle(REPO, bundle, DESTINATION, runner=client)
