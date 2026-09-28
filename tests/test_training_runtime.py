@@ -161,6 +161,56 @@ def test_checkpoint_writer_errors_become_coordinated_failures(tmp_path, monkeypa
     monkeypatch.setattr(torch, "save", fail)
     model = torch.nn.Linear(2, 1)
     optimizer = torch.optim.Adam(model.parameters())
-    with Runtime(RunOptions(device="cpu", checkpoint=tmp_path / "checkpoint.pt")) as runtime:
-        with pytest.raises(TrainingRuntimeError, match="checkpoint save failed"):
-            runtime.checkpoint(model, optimizer, "synthetic", {"epoch": 1})
+    with (
+        Runtime(RunOptions(device="cpu", checkpoint=tmp_path / "checkpoint.pt")) as runtime,
+        pytest.raises(TrainingRuntimeError, match="checkpoint save failed"),
+    ):
+        runtime.checkpoint(model, optimizer, "synthetic", {"epoch": 1})
+
+
+def test_distributed_writer_failure_reaches_both_ranks(tmp_path):
+    worker = tmp_path / "writer_failure.py"
+    worker.write_text("""
+import sys
+from pathlib import Path
+import torch
+from dicechess_training import runtime as module
+from dicechess_training.runtime import RunOptions, Runtime, TrainingRuntimeError
+folder = Path(sys.argv[1])
+def fail(*args):
+    raise RuntimeError("synthetic torch writer failure")
+with Runtime(RunOptions(device="cpu", checkpoint=folder / "checkpoint.pt")) as runtime:
+    model = torch.nn.Linear(2, 1)
+    runtime.wrap(model)
+    optimizer = torch.optim.Adam(model.parameters())
+    if runtime.rank == 0:
+        module.atomic_save = fail
+    try:
+        runtime.checkpoint(model, optimizer, "synthetic", {"epoch": 1})
+    except TrainingRuntimeError:
+        (folder / f"failed-rank-{runtime.rank}").write_text("coordinated")
+    else:
+        raise AssertionError("checkpoint unexpectedly succeeded")
+""")
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "torch.distributed.run",
+            "--nproc_per_node=2",
+            "--master_addr=127.0.0.1",
+            f"--master_port={port}",
+            str(worker),
+            str(tmp_path),
+        ],
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src"), "OMP_NUM_THREADS": "1"},
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert (tmp_path / "failed-rank-0").read_text() == "coordinated"
+    assert (tmp_path / "failed-rank-1").read_text() == "coordinated"
