@@ -417,5 +417,6 @@ def test_downloaded_symlinks_cannot_escape_verification_workspace(bundle, link_d
                     (published / name).symlink_to(bundle / name)
             return ""
 
+    client = LinkedDownload()
     with pytest.raises(hub.HubError, match="outside the verification directory"):
-        hub.publish_bundle(REPO, bundle, DESTINATION, runner=LinkedDownload())
+        hub.publish_bundle(REPO, bundle, DESTINATION, runner=client)
