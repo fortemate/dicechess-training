@@ -150,7 +150,8 @@ def test_a_destination_that_could_escape_its_directory_is_refused(bundle, destin
     assert client.commands == []
 
 
-def test_the_cli_reports_a_refusal_without_publishing(bundle, capsys):
+def test_the_cli_reports_a_refusal_without_publishing(bundle, capsys, monkeypatch):
+    monkeypatch.chdir(bundle.parent)
     rows = bundle / "rows.json"
     rows.write_bytes(rows.read_bytes() + b" ")
 
@@ -163,7 +164,8 @@ def test_the_cli_reports_a_refusal_without_publishing(bundle, capsys):
     assert captured.out == ""
 
 
-def test_the_cli_refuses_a_bundle_path_that_is_not_a_directory(tmp_path, capsys):
+def test_the_cli_refuses_a_bundle_path_that_is_not_a_directory(tmp_path, capsys, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     missing = tmp_path / "nowhere"
 
     code = main(["--repo", REPO, "--bundle", str(missing), "--path-in-repo", DESTINATION])
@@ -334,7 +336,8 @@ def test_the_cli_requires_exactly_one_artifact(package, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_the_cli_refuses_a_package_without_publishing(package, capsys):
+def test_the_cli_refuses_a_package_without_publishing(package, capsys, monkeypatch):
+    monkeypatch.chdir(package.parent)
     model = package / "model.onnx"
     model.write_bytes(model.read_bytes() + b"\x00")
 
@@ -386,7 +389,8 @@ def test_a_package_missing_any_file_of_the_contract_is_refused(package, missing)
     assert client.commands == []
 
 
-def test_the_cli_turns_a_missing_card_into_a_refusal_not_a_traceback(package, capsys):
+def test_the_cli_turns_a_missing_card_into_a_refusal_not_a_traceback(package, capsys, monkeypatch):
+    monkeypatch.chdir(package.parent)
     (package / "model-card.md").unlink()
 
     code = main(
@@ -420,3 +424,62 @@ def test_downloaded_symlinks_cannot_escape_verification_workspace(bundle, link_d
     client = LinkedDownload()
     with pytest.raises(hub.HubError, match="outside the verification directory"):
         hub.publish_bundle(REPO, bundle, DESTINATION, runner=client)
+
+
+@pytest.mark.parametrize("argument", ["--bundle", "--package"])
+@pytest.mark.parametrize("escape", ["absolute", "parent", "symlink", "prefix"])
+def test_cli_refuses_external_artifacts_before_publication(
+    tmp_path, monkeypatch, capsys, argument, escape
+):
+    from dicechess_training.hub import __main__ as cli
+
+    workspace = tmp_path / "work"
+    workspace.mkdir()
+    outside = tmp_path / "work-other"
+    outside.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (workspace / "link").symlink_to(outside, target_is_directory=True)
+    monkeypatch.chdir(workspace)
+    paths = {
+        "absolute": str(external),
+        "parent": "../work-other",
+        "symlink": "link",
+        "prefix": str(outside),
+    }
+
+    def unexpected_publication(*args, **kwargs):
+        pytest.fail("external artifact reached publication")
+
+    monkeypatch.setattr(cli, "publish_bundle", unexpected_publication)
+    monkeypatch.setattr(cli, "publish_package", unexpected_publication)
+    assert cli.main(["--repo", REPO, argument, paths[escape], "--path-in-repo", DESTINATION]) == 1
+    result = capsys.readouterr()
+    assert json.loads(result.err)["published"] is False
+    assert "outside the working directory" in result.err
+    assert str(tmp_path) not in result.err
+    assert result.out == ""
+
+
+@pytest.mark.parametrize("argument", ["--bundle", "--package"])
+@pytest.mark.parametrize("absolute", [True, False])
+def test_cli_passes_canonical_in_workspace_artifacts_to_publisher(
+    tmp_path, monkeypatch, capsys, argument, absolute
+):
+    from dicechess_training.hub import __main__ as cli
+
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    monkeypatch.chdir(tmp_path)
+    received = []
+
+    def publish(repo, source, destination):
+        received.append((repo, source, destination))
+        return {}
+
+    monkeypatch.setattr(cli, "publish_bundle", publish)
+    monkeypatch.setattr(cli, "publish_package", publish)
+    raw = str(artifact) if absolute else "artifact"
+    assert cli.main(["--repo", REPO, argument, raw, "--path-in-repo", DESTINATION]) == 0
+    assert received == [(REPO, artifact.resolve(), DESTINATION)]
+    assert json.loads(capsys.readouterr().out)["published"] is True
