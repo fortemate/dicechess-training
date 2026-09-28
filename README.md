@@ -226,8 +226,8 @@ following an open-core model: the framework is open; the competitive artifacts a
 
 ### CLI file boundaries
 
-The benchmark CLI resolves file arguments against its invocation directory and refuses paths
-outside it, including symlink escapes. Run it from a workspace containing the input artifacts and
+The benchmark and Hub publication CLIs resolve file arguments against the invocation directory
+and refuse paths outside it, including symlink escapes. Run them from a workspace containing the input artifacts and
 output location. This check applies to CLI arguments; the Python API accepts caller-managed paths.
 It is not a substitute for filesystem isolation when running an untrusted agent or handling a
 workspace that another process can modify concurrently.

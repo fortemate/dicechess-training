@@ -17,6 +17,8 @@ class SafeParser(argparse.ArgumentParser):
 
 def _artifact_location(raw: str) -> Path:
     resolved = Path(raw).resolve()
+    if not resolved.is_relative_to(Path.cwd().resolve()):
+        raise ValueError("artifact path is outside the working directory")
     if not resolved.is_dir():
         raise ValueError("artifact path is not a directory")
     return resolved
@@ -31,8 +33,8 @@ def main(argv: list[str] | None = None) -> int:
     # publish to; inferring the kind from the directory's contents would guess at the one thing
     # the operator should be explicit about.
     what = parser.add_mutually_exclusive_group(required=True)
-    what.add_argument("--bundle", type=_artifact_location, help="dataset bundle directory")
-    what.add_argument("--package", type=_artifact_location, help="model package directory")
+    what.add_argument("--bundle", help="dataset bundle directory")
+    what.add_argument("--package", help="model package directory")
     parser.add_argument(
         "--path-in-repo",
         required=True,
@@ -41,9 +43,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
         if args.bundle is not None:
-            result = publish_bundle(args.repo, args.bundle, args.path_in_repo)
+            result = publish_bundle(args.repo, _artifact_location(args.bundle), args.path_in_repo)
         else:
-            result = publish_package(args.repo, args.package, args.path_in_repo)
+            result = publish_package(args.repo, _artifact_location(args.package), args.path_in_repo)
     except (HubError, ValueError) as error:
         # The message is written by this package and carries no local path; the Hub client's own
         # diagnostics have already reached the terminal on stderr.
