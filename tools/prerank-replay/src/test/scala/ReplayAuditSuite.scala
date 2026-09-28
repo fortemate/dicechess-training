@@ -57,6 +57,7 @@ class ReplayAuditSuite extends munit.FunSuite:
     assertEquals(counts.get("illegal_paths").getAsLong,0L)
     assertEquals(counts.get("feature_mismatches").getAsLong,1L)
     assertEquals(counts.get("result_mismatches").getAsLong,1L)
+    assertEquals(counts.get("candidate_ep_reconstruction_differences").getAsLong,0L)
     assertEquals(counts.get("terminal_target_mismatches").getAsLong,1L)
   }
 
@@ -67,4 +68,31 @@ class ReplayAuditSuite extends munit.FunSuite:
     val retained = all("a2a4 c1c3 c3c5")
     assertEquals(Dfen.normalizedFen(crossed),Dfen.normalizedFen(retained))
     assert(ReplayAudit.positionKey(crossed) != ReplayAudit.positionKey(retained))
+  }
+
+  test("reject aliases before opening output writers and preserve input bytes") {
+    val dir = Files.createTempDirectory("replay-alias-")
+    val input = dir.resolve("input.json")
+    Files.writeString(input,"[]")
+    val report = dir.resolve("report.json")
+    val states = dir.resolve("states.jsonl")
+    val symlink = Files.createSymbolicLink(dir.resolve("alias.json"), input)
+    val hardlink = Files.createLink(dir.resolve("hard.json"), input)
+    val parentAlias = Files.createSymbolicLink(dir.resolve("parent"),dir)
+    for paths <- List(
+      List(input,report,input), List(input,input,states), List(input,report,report),
+      List(input,report,symlink), List(input,hardlink,states),
+      List(input,report,parentAlias.resolve("report.json"))
+    ) do
+      intercept[IllegalArgumentException](ReplayAudit.main(paths.map(_.toString).toArray))
+      assertEquals(Files.readString(input),"[]")
+      assert(!Files.exists(report))
+      assert(!Files.exists(states))
+  }
+  test("streaming input digest matches SHA-256 across multiple buffers and empty files") {
+    val input = Files.createTempFile("replay-sha-", ".json")
+    for value <- List("", "abc", "0123456789" * 20000) do
+      Files.writeString(input,value)
+      assertEquals(ReplayAudit.fileSha(input),ReplayAudit.sha(value))
+    assertEquals(ReplayAudit.sha("abc"),"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
   }

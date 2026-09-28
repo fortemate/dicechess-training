@@ -22,6 +22,27 @@ object ReplayAudit:
   def positionKey(s: GameState): String = FenParser.serialize(s).split(" ").take(4).mkString(" ")
   def sha(s: String): String =
     MessageDigest.getInstance("SHA-256").digest(s.getBytes(UTF_8)).map("%02x".format(_)).mkString
+  def fileSha(path: Path): String =
+    val digest = MessageDigest.getInstance("SHA-256")
+    val input = Files.newInputStream(path)
+    val buffer = new Array[Byte](65536)
+    try
+      var count = input.read(buffer)
+      while count != -1 do
+        digest.update(buffer, 0, count)
+        count = input.read(buffer)
+    finally input.close()
+    digest.digest().map("%02x".format(_)).mkString
+  def requireDistinctFiles(paths: List[Path]): Unit =
+    def resolved(path: Path): Path =
+      val absolute = path.toAbsolutePath.normalize()
+      if Files.exists(absolute) then absolute.toRealPath()
+      else absolute.getParent.toRealPath().resolve(absolute.getFileName)
+    val normalized = paths.map(resolved)
+    for pair <- normalized.combinations(2) do
+      val List(a, b) = pair: @unchecked
+      require(a != b && !(Files.exists(a) && Files.exists(b) && Files.isSameFile(a,b)),
+        "input, report and states must be distinct files")
   case class Entry(moves: String, state: GameState)
   def entries(root: GameState): List[Entry] =
     TurnGenerator.generateAllLegalTurnPaths(root).map { path =>
@@ -34,6 +55,7 @@ object ReplayAudit:
 
   def main(args: Array[String]): Unit =
     require(args.length == 3, "usage: ReplayAudit <groups.json> <report.json> <states.jsonl>")
+    requireDistinctFiles(args.toList.map(Path.of(_)))
     val counters = scala.collection.mutable.LinkedHashMap.empty[String, Long].withDefaultValue(0L)
     def add(k: String, n: Long = 1): Unit = counters(k) += n
     List("groups", "candidates", "legal_paths", "illegal_paths", "feature_mismatches",
@@ -71,8 +93,9 @@ object ReplayAudit:
             case Some(e) =>
               val after = e.state
               hashes.add(sha(positionKey(after)))
-              if Dfen.normalizedFen(after) != c.get("result_fen").getAsString then add("result_mismatches")
-              if positionKey(after) != c.get("result_fen").getAsString then add("candidate_ep_reconstruction_differences")
+              val stored = c.get("result_fen").getAsString
+              if Dfen.normalizedFen(after) != stored then add("result_mismatches")
+              else if positionKey(after) != stored then add("candidate_ep_reconstruction_differences")
               val actual = RichFeatures.extract(after,mover)
               val expected = c.getAsJsonArray("features").asScala.map(_.getAsDouble).toArray
               if actual.length != expected.length || actual.zip(expected).exists((a,b) => math.abs(a-b)>1e-6) then add("feature_mismatches")
@@ -123,7 +146,7 @@ object ReplayAudit:
     val report = new java.util.LinkedHashMap[String,Object]()
     report.put("schema","prerank-state-audit-v1")
     report.put("engine_version",classOf[GameState].getPackage.getImplementationVersion)
-    report.put("input_sha256",MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(Path.of(args(0)))).map("%02x".format(_)).mkString)
+    report.put("input_sha256",fileSha(Path.of(args(0))))
     report.put("counts",counters.map((k,v) => k -> Long.box(v)).toMap.asJava)
     report.put("witnesses",witnesses)
     report.put("ep_collision_examples",collisionExamples)
