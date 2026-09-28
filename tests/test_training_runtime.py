@@ -12,7 +12,13 @@ import numpy as np
 import pytest
 import torch
 
-from dicechess_training.runtime import RunOptions, TrainingPaused, TrainingRuntimeError, atomic_save
+from dicechess_training.runtime import (
+    RunOptions,
+    Runtime,
+    TrainingPaused,
+    TrainingRuntimeError,
+    atomic_save,
+)
 from dicechess_training.train import train_value_model
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,3 +151,16 @@ def test_completed_early_stop_resumes_without_another_update(tmp_path, monkeypat
     assert all(
         torch.equal(value, restored.state_dict()[key]) for key, value in model.state_dict().items()
     )
+
+
+@pytest.mark.parametrize("failure", [OSError, RuntimeError])
+def test_checkpoint_writer_errors_become_coordinated_failures(tmp_path, monkeypatch, failure):
+    def fail(*_):
+        raise failure("writer failed")
+
+    monkeypatch.setattr(torch, "save", fail)
+    model = torch.nn.Linear(2, 1)
+    optimizer = torch.optim.Adam(model.parameters())
+    with Runtime(RunOptions(device="cpu", checkpoint=tmp_path / "checkpoint.pt")) as runtime:
+        with pytest.raises(TrainingRuntimeError, match="checkpoint save failed"):
+            runtime.checkpoint(model, optimizer, "synthetic", {"epoch": 1})

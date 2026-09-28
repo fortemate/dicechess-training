@@ -248,7 +248,9 @@ class Runtime:
                     },
                     self.options.checkpoint,
                 )
-            except OSError:
+            except Exception:
+                # torch.save also raises RuntimeError for writer/serialization failures.
+                # Every ordinary failure must reach the coordinated broadcast below.
                 failed.fill_(1)
         if self.world_size > 1:
             dist.broadcast(failed, src=0)
