@@ -38,6 +38,7 @@ from dicechess_training.prerank import probes as prober
 from dicechess_training.prerank import roots as rooter
 from dicechess_training.prerank import train as trainer
 from dicechess_training.prerank.groups import KINDS, LICENSE_FILE, GroupsError
+from dicechess_training.runtime import TrainingPaused, TrainingRuntimeError, primary
 
 
 def _directory(raw: str) -> Path:
@@ -130,7 +131,16 @@ def _run_export(args: argparse.Namespace) -> int:
 
 def _run_train(args: argparse.Namespace) -> int:
     corpus = dataset.load_corpus(args.corpus)
-    reports = trainer.fit_seeds(corpus, args.destination, seeds=tuple(args.seeds))
+    reports = trainer.fit_seeds(
+        corpus,
+        args.destination,
+        seeds=tuple(args.seeds),
+        device=args.device,
+        resume=args.resume,
+        stop_after_epochs=args.stop_after_epochs,
+    )
+    if not primary():
+        return 0 if all(report["admissible"] for report in reports) else 2
     summary = trainer.across_seeds(reports)
 
     print(f"trained {len(reports)} runs on {corpus.groups:,} groups")
@@ -221,6 +231,11 @@ def main(argv: list[str] | None = None) -> int:
         # takes any seeds — the library is the escape hatch and the command is the quotable one.
         help="run a subset of the protocol's five seeds; the default is all of them",
     )
+    fit.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    fit.add_argument("--resume", type=Path, help="resume a full training checkpoint for one seed")
+    fit.add_argument(
+        "--stop-after-epochs", type=int, help="save and exit after this many new epochs"
+    )
     fit.set_defaults(handler=_run_train)
 
     ship = commands.add_parser("export", help="export trained weights as a pre-ranker artifact")
@@ -260,7 +275,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return int(args.handler(args))
+    except TrainingPaused as error:
+        if primary():
+            print(f"PAUSED: {error}")
+        return 0
     except (
+        TrainingRuntimeError,
         packer.PackError,
         rooter.RootsError,
         prober.ProbePairError,

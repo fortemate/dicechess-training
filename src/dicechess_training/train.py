@@ -13,6 +13,7 @@ import torch
 from torch import nn
 
 from .model import ValueMLP
+from .runtime import RunOptions, Runtime, identity
 
 
 def train_value_model(
@@ -23,25 +24,48 @@ def train_value_model(
     lr: float = 1e-3,
     seed: int = 0,
     hidden: int = 256,
+    *,
+    options: RunOptions | None = None,
 ) -> ValueMLP:
-    """Train a ValueMLP on CPU. Deterministic for a fixed seed."""
-    torch.manual_seed(seed)
-    model = ValueMLP(hidden=hidden)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.BCEWithLogitsLoss()
-    x = torch.from_numpy(train_x.astype(np.float32))
-    y = torch.from_numpy(train_y.astype(np.float32))
-    model.train()
-    for _ in range(epochs):
-        permutation = torch.randperm(len(x))
-        for start in range(0, len(x), batch_size):
-            batch = permutation[start : start + batch_size]
-            optimizer.zero_grad()
-            loss = loss_fn(model(x[batch]), y[batch])
-            loss.backward()
-            optimizer.step()
-    model.eval()
-    return model
+    """Train on CPU/CUDA with optional torchrun DDP and epoch-boundary recovery."""
+    if min(epochs, batch_size, hidden) < 1 or len(train_x) == 0 or len(train_x) != len(train_y):
+        raise ValueError("training needs matching nonempty arrays and positive sizes")
+    with Runtime(options or RunOptions()) as runtime:
+        runtime.seed(seed)
+        model = ValueMLP(hidden=hidden)
+        wrapped = runtime.wrap(model)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        loss_fn = nn.BCEWithLogitsLoss()
+        x = torch.from_numpy(train_x.astype(np.float32))
+        y = torch.from_numpy(train_y.astype(np.float32))
+        signature = identity(
+            {
+                "trainer": "value-v1",
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "lr": lr,
+                "seed": seed,
+                "hidden": hidden,
+            },
+            train_x,
+            train_y,
+        )
+        restored = runtime.restore(model, optimizer, signature)
+        start_epoch = restored["epoch"] if restored is not None else 0
+        for epoch in range(start_epoch + 1, epochs + 1):
+            wrapped.train()
+            permutation = torch.randperm(len(x))
+            for start in range(0, len(x), batch_size):
+                batch, weight = runtime.partition(permutation[start : start + batch_size])
+                optimizer.zero_grad()
+                loss = loss_fn(wrapped(x[batch].to(runtime.device)), y[batch].to(runtime.device))
+                (loss * weight).backward()
+                optimizer.step()
+            complete = epoch == epochs
+            runtime.checkpoint(model, optimizer, signature, {"epoch": epoch, "complete": complete})
+            runtime.stop(epoch - start_epoch, complete)
+        model.cpu().eval()
+        return model
 
 
 def no_information_log_loss(y: np.ndarray) -> float:

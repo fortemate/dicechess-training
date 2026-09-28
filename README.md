@@ -42,6 +42,8 @@ mise run demo    # end-to-end: toy data → train → holdout metrics → ONNX e
 mise run check   # lint + format + tests, mirrors CI
 ```
 
+For CUDA, two-GPU execution and checkpoint recovery, see [GPU training](docs/gpu-training.md).
+
 The demo trains on [`sample/playsite-bots-v0`](sample/README.md) — 49,000 positions from 2,999
 publicly observable bot-vs-bot games recorded by Fortemate from an independent Dice Chess
 service — and reports holdout log-loss against a no-information baseline, plus a calibration

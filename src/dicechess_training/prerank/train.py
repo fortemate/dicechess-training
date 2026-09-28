@@ -38,6 +38,7 @@ from dicechess_training.prerank.metrics import (
     report as metrics_report,
 )
 from dicechess_training.prerank.model import PreRankMLP, listwise_loss
+from dicechess_training.runtime import RunOptions, Runtime, atomic_save, identity, primary
 
 PROTOCOL = "playground-prerank-v1"
 DEFAULT_K = 48
@@ -157,14 +158,25 @@ def score_all(model: PreRankMLP, corpus: Corpus, batch: int = 65536) -> np.ndarr
     with torch.no_grad():
         for start in range(0, len(out), batch):
             stop = min(start + batch, len(out))
-            block = torch.from_numpy(corpus.features[start:stop])
-            out[start:stop] = model(block).reshape(-1).numpy()
+            block = torch.from_numpy(corpus.features[start:stop]).to(
+                next(model.parameters()).device
+            )
+            out[start:stop] = model(block).reshape(-1).cpu().numpy()
     return out
 
 
-def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreRankMLP, np.ndarray]:
-    """One training run: the report, the fitted model, and its score for every candidate."""
-    torch.manual_seed(hyper.seed)
+def train(
+    corpus: Corpus, hyper: Hyperparameters = DEFAULTS, *, options: RunOptions | None = None
+) -> tuple[dict, PreRankMLP, np.ndarray]:
+    """Train on CPU or CUDA; torchrun enables DDP. Returned weights remain CPU-exportable."""
+    if min(hyper.max_epochs, hyper.batch_groups, hyper.patience, hyper.k) < 1:
+        raise TrainingError("epochs, batch size, patience and shortlist must be positive")
+    with Runtime(options or RunOptions()) as runtime:
+        return _train(corpus, hyper, runtime)
+
+
+def _train(corpus: Corpus, hyper: Hyperparameters, runtime: Runtime):
+    runtime.seed(hyper.seed)
     rng = np.random.default_rng(hyper.seed)
 
     fitting = trainable(corpus, "train")
@@ -188,26 +200,50 @@ def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreR
         feature_mean=mean,
         feature_scale=scale,
     ).double()
+    wrapped = runtime.wrap(model)
     optimiser = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate)
+    signature = identity(
+        {"trainer": "prerank-v1", "hyper": asdict(hyper), "manifest": corpus.manifest},
+        corpus.features,
+        corpus.targets,
+        corpus.offsets,
+        corpus.splits,
+    )
 
     history: list[dict] = []
     best = {"recall_at_k": -1.0}
     best_state: dict | None = None
     best_epoch = -1
 
-    for epoch in range(1, hyper.max_epochs + 1):
-        model.train()
+    start_epoch = 0
+    complete = False
+    restored = runtime.restore(model, optimiser, signature)
+    if restored is not None:
+        start_epoch = restored["epoch"]
+        complete = restored["complete"]
+        history = restored["history"]
+        best = restored["best"]
+        best_state = restored["best_state"]
+        best_epoch = restored["best_epoch"]
+        rng.bit_generator.state = json.loads(restored["shuffle_rng"])
+
+    for epoch in range(start_epoch + 1, hyper.max_epochs + 1):
+        if complete:
+            break
+        wrapped.train()
         shuffled = rng.permutation(fitting)
         total = 0.0
         batches = 0
         for start in range(0, len(shuffled), hyper.batch_groups):
-            chunk = shuffled[start : start + hyper.batch_groups]
-            features, batch_gains, index = _batch(corpus, gains, chunk)
+            chunk, weight = runtime.partition(shuffled[start : start + hyper.batch_groups])
+            features, batch_gains, index = (
+                tensor.to(runtime.device) for tensor in _batch(corpus, gains, chunk)
+            )
             optimiser.zero_grad()
-            loss = listwise_loss(model(features), batch_gains, index, len(chunk))
+            loss = listwise_loss(wrapped(features), batch_gains, index, len(chunk)) * weight
             loss.backward()
             optimiser.step()
-            total += float(loss.detach())
+            total += runtime.mean(float(loss.detach()))
             batches += 1
 
         validation = ranking_metrics(corpus, score_all(model, corpus), measuring, hyper.k)
@@ -215,9 +251,25 @@ def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreR
         if validation["recall_at_k"] > best["recall_at_k"]:
             best = validation
             best_epoch = epoch
-            best_state = {key: value.clone() for key, value in model.state_dict().items()}
-        elif epoch - best_epoch >= hyper.patience:
-            break
+            best_state = {
+                key: value.detach().cpu().clone() for key, value in model.state_dict().items()
+            }
+        complete = epoch == hyper.max_epochs or epoch - best_epoch >= hyper.patience
+        runtime.checkpoint(
+            model,
+            optimiser,
+            signature,
+            {
+                "epoch": epoch,
+                "complete": complete,
+                "history": history,
+                "best": best,
+                "best_epoch": best_epoch,
+                "best_state": best_state,
+                "shuffle_rng": json.dumps(rng.bit_generator.state),
+            },
+        )
+        runtime.stop(epoch - start_epoch, complete)
 
     if best_state is not None:
         model.load_state_dict(best_state)
@@ -251,7 +303,7 @@ def train(corpus: Corpus, hyper: Hyperparameters = DEFAULTS) -> tuple[dict, PreR
         best["recall_at_k"] > report["baselines"]["material_diff"]["recall_at_k"]
     )
     report["by_shortlist"] = by_shortlist(corpus, scores, hyper.seed)
-    return report, model, scores
+    return report, model.cpu(), scores
 
 
 def by_shortlist(corpus: Corpus, scores: np.ndarray, seed: int, split: str = "validation") -> dict:
@@ -289,7 +341,13 @@ WEIGHTS_FILE = "weights-seed-{seed}.pt"
 
 
 def fit_seeds(
-    corpus: Corpus, destination: str | Path, seeds: tuple[int, ...] = PROTOCOL_SEEDS
+    corpus: Corpus,
+    destination: str | Path,
+    seeds: tuple[int, ...] = PROTOCOL_SEEDS,
+    *,
+    device: str = "auto",
+    resume: Path | None = None,
+    stop_after_epochs: int | None = None,
 ) -> list[dict]:
     """Run the protocol's seeds against one corpus, writing each run's report and weights.
 
@@ -305,15 +363,27 @@ def fit_seeds(
     """
     if len(set(seeds)) != len(seeds):
         raise TrainingError("a seed appears twice; the second run would overwrite the first")
+    if (resume is not None or stop_after_epochs is not None) and len(seeds) != 1:
+        raise TrainingError("resumed or bounded training requires exactly one seed")
     folder = Path(destination)
     folder.mkdir(parents=True, exist_ok=True)
     reports: list[dict] = []
     for seed in seeds:
-        report, model, _ = train(corpus, Hyperparameters(seed=seed))
-        torch.save(model.state_dict(), folder / WEIGHTS_FILE.format(seed=seed))
-        (folder / REPORT_FILE.format(seed=seed)).write_text(
-            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        report, model, _ = train(
+            corpus,
+            Hyperparameters(seed=seed),
+            options=RunOptions(
+                device=device,
+                checkpoint=folder / f"checkpoint-seed-{seed}.pt",
+                resume=resume,
+                stop_after_epochs=stop_after_epochs,
+            ),
         )
+        if primary():
+            atomic_save(model.state_dict(), folder / WEIGHTS_FILE.format(seed=seed))
+            (folder / REPORT_FILE.format(seed=seed)).write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
         reports.append(report)
     return reports
 
