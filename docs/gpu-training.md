@@ -106,6 +106,10 @@ report rather than interpreting every launcher failure as a missing checkpoint.
 can lose every file that exists only in `/kaggle/working`; atomic saving is not external storage.
 Recovery is guaranteed only from a checkpoint already present in a committed output or another
 approved durable destination. Keep the previous committed version until its successor is verified.
+If directory synchronization fails after replacement, the local destination may already contain
+the new checkpoint. The runtime reports failure; treat that output as unverified and recover from
+the preceding committed version. The atomic writer does not certify storage durability after a
+failed filesystem synchronization.
 
 ## Mechanical checks and data admission
 
