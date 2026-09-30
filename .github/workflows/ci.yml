@@ -54,3 +54,7 @@ jobs:
       - name: Synthetic complete-turn replay audit
         working-directory: tools/prerank-replay
         run: sbt -batch test
+
+      - name: Synthetic experimental pre-ranker features
+        working-directory: tools/prerank-experimental
+        run: sbt -batch test
