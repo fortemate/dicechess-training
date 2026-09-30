@@ -21,6 +21,9 @@ from dicechess_training.prerank.model import PreRankMLP
 
 SCHEMA = "experimental-prerank-arrays-v1"
 FEATURE_SCHEMA = "experimental-prerank-features-v1"
+MANIFEST_FILE = "manifest.json"
+FEATURES_FILE = "features.jsonl"
+ARRAYS_FILE = "arrays.npz"
 SPLITS = ("train", "early_stop", "screen")
 C_VOCABULARY = 2 * 16 * 10 * 64
 C_TOKENS = 64
@@ -119,11 +122,37 @@ class ExperimentalCorpus:
             )
 
 
+def _pack_row(arrays: dict, at: int, row: dict) -> None:
+    """Validate one engine row before storing compact numeric representations."""
+    require(
+        type(row["target"]) is int and type(row["terminal"]) is bool,
+        "target/mask must be integer/boolean",
+    )
+    require(len(row["a"]) == 9 and len(row["b"]) == 13, "invalid feature width")
+    require(len(row["c"]) == 2, "two C anchors required")
+    arrays["a"][at] = row["a"]
+    arrays["b"][at] = row["b"]
+    arrays["targets"][at] = row["target"]
+    arrays["terminal"][at] = row["terminal"]
+    for anchor, ids in enumerate(row["c"]):
+        require(
+            len(ids) <= C_TOKENS
+            and all(
+                type(i) is int
+                and anchor * C_VOCABULARY // 2 <= i < (anchor + 1) * C_VOCABULARY // 2
+                for i in ids
+            ),
+            "invalid C IDs",
+        )
+        require(ids == sorted(set(ids)), "C IDs must be unique and ordered")
+        arrays["c"][at, anchor, : len(ids)] = ids
+
+
 def pack(
     features: Path, splits: Path, destination: Path, *, source_sha256: str, splits_sha256: str
 ) -> dict:
     """Pack a pinned engine export with a pre-frozen split map; refuse output reuse."""
-    manifest = json.loads((features / "manifest.json").read_text())
+    manifest = json.loads((features / MANIFEST_FILE).read_text())
     require(
         manifest["schema"] == FEATURE_SCHEMA and manifest["engine_version"] == "0.14.0",
         "unsupported experimental engine export",
@@ -134,7 +163,7 @@ def pack(
     )
     require(manifest["source_sha256"] == source_sha256, "source digest differs")
     require(
-        digest(features / "features.jsonl") == manifest["features_sha256"], "feature digest differs"
+        digest(features / FEATURES_FILE) == manifest["features_sha256"], "feature digest differs"
     )
     require(digest(splits) == splits_sha256, "split digest differs")
     assignments = json.loads(splits.read_text())
@@ -143,19 +172,19 @@ def pack(
     require(
         type(total) is int and total > 0 and type(groups) is int and groups > 0, "invalid counts"
     )
-    arrays = dict(
-        a=np.empty((total, 9), np.float32),
-        b=np.empty((total, 13), np.float32),
-        c=np.full((total, 2, C_TOKENS), -1, np.int16),
-        targets=np.empty(total, np.int64),
-        terminal=np.empty(total, np.bool_),
-        offsets=np.zeros(groups + 1, np.int64),
-        splits=np.empty(groups, dtype="U10"),
-        tie_order=np.empty(total, np.int64),
-    )
+    arrays = {
+        "a": np.empty((total, 9), np.float32),
+        "b": np.empty((total, 13), np.float32),
+        "c": np.full((total, 2, C_TOKENS), -1, np.int16),
+        "targets": np.empty(total, np.int64),
+        "terminal": np.empty(total, np.bool_),
+        "offsets": np.zeros(groups + 1, np.int64),
+        "splits": np.empty(groups, dtype="U10"),
+        "tie_order": np.empty(total, np.int64),
+    }
     seen = set()
     at = 0
-    with (features / "features.jsonl").open() as stream:
+    with (features / FEATURES_FILE).open() as stream:
         for g, line in enumerate(stream):
             require(g < groups, "too many groups")
             record = json.loads(line)
@@ -172,42 +201,21 @@ def pack(
             ranks[order] = np.arange(len(rows))
             arrays["tie_order"][at : at + len(rows)] = ranks
             for row in rows:
-                require(
-                    type(row["target"]) is int and type(row["terminal"]) is bool,
-                    "target/mask must be integer/boolean",
-                )
-                require(len(row["a"]) == 9 and len(row["b"]) == 13, "invalid feature width")
-                require(len(row["c"]) == 2, "two C anchors required")
-                arrays["a"][at] = row["a"]
-                arrays["b"][at] = row["b"]
-                arrays["targets"][at] = row["target"]
-                arrays["terminal"][at] = row["terminal"]
-                for anchor, ids in enumerate(row["c"]):
-                    require(
-                        len(ids) <= C_TOKENS
-                        and all(
-                            type(i) is int
-                            and anchor * C_VOCABULARY // 2 <= i < (anchor + 1) * C_VOCABULARY // 2
-                            for i in ids
-                        ),
-                        "invalid C IDs",
-                    )
-                    require(ids == sorted(set(ids)), "C IDs must be unique and ordered")
-                    arrays["c"][at, anchor, : len(ids)] = ids
+                _pack_row(arrays, at, row)
                 at += 1
             arrays["offsets"][g + 1] = at
     require(
         at == total and len(seen) == groups and seen == set(assignments), "counts/split map differ"
     )
     require(
-        digest(features / "features.jsonl") == manifest["features_sha256"]
+        digest(features / FEATURES_FILE) == manifest["features_sha256"]
         and digest(splits) == splits_sha256,
         "input changed during packing",
     )
     corpus = ExperimentalCorpus(**arrays)
     corpus.validate()
     destination.mkdir()
-    np.savez_compressed(destination / "arrays.npz", **arrays)
+    np.savez_compressed(destination / ARRAYS_FILE, **arrays)
     output = {
         "schema": SCHEMA,
         "feature_schema": FEATURE_SCHEMA,
@@ -215,27 +223,27 @@ def pack(
         "source_sha256": source_sha256,
         "splits_sha256": splits_sha256,
         "features_sha256": manifest["features_sha256"],
-        "arrays_sha256": digest(destination / "arrays.npz"),
+        "arrays_sha256": digest(destination / ARRAYS_FILE),
         "groups": groups,
         "candidates": total,
         "role": "development-only; no transfer admission",
         "split_groups": {s: len(corpus.of(s)) for s in SPLITS},
     }
-    (destination / "manifest.json").write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
+    (destination / MANIFEST_FILE).write_text(json.dumps(output, indent=2, sort_keys=True) + "\n")
     return output
 
 
 def load(directory: Path, *, manifest_sha256: str) -> ExperimentalCorpus:
     """Load only a caller-pinned completion marker and non-pickle arrays."""
-    require(digest(directory / "manifest.json") == manifest_sha256, "manifest digest differs")
-    manifest = json.loads((directory / "manifest.json").read_text())
+    require(digest(directory / MANIFEST_FILE) == manifest_sha256, "manifest digest differs")
+    manifest = json.loads((directory / MANIFEST_FILE).read_text())
     require(
         manifest["schema"] == SCHEMA
         and manifest["feature_schema"] == FEATURE_SCHEMA
         and manifest["engine_version"] == "0.14.0",
         "unsupported array contract",
     )
-    path = directory / "arrays.npz"
+    path = directory / ARRAYS_FILE
     require(digest(path) == manifest["arrays_sha256"], "array digest differs")
     with np.load(path, allow_pickle=False) as archive:
         require(set(archive.files) == ARRAY_KEYS, "unexpected array keys")

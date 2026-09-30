@@ -109,7 +109,8 @@ def test_terminal_never_reaches_model_even_with_missing_king_ids():
     scores = score_candidates(
         Spy(), torch.tensor([[float("nan")], [42.0]]), torch.tensor([True, False])
     )
-    assert torch.isposinf(scores[0]) and scores[1] == 3
+    assert torch.isposinf(scores[0])
+    assert scores[1] == 3
     scores = score_candidates(Spy(), torch.zeros(2, 1), torch.tensor([True, True]))
     assert torch.isposinf(scores).all()
 
@@ -130,12 +131,14 @@ def test_hashes_and_output_reuse_fail_closed(bundle, tmp_path):
     source, splits, destination = bundle
     with pytest.raises(ValueError, match="manifest digest"):
         load(destination, manifest_sha256="1" * 64)
+    split_hash = digest(splits)
+    bad = tmp_path / "bad"
     with pytest.raises(FileExistsError):
-        pack(source, splits, destination, source_sha256="0" * 64, splits_sha256=digest(splits))
+        pack(source, splits, destination, source_sha256="0" * 64, splits_sha256=split_hash)
     with (source / "features.jsonl").open("a") as stream:
         stream.write("{}\n")
     with pytest.raises(ValueError, match="feature digest"):
-        pack(source, splits, tmp_path / "bad", source_sha256="0" * 64, splits_sha256=digest(splits))
+        pack(source, splits, bad, source_sha256="0" * 64, splits_sha256=split_hash)
     assert not (tmp_path / "bad").exists()
 
 
