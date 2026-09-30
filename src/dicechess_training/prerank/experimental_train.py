@@ -163,7 +163,7 @@ def train(
             all(p.dtype == torch.float32 for p in model.parameters()), "float32 parameters required"
         )
         wrapped = runtime.wrap(model)
-        optimizer = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate, weight_decay=0.0)
         signature = identity(
             {"protocol": PROTOCOL, "arm": arm, "hyper": asdict(hyper), "input": input_identity},
             corpus.a,

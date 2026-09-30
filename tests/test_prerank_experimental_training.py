@@ -107,12 +107,14 @@ def test_resume_refuses_other_arm_changed_inputs_and_plan(tmp_path):
     checkpoint = tmp_path / "checkpoint.pt"
     corpus = oracle.fixture()
     hyper = trainer.Hyperparameters(max_epochs=3, patience=3)
+    segment_options = RunOptions(device="cpu", checkpoint=checkpoint, stop_after_epochs=1)
+    resume_options = RunOptions(device="cpu", resume=checkpoint)
     with pytest.raises(TrainingPaused):
         trainer.train(
             corpus,
             "A",
             hyper,
-            options=RunOptions(device="cpu", checkpoint=checkpoint, stop_after_epochs=1),
+            options=segment_options,
             input_identity="first",
         )
     changed = oracle.fixture()
@@ -127,7 +129,7 @@ def test_resume_refuses_other_arm_changed_inputs_and_plan(tmp_path):
                 data,
                 arm,
                 hyper,
-                options=RunOptions(device="cpu", resume=checkpoint),
+                options=resume_options,
                 input_identity=plan,
             )
 

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from dicechess_training.prerank.experimental import ExperimentalCorpus
-from dicechess_training.prerank.experimental_train import Hyperparameters, train
+from dicechess_training.prerank.experimental_train import CHECKPOINT_FILE, Hyperparameters, train
 from dicechess_training.runtime import RunOptions, Runtime, TrainingPaused, atomic_save
 
 
@@ -67,35 +67,39 @@ def run(args):
     rank = int(os.environ.get("RANK", "0"))
     arms = (args.arm,) if args.arm else ("A", "B", "C")
     for arm in arms:
-        base = args.destination / arm
-        folder = base / ("full" if args.mode == "full" else "resumed")
-        options = RunOptions(
-            device=args.device,
-            checkpoint=folder / "checkpoint.pt",
-            resume=folder / "checkpoint.pt" if args.mode == "resume" else None,
-            stop_after_epochs=1 if args.mode == "segment" else None,
+        run_arm(args, arm, rank)
+
+
+def run_arm(args, arm, rank):
+    base = args.destination / arm
+    folder = base / ("full" if args.mode == "full" else "resumed")
+    options = RunOptions(
+        device=args.device,
+        checkpoint=folder / CHECKPOINT_FILE,
+        resume=folder / CHECKPOINT_FILE if args.mode == "resume" else None,
+        stop_after_epochs=1 if args.mode == "segment" else None,
+    )
+    try:
+        report, model = train(
+            fixture(),
+            arm,
+            Hyperparameters(seed=11, max_epochs=3, patience=3, batch_groups=4),
+            options=options,
+            input_identity="synthetic-arithmetic",
         )
-        try:
-            report, model = train(
-                fixture(),
-                arm,
-                Hyperparameters(seed=11, max_epochs=3, patience=3, batch_groups=4),
-                options=options,
-                input_identity="synthetic-arithmetic",
-            )
-            atomic_save(
-                {"model": model.state_dict(), "report": report}, folder / f"result-rank-{rank}.pt"
-            )
-        except TrainingPaused:
-            if args.mode != "segment":
-                raise
-        if args.mode == "resume":
-            for name in ("checkpoint.pt", f"result-rank-{rank}.pt"):
-                left = torch.load(base / "full" / name, weights_only=True, map_location="cpu")
-                right = torch.load(base / "resumed" / name, weights_only=True, map_location="cpu")
-                assert equal(left, right), f"{arm}: interrupted continuation differs"
-        if rank == 0:
-            print(f"{arm} {args.mode}: synthetic recovery check passed", flush=True)
+        atomic_save(
+            {"model": model.state_dict(), "report": report}, folder / f"result-rank-{rank}.pt"
+        )
+    except TrainingPaused:
+        if args.mode != "segment":
+            raise
+    if args.mode == "resume":
+        for name in (CHECKPOINT_FILE, f"result-rank-{rank}.pt"):
+            left = torch.load(base / "full" / name, weights_only=True, map_location="cpu")
+            right = torch.load(base / "resumed" / name, weights_only=True, map_location="cpu")
+            assert equal(left, right), f"{arm}: interrupted continuation differs"
+    if rank == 0:
+        print(f"{arm} {args.mode}: synthetic recovery check passed", flush=True)
 
 
 if __name__ == "__main__":
