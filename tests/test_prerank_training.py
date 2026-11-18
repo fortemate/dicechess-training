@@ -40,6 +40,7 @@ from dicechess_training.prerank.train import (
     ranking_metrics,
     train,
 )
+from dicechess_training.runtime import RunOptions
 
 COLUMNS = (
     "p_diff",
@@ -82,6 +83,20 @@ def _corpus(sizes: list[int], splits: list[str], seed: int = 0) -> Corpus:
             "columns": list(COLUMNS),
         },
     )
+
+
+def test_prerank_training_uses_adam_without_weight_decay(observed_optimizers):
+    corpus = _corpus([4, 4, 4], ["train", "validation", "test"])
+    hyper = Hyperparameters(hidden_dims=(4,), learning_rate=0.002, max_epochs=1, k=2)
+    train(corpus, hyper, options=RunOptions(device="cpu"))
+
+    assert len(observed_optimizers) == 1
+    optimizer = observed_optimizers[0]
+    assert type(optimizer) is torch.optim.Adam
+    assert optimizer.defaults["lr"] == 0.002
+    assert optimizer.defaults["weight_decay"] == 0
+    assert type(optimizer.defaults["weight_decay"]) is int
+    assert [group["weight_decay"] for group in optimizer.param_groups] == [0]
 
 
 def test_gains_sum_to_one_and_favour_the_best() -> None:
