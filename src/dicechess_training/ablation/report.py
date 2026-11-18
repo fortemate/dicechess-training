@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 NOTE_ALERT = "> [!NOTE]"
+_FOUR_COL_SEPARATOR = "|---|---|---|---|"
+_FIVE_COL_SEPARATOR = "|---|---|---|---|---|"
 _SEVEN_COL_SEPARATOR = "|---|---|---|---|---|---|---|"
 
 
@@ -73,23 +75,24 @@ def _render_header(
     lines.append("")
 
     if sel_name is None:
-        lines.append("> [!CAUTION]")
-        lines.append(
-            "> **Development Verdict**: no schema was selected. "
-            + decision.get("inadmissible_reason", "no schema cleared the admissibility floor")
-        )
-        lines.append(
-            "> This run selects nothing and hands nothing to training; its numbers are evidence "
-            "about the run, not about the schemas."
+        lines.extend(
+            [
+                "> [!CAUTION]",
+                "> **Development Verdict**: no schema was selected. "
+                + decision.get("inadmissible_reason", "no schema cleared the admissibility floor"),
+                "> This run selects nothing and hands nothing to training; "
+                "its numbers are evidence "
+                "about the run, not about the schemas.",
+            ]
         )
     elif sel_name == "S0":
-        lines.append(NOTE_ALERT)
-        lines.append(
-            "> **Development Verdict**: Neither wider candidate cleared all development gates."
-        )
-        lines.append(
-            "> Baseline **S0 (`kcp-13`) remains the development reference**; "
-            "final owner qualification remains pending."
+        lines.extend(
+            [
+                NOTE_ALERT,
+                "> **Development Verdict**: Neither wider candidate cleared all development gates.",
+                "> Baseline **S0 (`kcp-13`) remains the development reference**; "
+                "final owner qualification remains pending.",
+            ]
         )
     else:
         lines.append("> [!IMPORTANT]")
@@ -114,7 +117,7 @@ def _render_input_shards(report: dict[str, Any]) -> list[str]:
         "producer sessions, so identical data can land in byte-different files.",
         "",
         "| Schema | Shard File | File SHA-256 | Content SHA-256 |",
-        "|---|---|---|---|",
+        _FOUR_COL_SEPARATOR,
     ]
     for skey, files in sorted(shards.items()):
         for fname, digest_val in sorted(files.items()):
@@ -140,7 +143,7 @@ def _render_admissibility(report: dict[str, Any], schemas: dict[str, Any]) -> li
         f"`{no_info['reference']}` = {no_info['prediction']:.4f}.",
         "",
         f"| Predictor | {metric.replace('_', ' ').title()} | Brier | ECE | Verdict |",
-        "|---|---|---|---|---|",
+        _FIVE_COL_SEPARATOR,
         f"| No-information reference | {ref_scores[metric]:.4f} | {ref_scores['brier']:.4f} | "
         f"{ref_scores['ece']:.4f} | Reference |",
     ]
@@ -226,7 +229,7 @@ def _render_diagnostic_ensemble(schemas: dict[str, Any]) -> list[str]:
         "Reported for variance-reduction diagnostics; not the single-model deployable contract.",
         "",
         "| Schema | Features | Ensemble Log Loss | Ensemble Brier | Ensemble ECE |",
-        "|---|---|---|---|---|",
+        _FIVE_COL_SEPARATOR,
     ]
     for skey in ["S0", "S1", "S2"]:
         ens = schemas[skey]["ensemble_diagnostic"]["scores"]
@@ -244,7 +247,7 @@ def _render_gate_checklist(gates: dict[str, Any]) -> list[str]:
         "### Gate Checklist",
         "",
         "| Gate Rule | S1 (`kcp-mobility-27-v1`) | S2 (`kcp-mobility-pawns-31-v1`) | Requirement |",
-        "|---|---|---|---|",
+        _FOUR_COL_SEPARATOR,
     ]
     rules = [
         ("relative_log_loss_gain_gte_1pct", ">= +1.0% relative gain on full validation"),
@@ -373,7 +376,7 @@ def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
         "## 6. Probe Suite Behavior",
         "",
         "| Check | S0 | S1 | S2 |",
-        "|---|---|---|---|",
+        _FOUR_COL_SEPARATOR,
     ]
     s0_pr = schemas["S0"]["ensemble_diagnostic"]["probes"]["checks"]
     s1_pr = schemas["S1"]["ensemble_diagnostic"]["probes"]["checks"]
@@ -388,36 +391,36 @@ def _render_probe_suite_table(schemas: dict[str, Any]) -> list[str]:
 
 
 def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]:
-    lines = ["## 7. Feature Extraction Cost Analysis", ""]
     if extraction_cost is None:
-        lines.append(NOTE_ALERT)
-        lines.append("> **Status**: Not measured (no verified JVM benchmark artifact provided).")
-        lines.append(
+        return [
+            "## 7. Feature Extraction Cost Analysis",
+            "",
+            NOTE_ALERT,
+            "> **Status**: Not measured (no verified JVM benchmark artifact provided).",
             '> Run `sbt "runMain dicechess.training.golden.ExtractionBenchmarkApp '
             "tests/fixtures/kcp13/probes.tsv "
             'tests/fixtures/benchmark/extraction-cost-0.9.3.json"` '
-            "to measure verified JVM latency."
-        )
-        return lines
+            "to measure verified JVM latency.",
+        ]
+    lines = ["## 7. Feature Extraction Cost Analysis", ""]
 
     rt = extraction_cost.get("runtime", {})
     cfg = extraction_cost.get("config", {})
-    lines.append(
-        f"Feature extraction measured with JVM engine `{extraction_cost.get('engine_artifact')}` "
-        f"({cfg.get('sample_iterations', 50)} samples per probe after "
-        f"{cfg.get('warmup_iterations', 20)} warmups):"
+    lines.extend(
+        [
+            "Feature extraction measured with JVM engine "
+            f"`{extraction_cost.get('engine_artifact')}` "
+            f"({cfg.get('sample_iterations', 50)} samples per probe after "
+            f"{cfg.get('warmup_iterations', 20)} warmups):",
+            f"- Runtime: Java `{rt.get('java_version')}` ({rt.get('java_vendor')}) on "
+            f"`{rt.get('os_name')}` ({rt.get('os_arch')})",
+            f"- Timestamp: `{extraction_cost.get('timestamp')}`",
+            "",
+            "| Probe Position | S0 Latency (median) | S1 Latency (median) | "
+            "S2 Latency (median) | S2 Overhead |",
+            _FIVE_COL_SEPARATOR,
+        ]
     )
-    lines.append(
-        f"- Runtime: Java `{rt.get('java_version')}` ({rt.get('java_vendor')}) on "
-        f"`{rt.get('os_name')}` ({rt.get('os_arch')})"
-    )
-    lines.append(f"- Timestamp: `{extraction_cost.get('timestamp')}`")
-    lines.append("")
-    lines.append(
-        "| Probe Position | S0 Latency (median) | S1 Latency (median) | "
-        "S2 Latency (median) | S2 Overhead |"
-    )
-    lines.append("|---|---|---|---|---|")
 
     probes_data = extraction_cost.get("probes", {})
     key_probes = ["start-w", "start-b", "bare-kings", "blocked-pawns-w", "passed-pawn-w"]
@@ -432,15 +435,15 @@ def _render_extraction_cost(extraction_cost: dict[str, Any] | None) -> list[str]
                 f"| `{pid}` | {s0_m:,.1f} μs | {s1_m:,.1f} μs | {s2_m:,.1f} μs | {ov2:+.1f}% |"
             )
 
-    lines.append("")
-    lines.append(NOTE_ALERT)
-    lines.append(
-        "> Over 98% of extraction time across all positions is consumed by the "
-        "216-outcome KCP probability search."
-    )
-    lines.append(
-        "> Pseudo-legal mobility generation (S1) and passed-pawn bitboard masks (S2) "
-        "add negligible latency overhead (<= 10% bound satisfied)."
+    lines.extend(
+        [
+            "",
+            NOTE_ALERT,
+            "> Over 98% of extraction time across all positions is consumed by the "
+            "216-outcome KCP probability search.",
+            "> Pseudo-legal mobility generation (S1) and passed-pawn bitboard masks (S2) "
+            "add negligible latency overhead (<= 10% bound satisfied).",
+        ]
     )
     return lines
 
@@ -503,17 +506,15 @@ def _render_interpretation(
 
 
 def _render_next_actions() -> list[str]:
-    lines = ["## 8. Next Actions", ""]
-    lines.append(
+    return [
+        "## 8. Next Actions",
+        "",
         "1. **Private Qualification**: Issue #17 remains open pending owner execution "
-        "of the frozen protocol on the private corpus."
-    )
-    lines.append(
+        "of the frozen protocol on the private corpus.",
         "2. **ADR 0001 Maintenance**: Retain provisional development findings in ADR 0001; "
-        "final amendment occurs after owner qualification."
-    )
-    lines.append("3. **Value Model Training**: S0 remains the current baseline contract for #13.")
-    return lines
+        "final amendment occurs after owner qualification.",
+        "3. **Value Model Training**: S0 remains the current baseline contract for #13.",
+    ]
 
 
 def render_markdown_report(report: dict[str, Any]) -> str:
