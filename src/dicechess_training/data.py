@@ -16,15 +16,22 @@ from .schema import PIECE_TYPES, RESULTS, validate_frame
 _NON_KING = PIECE_TYPES.replace("K", "")
 
 
+def _place_random_non_kings(
+    board: np.ndarray, squares: np.ndarray, rng: np.random.Generator
+) -> None:
+    """Populate sampled non-king squares using the generator's current state."""
+    for sq in squares:
+        piece = _NON_KING[int(rng.integers(len(_NON_KING)))]
+        board[sq] = piece if rng.random() < 0.5 else piece.lower()
+
+
 def _random_fen(rng: np.random.Generator) -> str:
     """Random sparse placement with exactly two kings. Not necessarily legal."""
     board = np.full(64, "", dtype=object)
     squares = rng.choice(64, size=2 + int(rng.integers(2, 12)), replace=False)
     board[squares[0]] = "K"
     board[squares[1]] = "k"
-    for sq in squares[2:]:
-        piece = _NON_KING[int(rng.integers(len(_NON_KING)))]
-        board[sq] = piece if rng.random() < 0.5 else piece.lower()
+    _place_random_non_kings(board, squares[2:], rng)
     ranks = []
     for rank in range(7, -1, -1):
         row, empty = "", 0

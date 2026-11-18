@@ -20,18 +20,24 @@ FEATURE_DIM = BOARD_DIM + DICE_DIM
 _PIECE_INDEX = {p: i for i, p in enumerate(PIECE_TYPES)}
 
 
-def parse_fen_placement(fen: str) -> np.ndarray:
-    """Parse the placement field of a FEN into a (12, 64) white-perspective array.
-
-    Planes 0-5: white P N B R Q K; planes 6-11: black. Square index is
-    rank * 8 + file with rank 0 = rank '1' (White's back rank).
-    """
+def _fen_ranks(fen: str) -> list[str]:
+    """Read the placement field and validate its rank count."""
     fields = fen.split()
     if not fields:
         raise ValueError(f"FEN is empty: {fen!r}")
     ranks = fields[0].split("/")
     if len(ranks) != 8:
         raise ValueError(f"FEN placement must have 8 ranks: {fen!r}")
+    return ranks
+
+
+def parse_fen_placement(fen: str) -> np.ndarray:
+    """Parse the placement field of a FEN into a (12, 64) white-perspective array.
+
+    Planes 0-5: white P N B R Q K; planes 6-11: black. Square index is
+    rank * 8 + file with rank 0 = rank '1' (White's back rank).
+    """
+    ranks = _fen_ranks(fen)
     planes = np.zeros((12, 64), dtype=np.float32)
     for fen_row, rank_str in enumerate(ranks):
         rank = 7 - fen_row  # FEN lists rank 8 first

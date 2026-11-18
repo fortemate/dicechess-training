@@ -45,3 +45,63 @@ def test_invalid_fen_rejected():
     for empty in ("", "   "):
         with pytest.raises(ValueError, match="empty"):
             features.parse_fen_placement(empty)
+
+
+@pytest.mark.parametrize("suffix", ["", " w - - 0 1", " ignored metadata"])
+def test_placement_maps_all_piece_planes_and_ignores_other_fields(suffix):
+    fen = f" \tPNBRQK2/8/8/8/8/8/8/pnbrqk2{suffix}\n"
+    actual = features.parse_fen_placement(fen)
+    expected = np.zeros((12, 64), dtype=np.float32)
+    for piece in range(6):
+        expected[piece, 56 + piece] = 1.0
+        expected[6 + piece, piece] = 1.0
+
+    np.testing.assert_array_equal(actual, expected)
+    assert actual.dtype == np.float32
+
+
+@pytest.mark.parametrize("rank", ["8", "08", "11111111", "٨"])
+def test_placement_preserves_accepted_numeric_rank_spellings(rank):
+    fen = "/".join([rank] * 8)
+    actual = features.parse_fen_placement(fen)
+    np.testing.assert_array_equal(actual, np.zeros((12, 64), dtype=np.float32))
+
+
+@pytest.mark.parametrize(
+    ("fen", "error", "message"),
+    [
+        ("", ValueError, "FEN is empty: ''"),
+        ("   ", ValueError, "FEN is empty: '   '"),
+        (
+            "8/8/8/8/8/8/8",
+            ValueError,
+            "FEN placement must have 8 ranks: '8/8/8/8/8/8/8'",
+        ),
+        (
+            "8/8/8/8/8/8/8/X7",
+            ValueError,
+            "unexpected piece 'X' in FEN '8/8/8/8/8/8/8/X7'",
+        ),
+        (
+            "8/8/8/8/8/8/8/7",
+            ValueError,
+            "rank '7' does not span 8 files in FEN '8/8/8/8/8/8/8/7'",
+        ),
+        (
+            "9/8/8/8/8/8/8/8",
+            ValueError,
+            "rank '9' does not span 8 files in FEN '9/8/8/8/8/8/8/8'",
+        ),
+        (
+            "8P/8/8/8/8/8/8/8",
+            IndexError,
+            "index 64 is out of bounds for axis 1 with size 64",
+        ),
+        ("²/8/8/8/8/8/8/8", ValueError, "invalid literal for int() with base 10: '²'"),
+    ],
+)
+def test_placement_preserves_error_type_message_and_order(fen, error, message):
+    with pytest.raises(error) as caught:
+        features.parse_fen_placement(fen)
+    assert type(caught.value) is error
+    assert str(caught.value) == message
