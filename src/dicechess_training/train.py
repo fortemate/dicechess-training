@@ -34,7 +34,7 @@ def train_value_model(
         runtime.seed(seed)
         model = ValueMLP(hidden=hidden)
         wrapped = runtime.wrap(model)
-        optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0)
         loss_fn = nn.BCEWithLogitsLoss()
         x = torch.from_numpy(train_x.astype(np.float32))
         y = torch.from_numpy(train_y.astype(np.float32))

@@ -40,6 +40,22 @@ def _cleanup_native_resources():
     gc.collect()
 
 
+@pytest.fixture
+def observed_optimizers(monkeypatch):
+    """Observe effective defaults while keeping the real optimizer implementation."""
+    import torch
+
+    optimizers = []
+    original_init = torch.optim.Optimizer.__init__
+
+    def observe(optimizer, params, defaults):
+        original_init(optimizer, params, defaults)
+        optimizers.append(optimizer)
+
+    monkeypatch.setattr(torch.optim.Optimizer, "__init__", observe)
+    return optimizers
+
+
 _verdict: list[int] = []
 
 

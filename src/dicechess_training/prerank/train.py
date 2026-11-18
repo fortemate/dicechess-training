@@ -201,7 +201,7 @@ def _train(corpus: Corpus, hyper: Hyperparameters, runtime: Runtime):
         feature_scale=scale,
     ).double()
     wrapped = runtime.wrap(model)
-    optimiser = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate)
+    optimiser = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate, weight_decay=0)
     signature = identity(
         {"trainer": "prerank-v1", "hyper": asdict(hyper), "manifest": corpus.manifest},
         corpus.features,
