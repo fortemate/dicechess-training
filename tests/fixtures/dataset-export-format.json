@@ -1,0 +1,128 @@
+{
+  "dataframe": {
+    "files_sha256": {
+      "license.txt": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest.json": "ebc0ffb777d7bafccd38db6c7022699d2c2d14269a36a733d25b8eb6830e854a",
+      "rows.json": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd"
+    },
+    "summary": {
+      "engine_version": "0.12.0",
+      "excluded_positions": null,
+      "games": 4,
+      "golden_sha256": "1b986da513187c8d8a544049ed9a1175eba4a206b4bccae24e1c5cda3de54cca",
+      "kind": "synthetic",
+      "license_evidence_sha256": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest_sha256": "0a8c7ae5a7ed82983240928a6a96aaa7ce2fd68fc0cedb6355c434566df61b3e",
+      "rows": 16,
+      "rows_sha256": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd",
+      "schema": "playground-rows-v1",
+      "source_sha256": "7e3e92cee134ec39276c6cd2107f544eeb727f4971cc4bb0bca693c27d7407e9",
+      "version": "1.0.0"
+    }
+  },
+  "directory": {
+    "files_sha256": {
+      "license.txt": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest.json": "ac95b9bc87bc7d88c098d4d179a1f83486aecd89b78b2b58c6a31babc77f406b",
+      "rows.json": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd"
+    },
+    "summary": {
+      "engine_version": "0.12.0",
+      "excluded_positions": null,
+      "games": 4,
+      "golden_sha256": "1b986da513187c8d8a544049ed9a1175eba4a206b4bccae24e1c5cda3de54cca",
+      "kind": "synthetic",
+      "license_evidence_sha256": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest_sha256": "87c21654f245889b620068dac309c63512f787f554aa62e9e59b739caf3c52a0",
+      "rows": 16,
+      "rows_sha256": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd",
+      "schema": "playground-rows-v1",
+      "source_sha256": "95cd5c65b4beabb1e23132a0aea42f0d43bc3831faa39f6e621962bda5adf770",
+      "version": "1.0.0"
+    }
+  },
+  "list": {
+    "files_sha256": {
+      "license.txt": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest.json": "ac95b9bc87bc7d88c098d4d179a1f83486aecd89b78b2b58c6a31babc77f406b",
+      "rows.json": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd"
+    },
+    "summary": {
+      "engine_version": "0.12.0",
+      "excluded_positions": null,
+      "games": 4,
+      "golden_sha256": "1b986da513187c8d8a544049ed9a1175eba4a206b4bccae24e1c5cda3de54cca",
+      "kind": "synthetic",
+      "license_evidence_sha256": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest_sha256": "87c21654f245889b620068dac309c63512f787f554aa62e9e59b739caf3c52a0",
+      "rows": 16,
+      "rows_sha256": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd",
+      "schema": "playground-rows-v1",
+      "source_sha256": "95cd5c65b4beabb1e23132a0aea42f0d43bc3831faa39f6e621962bda5adf770",
+      "version": "1.0.0"
+    }
+  },
+  "path": {
+    "files_sha256": {
+      "license.txt": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest.json": "ac95b9bc87bc7d88c098d4d179a1f83486aecd89b78b2b58c6a31babc77f406b",
+      "rows.json": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd"
+    },
+    "summary": {
+      "engine_version": "0.12.0",
+      "excluded_positions": null,
+      "games": 4,
+      "golden_sha256": "1b986da513187c8d8a544049ed9a1175eba4a206b4bccae24e1c5cda3de54cca",
+      "kind": "synthetic",
+      "license_evidence_sha256": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest_sha256": "87c21654f245889b620068dac309c63512f787f554aa62e9e59b739caf3c52a0",
+      "rows": 16,
+      "rows_sha256": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd",
+      "schema": "playground-rows-v1",
+      "source_sha256": "95cd5c65b4beabb1e23132a0aea42f0d43bc3831faa39f6e621962bda5adf770",
+      "version": "1.0.0"
+    }
+  },
+  "reversed-list": {
+    "files_sha256": {
+      "license.txt": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest.json": "2c9ec579eb828192c0ce6c5093bb711fef015998163c685509e549c243826da2",
+      "rows.json": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd"
+    },
+    "summary": {
+      "engine_version": "0.12.0",
+      "excluded_positions": null,
+      "games": 4,
+      "golden_sha256": "1b986da513187c8d8a544049ed9a1175eba4a206b4bccae24e1c5cda3de54cca",
+      "kind": "synthetic",
+      "license_evidence_sha256": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest_sha256": "cb2fe4e0f43366ecc6ccc50885a000601ed4617944323a10f7d121b280da6117",
+      "rows": 16,
+      "rows_sha256": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd",
+      "schema": "playground-rows-v1",
+      "source_sha256": "1b5779a6992cda7663980cbb5ff9a11dc78b8cb26586a7a4fa9386fa9e7ef88e",
+      "version": "1.0.0"
+    }
+  },
+  "string": {
+    "files_sha256": {
+      "license.txt": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest.json": "ac95b9bc87bc7d88c098d4d179a1f83486aecd89b78b2b58c6a31babc77f406b",
+      "rows.json": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd"
+    },
+    "summary": {
+      "engine_version": "0.12.0",
+      "excluded_positions": null,
+      "games": 4,
+      "golden_sha256": "1b986da513187c8d8a544049ed9a1175eba4a206b4bccae24e1c5cda3de54cca",
+      "kind": "synthetic",
+      "license_evidence_sha256": "fe970007a2d83ca41ce070daffadf1df1d1df2f5838823becf7a1c7feb198619",
+      "manifest_sha256": "87c21654f245889b620068dac309c63512f787f554aa62e9e59b739caf3c52a0",
+      "rows": 16,
+      "rows_sha256": "bd44c8f6c3a59c950bd108eb2aaa7fe0de9862c0ea0a312c9dade9fb936b10fd",
+      "schema": "playground-rows-v1",
+      "source_sha256": "95cd5c65b4beabb1e23132a0aea42f0d43bc3831faa39f6e621962bda5adf770",
+      "version": "1.0.0"
+    }
+  }
+}
