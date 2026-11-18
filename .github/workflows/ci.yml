@@ -11,6 +11,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -18,16 +20,16 @@ jobs:
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           python-version: "3.12"
-      - name: Install dependencies
-        run: uv sync
+      - name: Install locked binary dependencies
+        run: uv sync --locked --no-build --no-install-project
       - name: Lint
-        run: uv run ruff check .
+        run: .venv/bin/ruff check .
       - name: Format check
-        run: uv run ruff format --check .
+        run: .venv/bin/ruff format --check .
       - name: Tests
-        run: uv run pytest
+        run: .venv/bin/pytest
       - name: Demo smoke (end-to-end on toy data)
-        run: uv run python -m dicechess_training.demo --games 60 --epochs 1
+        run: .venv/bin/python -m dicechess_training.demo --games 60 --epochs 1
 
   enrichment:
     runs-on: ubuntu-latest
