@@ -87,8 +87,9 @@ def test_a_built_manifest_validates(tmp_path: Path) -> None:
     assert manifest["manifestVersion"] == "1.1.0"
     assert manifest["modelRole"] == "move-prerank"
     assert manifest["perspective"] == "side-to-move"
-    assert (manifest["inputName"], manifest["outputName"]) == prerank.manifest_tensor_names(
-        manifest
+    assert prerank.manifest_tensor_names(manifest) == (
+        manifest["inputName"],
+        manifest["outputName"],
     )
     assert "calibration" not in manifest
     assert "evaluationProfile" not in manifest
