@@ -101,7 +101,8 @@ def test_material_block_matches_the_fen_for_every_probe(golden):
 
 def test_side_to_move_flips_the_difference_block(probes):
     up, down = probes["knight-up-w"].features, probes["knight-down-b"].features
-    assert up[col("n_diff")] == 1.0 and up[col("material_diff")] == 3.0
+    assert up[col("n_diff")] == 1.0
+    assert up[col("material_diff")] == 3.0
     np.testing.assert_array_equal(up[:6], -down[:6])
     assert up[col("total_material")] == down[col("total_material")] == 75.0
     assert up[col("mobility_diff")] == -down[col("mobility_diff")]
@@ -109,7 +110,8 @@ def test_side_to_move_flips_the_difference_block(probes):
 
 def test_capture_probabilities_are_probabilities(golden):
     probs = golden.matrix()[:, 9:]
-    assert probs.min() >= 0.0 and probs.max() <= 1.0
+    assert probs.min() >= 0.0
+    assert probs.max() <= 1.0
 
 
 def test_rook_bearing_on_the_enemy_king_is_attack_for_the_mover(probes):
@@ -267,7 +269,9 @@ def test_predict_scores_the_golden_corpus_like_the_evaluator(tmp_path, golden):
     path = _linear_model(tmp_path / "ok.onnx")
     probs = kcp13.predict(path, golden.matrix())
     assert probs.shape == (len(golden.probes),)
-    assert np.isfinite(probs).all() and probs.min() >= 0.0 and probs.max() <= 1.0
+    assert np.isfinite(probs).all()
+    assert probs.min() >= 0.0
+    assert probs.max() <= 1.0
     expected = 1 / (1 + np.exp(-0.05 * golden.matrix().astype(np.float64).sum(axis=1)))
     np.testing.assert_allclose(probs, expected, atol=1e-6)
     invalid_features = golden.matrix()[:, :9]
@@ -322,7 +326,8 @@ def test_goldens_agree_bit_for_bit_on_every_shared_probe():
         assert shared, f"golden {engine} shares no probe with {newest}"
         for probe_id in shared:
             probe, expected = probes[probe_id], reference[probe_id]
-            assert probe.fen == expected.fen and probe.side == expected.side
+            assert probe.fen == expected.fen
+            assert probe.side == expected.side
             assert probe.features.tobytes() == expected.features.tobytes(), (
                 f"engine {engine} differs from {newest} on probe {probe_id}"
             )
