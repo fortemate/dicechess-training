@@ -366,8 +366,9 @@ def test_training_refuses_a_validation_split_it_cannot_measure_on() -> None:
     """Without this the first epoch's recall of zero beats the initial sentinel, becomes the best
     epoch, and the run reports a trained model whose validation evidence does not exist."""
     corpus = _corpus([60] * 10 + [10] * 5, ["train"] * 10 + ["validation"] * 5, seed=6)
+    hyper = Hyperparameters(max_epochs=1, k=48, seed=11)
     with pytest.raises(ValueError, match="no group larger than the shortlist"):
-        train(corpus, Hyperparameters(max_epochs=1, k=48, seed=11))
+        train(corpus, hyper)
 
 
 def test_a_width_with_no_groups_is_reported_as_unmeasured() -> None:

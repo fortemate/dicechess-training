@@ -196,16 +196,18 @@ def _mutate(group: dict, **changes) -> dict:
 def test_a_group_that_breaks_its_own_shape_is_refused(
     tmp_path: Path, group: dict, message: str
 ) -> None:
+    directory = _write(tmp_path / "ds", [group])
     with pytest.raises(GroupsError) as error:
-        load_groups(_write(tmp_path / "ds", [group]))
+        load_groups(directory)
     assert message in str(error.value)
 
 
 def test_transpositions_must_already_be_collapsed(tmp_path: Path) -> None:
     group = _group()
     group["candidates"][1]["result_fen"] = group["candidates"][0]["result_fen"]
+    directory = _write(tmp_path / "ds", [group])
     with pytest.raises(GroupsError, match="reach the same position"):
-        load_groups(_write(tmp_path / "ds", [group]))
+        load_groups(directory)
 
 
 @pytest.mark.parametrize(
@@ -224,11 +226,13 @@ def test_a_candidate_that_breaks_its_own_shape_is_refused(
 ) -> None:
     group = _group()
     group["candidates"][0].update(mutation)
+    directory = _write(tmp_path / "ds", [group])
     with pytest.raises(GroupsError) as error:
-        load_groups(_write(tmp_path / "ds", [group]))
+        load_groups(directory)
     assert message in str(error.value)
 
 
 def test_the_same_list_twice_is_refused(tmp_path: Path) -> None:
+    directory = _write(tmp_path / "ds", [_group(), _group(game="game-2")])
     with pytest.raises(GroupsError, match="appears twice"):
-        load_groups(_write(tmp_path / "ds", [_group(), _group(game="game-2")]))
+        load_groups(directory)

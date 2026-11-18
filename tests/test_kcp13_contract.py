@@ -270,8 +270,9 @@ def test_predict_scores_the_golden_corpus_like_the_evaluator(tmp_path, golden):
     assert np.isfinite(probs).all() and probs.min() >= 0.0 and probs.max() <= 1.0
     expected = 1 / (1 + np.exp(-0.05 * golden.matrix().astype(np.float64).sum(axis=1)))
     np.testing.assert_allclose(probs, expected, atol=1e-6)
+    invalid_features = golden.matrix()[:, :9]
     with pytest.raises(kcp13.ContractError, match=r"\[n,13\]"):
-        kcp13.predict(path, golden.matrix()[:, :9])
+        kcp13.predict(path, invalid_features)
 
 
 def test_build_manifest_binds_the_digest_and_validates(tmp_path):

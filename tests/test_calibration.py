@@ -72,8 +72,9 @@ def test_resetting_the_temperature_does_not_register_a_second_buffer():
 
 @pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
 def test_an_unusable_temperature_is_refused(bad):
+    model = _model()
     with pytest.raises(ValueError, match="finite and positive"):
-        _model().set_logit_temperature(bad)
+        model.set_logit_temperature(bad)
 
 
 def test_calibration_survives_the_onnx_export(tmp_path):
@@ -92,15 +93,19 @@ def test_calibration_survives_the_onnx_export(tmp_path):
 
 
 def test_fitting_needs_a_nonempty_holdout():
+    model = _model()
+    features = np.empty((0, kcp13.FEATURE_COUNT), np.float32)
+    labels = np.array([])
     with pytest.raises(ValueError, match="non-empty"):
-        fit_logit_temperature(
-            _model(), np.empty((0, kcp13.FEATURE_COUNT), np.float32), np.array([])
-        )
+        fit_logit_temperature(model, features, labels)
 
 
 def test_an_unsupported_rule_is_refused():
+    model = _model()
+    features = _rows()
+    labels = np.zeros(64)
     with pytest.raises(ValueError, match="unsupported calibration rule"):
-        fit_logit_temperature(_model(), _rows(), np.zeros(64), rule="accuracy")
+        fit_logit_temperature(model, features, labels, rule="accuracy")
 
 
 def test_fitting_stays_inside_the_declared_grid_and_reports_both_ends():
@@ -137,12 +142,9 @@ def test_the_rule_is_digested_into_the_config_so_it_cannot_be_chosen_afterwards(
 
 
 def test_an_unknown_rule_never_produces_a_package(tmp_path):
+    config = CandidateConfig(seed=1, model_id="m", probability_calibration="auc")
     with pytest.raises(CandidateError, match="unsupported probability calibration"):
-        build_candidate(
-            FIXTURE,
-            tmp_path / "package",
-            CandidateConfig(seed=1, model_id="m", probability_calibration="auc"),
-        )
+        build_candidate(FIXTURE, tmp_path / "package", config)
     assert not (tmp_path / "package").exists()
 
 

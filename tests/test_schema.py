@@ -41,8 +41,9 @@ def test_frame_validation_rejects_bad_result():
 
 def test_frame_validation_rejects_missing_column():
     df = data.generate_toy_games(2, seed=4).drop(columns=["dice"])
+    frame = pd.DataFrame(df)
     with pytest.raises(ValueError, match="dice"):
-        schema.validate_frame(pd.DataFrame(df))
+        schema.validate_frame(frame)
 
 
 def test_frame_validation_rejects_nulls_and_empty_fen():

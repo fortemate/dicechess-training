@@ -117,8 +117,9 @@ def test_a_manifest_that_misdescribes_the_artifact_is_refused(
     tmp_path: Path, override: dict, message: str
 ) -> None:
     model = _ranker(tmp_path / "m.onnx")
+    manifest = _manifest(model, **override)
     with pytest.raises(kcp13.ContractError) as error:
-        prerank.validate_manifest(_manifest(model, **override), ENGINE)
+        prerank.validate_manifest(manifest, ENGINE)
     assert message in str(error.value)
 
 
