@@ -113,45 +113,28 @@ def _load_shards(
     return pd.concat(frames, ignore_index=True)
 
 
-def build_dataset(
-    shards_source: str | Path | list[Path] | pd.DataFrame,
-    output_dir: str | Path,
-    config: DatasetConfig | None = None,
-) -> dict[str, Any]:
-    """Package enriched positions into an admitted `playground-rows-v1` bundle.
+def _source_paths(shards_source: str | Path) -> list[Path]:
+    """Resolve a path source before metadata detection and shard admission."""
+    src = Path(shards_source).resolve()
+    _require(src.exists(), f"source path does not exist: {src}")
+    if src.is_dir():
+        input_paths = sorted(src.glob("*.parquet"))
+        _require(bool(input_paths), f"no parquet shards found in {src}")
+    elif src.is_file():
+        input_paths = [src]
+    else:
+        raise DatasetError("source must be a file or directory")
+    return input_paths
 
-    Writes manifest.json, rows.json, and license.txt atomically to output_dir, and validates
-    with `benchmark.core.load_dataset` before completion.
-    """
-    cfg = config or DatasetConfig()
-    _require(
-        cfg.kind in ("owner-controlled", "public-licensed", "synthetic"),
-        f"unsupported dataset kind: {cfg.kind!r}",
-    )
-    _require(
-        re.fullmatch(r"\d+\.\d+\.\d+", cfg.version, flags=re.ASCII) is not None,
-        f"invalid dataset semantic version: {cfg.version!r}",
-    )
-    _require(cfg.feature_schema == kcp13.SCHEMA_ID, f"unsupported schema {cfg.feature_schema!r}")
 
-    out_path = Path(output_dir).resolve()
-    _require(not out_path.is_symlink(), "output path must not be a symlink")
-    _require(not out_path.exists(), f"output destination already exists: {out_path.name}")
-
+def _load_source(shards_source, cfg: DatasetConfig):
+    """Read each supported source form in its original validation order."""
     # Determine input shards and engine version
     input_paths: list[Path] = []
     engine_ver = cfg.engine_version
 
     if isinstance(shards_source, (str, Path)):
-        src = Path(shards_source).resolve()
-        _require(src.exists(), f"source path does not exist: {src}")
-        if src.is_dir():
-            input_paths = sorted(src.glob("*.parquet"))
-            _require(bool(input_paths), f"no parquet shards found in {src}")
-        elif src.is_file():
-            input_paths = [src]
-        else:
-            raise DatasetError("source must be a file or directory")
+        input_paths = _source_paths(shards_source)
         if engine_ver is None:
             engine_ver = _detect_engine_version(input_paths[0])
         df = _load_shards(input_paths, cfg.feature_schema, engine_ver)
@@ -169,34 +152,11 @@ def build_dataset(
             engine_ver = kcp13.GOLDEN_ENGINE_VERSION
     else:
         raise DatasetError(f"unsupported shards source type: {type(shards_source)}")
+    return df, input_paths, engine_ver
 
-    _require(
-        isinstance(engine_ver, str)
-        and re.fullmatch(r"\d+\.\d+\.\d+", engine_ver, flags=re.ASCII) is not None,
-        f"invalid engine version: {engine_ver!r}",
-    )
 
-    # Verify that engine has a committed golden fixture
-    golden_path = kcp13.golden_path(engine_ver)
-    _require(
-        golden_path.is_file(),
-        f"no committed golden corpus fixture found for engine version {engine_ver}",
-    )
-    golden_sha256 = kcp13.sha256_of(golden_path)
-
-    # Filter by max_games if specified
-    if cfg.max_games is not None:
-        _require(cfg.max_games > 0, "max_games must be positive")
-        unique_games = df["game_id"].drop_duplicates()
-        if len(unique_games) > cfg.max_games:
-            selected_games = set(unique_games.iloc[: cfg.max_games])
-            df = df[df["game_id"].isin(selected_games)].copy()
-
-    _require(len(df) > 0, "dataset contains no rows")
-
-    # Sort stably by game_id and ply
-    df = df.sort_values(["game_id", "ply"], kind="stable").reset_index(drop=True)
-
+def _format_rows(df: pd.DataFrame):
+    """Validate feature/position values and emit the ordered public row shape."""
     # Format rows
     feature_cols = list(kcp13.COLUMN_NAMES)
     for col in feature_cols:
@@ -248,32 +208,32 @@ def build_dataset(
                 "features": row_feats,
             }
         )
+    return rows, feature_cols
 
-    # Exclude positions the sealed bundle may not repeat. The key comes from the benchmark itself,
-    # so this tool and `prepare_final` cannot disagree about what counts as the same position, and
-    # the source is admitted by the benchmark's own loader before a single row is dropped.
-    exclusion: dict[str, Any] | None = None
-    if cfg.exclude_positions_from is not None:
-        source_dir = Path(cfg.exclude_positions_from).resolve()
-        _require(source_dir.is_dir(), "exclusion source is not a dataset directory")
-        try:
-            excluded_manifest, excluded_rows = benchmark_core.load_dataset(source_dir)
-        except Exception as e:
-            raise DatasetError(f"exclusion source is not an admissible dataset: {e}") from e
-        # Draw rows are audited too: a position is excluded because it was seen, not because it
-        # was scored, and the draw exclusion is applied downstream by the benchmark.
-        seen = {position_key(row) for row in excluded_rows}
-        kept = [row for row in rows if position_key(row) not in seen]
-        exclusion = {
-            "source_sha256": benchmark_core.digest(excluded_manifest),
-            "removed_rows": len(rows) - len(kept),
-        }
-        rows = kept
-        _require(bool(rows), "every row was excluded; nothing left to package")
 
-    # Check game-level split assignments consistency
-    assignments(rows)
+def _exclude_positions(rows: list[dict[str, Any]], cfg: DatasetConfig):
+    """Admit the exclusion bundle and remove every previously seen position."""
+    source_dir = Path(cfg.exclude_positions_from).resolve()
+    _require(source_dir.is_dir(), "exclusion source is not a dataset directory")
+    try:
+        excluded_manifest, excluded_rows = benchmark_core.load_dataset(source_dir)
+    except Exception as e:
+        raise DatasetError(f"exclusion source is not an admissible dataset: {e}") from e
+    # Draw rows are audited too: a position is excluded because it was seen, not because it
+    # was scored, and the draw exclusion is applied downstream by the benchmark.
+    seen = {position_key(row) for row in excluded_rows}
+    kept = [row for row in rows if position_key(row) not in seen]
+    exclusion = {
+        "source_sha256": benchmark_core.digest(excluded_manifest),
+        "removed_rows": len(rows) - len(kept),
+    }
+    rows = kept
+    _require(bool(rows), "every row was excluded; nothing left to package")
+    return rows, exclusion
 
+
+def _license_text(cfg: DatasetConfig) -> str:
+    """Honor file, inline and kind-default license precedence without fallback."""
     # Determine license text
     if cfg.license_file is not None:
         lic_p = Path(cfg.license_file).resolve()
@@ -287,6 +247,79 @@ def build_dataset(
         license_text = DEFAULT_SYNTHETIC_LICENSE
     else:
         raise DatasetError(f"license text or license file is required for kind {cfg.kind!r}")
+    return license_text
+
+
+def build_dataset(
+    shards_source: str | Path | list[Path] | pd.DataFrame,
+    output_dir: str | Path,
+    config: DatasetConfig | None = None,
+) -> dict[str, Any]:
+    """Package enriched positions into an admitted `playground-rows-v1` bundle.
+
+    Writes manifest.json, rows.json, and license.txt atomically to output_dir, and validates
+    with `benchmark.core.load_dataset` before completion.
+    """
+    cfg = config or DatasetConfig()
+    _require(
+        cfg.kind in ("owner-controlled", "public-licensed", "synthetic"),
+        f"unsupported dataset kind: {cfg.kind!r}",
+    )
+    _require(
+        re.fullmatch(r"\d+\.\d+\.\d+", cfg.version, flags=re.ASCII) is not None,
+        f"invalid dataset semantic version: {cfg.version!r}",
+    )
+    _require(cfg.feature_schema == kcp13.SCHEMA_ID, f"unsupported schema {cfg.feature_schema!r}")
+
+    out_path = Path(output_dir).resolve()
+    _require(not out_path.is_symlink(), "output path must not be a symlink")
+    _require(not out_path.exists(), f"output destination already exists: {out_path.name}")
+
+    # Determine input shards and engine version
+    df, input_paths, engine_ver = _load_source(shards_source, cfg)
+
+    _require(
+        isinstance(engine_ver, str)
+        and re.fullmatch(r"\d+\.\d+\.\d+", engine_ver, flags=re.ASCII) is not None,
+        f"invalid engine version: {engine_ver!r}",
+    )
+
+    # Verify that engine has a committed golden fixture
+    golden_path = kcp13.golden_path(engine_ver)
+    _require(
+        golden_path.is_file(),
+        f"no committed golden corpus fixture found for engine version {engine_ver}",
+    )
+    golden_sha256 = kcp13.sha256_of(golden_path)
+
+    # Filter by max_games if specified
+    if cfg.max_games is not None:
+        _require(cfg.max_games > 0, "max_games must be positive")
+        unique_games = df["game_id"].drop_duplicates()
+        if len(unique_games) > cfg.max_games:
+            selected_games = set(unique_games.iloc[: cfg.max_games])
+            df = df[df["game_id"].isin(selected_games)]
+
+    _require(len(df) > 0, "dataset contains no rows")
+
+    # Sort stably by game_id and ply
+    df = df.sort_values(["game_id", "ply"], kind="stable").reset_index(drop=True)
+
+    # Format rows
+    rows, feature_cols = _format_rows(df)
+
+    # Exclude positions the sealed bundle may not repeat. The key comes from the benchmark itself,
+    # so this tool and `prepare_final` cannot disagree about what counts as the same position, and
+    # the source is admitted by the benchmark's own loader before a single row is dropped.
+    exclusion: dict[str, Any] | None = None
+    if cfg.exclude_positions_from is not None:
+        rows, exclusion = _exclude_positions(rows, cfg)
+
+    # Check game-level split assignments consistency
+    assignments(rows)
+
+    # Determine license text
+    license_text = _license_text(cfg)
 
     # Compute source_sha256
     if cfg.source_sha256 is not None:
@@ -358,7 +391,7 @@ def build_dataset(
             "kind": cfg.kind,
             "engine_version": engine_ver,
             "rows": len(rows),
-            "games": len(set(r["game_id"] for r in rows)),
+            "games": len({r["game_id"] for r in rows}),
             "manifest_sha256": manifest_sha256,
             "rows_sha256": rows_sha256,
             "golden_sha256": golden_sha256,
