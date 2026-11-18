@@ -144,8 +144,9 @@ def test_unexpected_training_pause_propagates(checker, tmp_path, monkeypatch, ca
         raise failure
 
     monkeypatch.setattr(checker, "train_value_model", pause)
+    args = _args(tmp_path, mode, "value")
     with pytest.raises(checker.TrainingPaused) as caught:
-        checker.run(_args(tmp_path, mode, "value"))
+        checker.run(args)
     assert caught.value is failure
     assert capsys.readouterr().out == ""
 
@@ -168,8 +169,9 @@ def test_errors_stop_orchestration_without_success_output(
         "load": (checker.torch, "load"),
     }[stage]
     monkeypatch.setattr(target, attribute, fail)
+    args = _args(tmp_path, "resume", "value")
     with pytest.raises(OSError) as caught:
-        checker.run(_args(tmp_path, "resume", "value"))
+        checker.run(args)
     assert caught.value is failure
     assert capsys.readouterr().out == ""
 
@@ -190,8 +192,9 @@ def test_resume_compares_checkpoint_then_result_and_rejects_mismatch(
         return torch.tensor([int(path.parent.name == "resumed" and path.name == filename)])
 
     monkeypatch.setattr(checker.torch, "load", load)
+    args = _args(tmp_path, "resume", "value")
     with pytest.raises(AssertionError, match=f"value: resumed {filename} differs"):
-        checker.run(_args(tmp_path, "resume", "value"))
+        checker.run(args)
     expected = ["checkpoint.pt"] if filename == "checkpoint.pt" else ["checkpoint.pt", filename]
     assert loaded == [
         tmp_path / "value" / folder / name for name in expected for folder in ("full", "resumed")
