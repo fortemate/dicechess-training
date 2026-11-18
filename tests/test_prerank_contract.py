@@ -168,7 +168,8 @@ def test_scores_are_not_clamped(tmp_path: Path) -> None:
     features[0, 0] = 5.0  # 50.0
     features[1, 0] = -5.0  # -50.0
     scores = prerank.score(model, features)
-    assert scores[0] > 1.0 and scores[1] < 0.0
+    assert scores[0] > 1.0
+    assert scores[1] < 0.0
     assert scores[0] > scores[2] > scores[1]
 
 

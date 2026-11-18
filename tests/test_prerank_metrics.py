@@ -71,7 +71,8 @@ def test_ndcg_is_between_zero_and_one_whatever_the_ordering() -> None:
         corpus.targets,
     ):
         values = ndcg_vector(corpus, scores, groups, 10)
-        assert np.all(values >= 0.0) and np.all(values <= 1.0 + 1e-12)
+        assert np.all(values >= 0.0)
+        assert np.all(values <= 1.0 + 1e-12)
 
 
 def test_a_group_smaller_than_the_width_is_judged_on_what_it_has() -> None:

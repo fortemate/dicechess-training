@@ -140,4 +140,5 @@ def test_the_report_carries_what_a_reader_needs_to_judge_it(tmp_path) -> None:
     for result in report["results"]:
         assert result["margin"] == pytest.approx(result["safe"] - result["blunder"])
         assert result["certified_danger_margin"] >= CERTIFICATION_MARGIN
-        assert np.isfinite(result["safe"]) and np.isfinite(result["blunder"])
+        assert np.isfinite(result["safe"])
+        assert np.isfinite(result["blunder"])
