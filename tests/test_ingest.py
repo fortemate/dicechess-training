@@ -47,8 +47,9 @@ def test_rejects_unknown_result_encoding():
 
 
 def test_rejects_missing_columns():
+    bad = EXPORT.drop(columns=["turn_number"])
     with pytest.raises(ValueError, match="turn_number"):
-        ingest.convert_export(EXPORT.drop(columns=["turn_number"]))
+        ingest.convert_export(bad)
 
 
 def test_shards_never_split_a_game(tmp_path):

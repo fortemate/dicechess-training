@@ -32,13 +32,14 @@ def _values():
 def test_resume_refuses_changed_inputs_configuration_or_world_size(tmp_path):
     x, y = _values()
     checkpoint = tmp_path / "checkpoint.pt"
+    initial_options = RunOptions(device="cpu", checkpoint=checkpoint, stop_after_epochs=1)
     with pytest.raises(TrainingPaused):
         train_value_model(
             x,
             y,
             epochs=3,
             hidden=8,
-            options=RunOptions(device="cpu", checkpoint=checkpoint, stop_after_epochs=1),
+            options=initial_options,
         )
     options = RunOptions(device="cpu", resume=checkpoint)
     changed = x.copy()

@@ -135,8 +135,9 @@ def test_build_dataset_refuses_unverified_engine(tmp_path):
     _make_test_parquet(shards_dir / "shard-0.parquet", num_games=2, engine_ver="9.9.9")
 
     dataset_dir = tmp_path / "dataset"
+    config = DatasetConfig(engine_version="9.9.9")
     with pytest.raises(DatasetError, match="no committed golden corpus"):
-        build_dataset(shards_dir, dataset_dir, DatasetConfig(engine_version="9.9.9"))
+        build_dataset(shards_dir, dataset_dir, config)
 
 
 def test_build_dataset_refuses_material_mismatch(tmp_path):
@@ -159,8 +160,9 @@ def test_build_dataset_refuses_material_mismatch(tmp_path):
     pq.write_table(table, str(shard_path))
 
     dataset_dir = tmp_path / "dataset"
+    config = DatasetConfig(engine_version="0.12.0")
     with pytest.raises(DatasetError, match="material block mismatch"):
-        build_dataset(shard_path, dataset_dir, DatasetConfig(engine_version="0.12.0"))
+        build_dataset(shard_path, dataset_dir, config)
 
 
 def test_cli_export_success(tmp_path, capsys):
@@ -328,12 +330,9 @@ def test_excluding_everything_publishes_nothing(tmp_path, development):
     shards.mkdir()
     _positional_shard(shards / "s.parquet", [f"other-{i:03d}" for i in range(4)], _PLACEMENTS[:2])
     directory = tmp_path / "sealed"
+    config = DatasetConfig(engine_version="0.12.0", exclude_positions_from=development)
     with pytest.raises(DatasetError, match="every row was excluded"):
-        build_dataset(
-            shards,
-            directory,
-            DatasetConfig(engine_version="0.12.0", exclude_positions_from=development),
-        )
+        build_dataset(shards, directory, config)
     assert not directory.exists()
 
 
@@ -342,19 +341,15 @@ def test_an_inadmissible_exclusion_source_publishes_nothing(tmp_path, final_shar
     bogus.mkdir()
     (bogus / "manifest.json").write_text('{"schema": "not-a-dataset"}', encoding="utf-8")
     directory = tmp_path / "sealed"
+    config = DatasetConfig(engine_version="0.12.0", exclude_positions_from=bogus)
     with pytest.raises(DatasetError, match="not an admissible dataset"):
-        build_dataset(
-            final_shards,
-            directory,
-            DatasetConfig(engine_version="0.12.0", exclude_positions_from=bogus),
-        )
+        build_dataset(final_shards, directory, config)
     assert not directory.exists()
+    missing_config = DatasetConfig(
+        engine_version="0.12.0", exclude_positions_from=tmp_path / "missing"
+    )
     with pytest.raises(DatasetError, match="not a dataset directory"):
-        build_dataset(
-            final_shards,
-            directory,
-            DatasetConfig(engine_version="0.12.0", exclude_positions_from=tmp_path / "missing"),
-        )
+        build_dataset(final_shards, directory, missing_config)
 
 
 def test_cli_exposes_the_exclusion_and_reports_what_it_removed(tmp_path, development, final_shards):

@@ -87,8 +87,9 @@ def test_a_built_manifest_validates(tmp_path: Path) -> None:
     assert manifest["manifestVersion"] == "1.1.0"
     assert manifest["modelRole"] == "move-prerank"
     assert manifest["perspective"] == "side-to-move"
-    assert (manifest["inputName"], manifest["outputName"]) == prerank.manifest_tensor_names(
-        manifest
+    assert prerank.manifest_tensor_names(manifest) == (
+        manifest["inputName"],
+        manifest["outputName"],
     )
     assert "calibration" not in manifest
     assert "evaluationProfile" not in manifest
@@ -117,8 +118,9 @@ def test_a_manifest_that_misdescribes_the_artifact_is_refused(
     tmp_path: Path, override: dict, message: str
 ) -> None:
     model = _ranker(tmp_path / "m.onnx")
+    manifest = _manifest(model, **override)
     with pytest.raises(kcp13.ContractError) as error:
-        prerank.validate_manifest(_manifest(model, **override), ENGINE)
+        prerank.validate_manifest(manifest, ENGINE)
     assert message in str(error.value)
 
 
