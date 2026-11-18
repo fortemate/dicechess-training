@@ -20,6 +20,8 @@ from dicechess_training.prerank.train import Hyperparameters, train
 from dicechess_training.runtime import RunOptions, Runtime, TrainingPaused, atomic_save, primary
 from dicechess_training.train import train_value_model
 
+CHECKPOINT_FILENAME = "checkpoint.pt"
+
 
 def equal(left, right):
     if isinstance(left, torch.Tensor):
@@ -53,6 +55,55 @@ def fixture() -> Corpus:
     )
 
 
+def _run_trainer(name, args, rank):
+    path = args.destination / name
+    folder = path / ("full" if args.mode == "full" else "resumed")
+    options = RunOptions(
+        device=args.device,
+        checkpoint=folder / CHECKPOINT_FILENAME,
+        resume=(folder / CHECKPOINT_FILENAME) if args.mode == "resume" else None,
+        stop_after_epochs=1 if args.mode == "segment" else None,
+    )
+    try:
+        if name == "value":
+            x = np.sin(np.arange(9 * 774).reshape(9, 774) / 23).astype(np.float32)
+            y = ((x[:, 0] + 1) / 2).astype(np.float32)
+            model = train_value_model(x, y, epochs=3, batch_size=4, hidden=8, options=options)
+            result = {"model": model.state_dict()}
+        else:
+            report, model, scores = train(
+                fixture(),
+                Hyperparameters(hidden_dims=(8,), max_epochs=3, patience=3, batch_groups=4, k=2),
+                options=options,
+            )
+            result = {
+                "model": model.state_dict(),
+                "report": report,
+                "scores": torch.from_numpy(scores),
+            }
+        atomic_save(result, folder / f"result-rank-{rank}.pt")
+    except TrainingPaused:
+        if args.mode != "segment":
+            raise
+    if args.mode == "resume":
+        for filename in (CHECKPOINT_FILENAME, f"result-rank-{rank}.pt"):
+            left = torch.load(path / "full" / filename, weights_only=True, map_location="cpu")
+            right = torch.load(path / "resumed" / filename, weights_only=True, map_location="cpu")
+            assert equal(left, right), f"{name}: resumed {filename} differs"
+    if primary():
+        print(
+            json.dumps(
+                {
+                    "trainer": name,
+                    "mode": args.mode,
+                    "complete": args.mode != "segment",
+                    "resume_equal": args.mode == "resume",
+                }
+            ),
+            flush=True,
+        )
+
+
 def run(args):
     torch.set_num_threads(1)
     if args.interrupt:
@@ -66,56 +117,7 @@ def run(args):
     rank = int(os.environ.get("RANK", "0"))
     names = (args.trainer,) if args.trainer else ("value", "prerank")
     for name in names:
-        path = args.destination / name
-        folder = path / ("full" if args.mode == "full" else "resumed")
-        options = RunOptions(
-            device=args.device,
-            checkpoint=folder / "checkpoint.pt",
-            resume=(folder / "checkpoint.pt") if args.mode == "resume" else None,
-            stop_after_epochs=1 if args.mode == "segment" else None,
-        )
-        try:
-            if name == "value":
-                x = np.sin(np.arange(9 * 774).reshape(9, 774) / 23).astype(np.float32)
-                y = ((x[:, 0] + 1) / 2).astype(np.float32)
-                model = train_value_model(x, y, epochs=3, batch_size=4, hidden=8, options=options)
-                result = {"model": model.state_dict()}
-            else:
-                report, model, scores = train(
-                    fixture(),
-                    Hyperparameters(
-                        hidden_dims=(8,), max_epochs=3, patience=3, batch_groups=4, k=2
-                    ),
-                    options=options,
-                )
-                result = {
-                    "model": model.state_dict(),
-                    "report": report,
-                    "scores": torch.from_numpy(scores),
-                }
-            atomic_save(result, folder / f"result-rank-{rank}.pt")
-        except TrainingPaused:
-            if args.mode != "segment":
-                raise
-        if args.mode == "resume":
-            for filename in ("checkpoint.pt", f"result-rank-{rank}.pt"):
-                left = torch.load(path / "full" / filename, weights_only=True, map_location="cpu")
-                right = torch.load(
-                    path / "resumed" / filename, weights_only=True, map_location="cpu"
-                )
-                assert equal(left, right), f"{name}: resumed {filename} differs"
-        if primary():
-            print(
-                json.dumps(
-                    {
-                        "trainer": name,
-                        "mode": args.mode,
-                        "complete": args.mode != "segment",
-                        "resume_equal": args.mode == "resume",
-                    }
-                ),
-                flush=True,
-            )
+        _run_trainer(name, args, rank)
 
 
 if __name__ == "__main__":
