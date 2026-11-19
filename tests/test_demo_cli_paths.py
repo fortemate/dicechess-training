@@ -74,3 +74,70 @@ def test_cli_preserves_other_training_arguments(invocation):
         "sample_dir": "fixtures",
         "hidden": 16,
     }
+
+
+@pytest.mark.parametrize(
+    "choice", ["parent", "absolute", "prefix-sibling", "directory-symlink", "directory-loop"]
+)
+def test_cli_refuses_escape_before_creating_output_or_training(invocation, capsys, choice):
+    root, calls, invoke = invocation
+    outside = root.parent / "outside"
+    if choice == "parent":
+        output = "../outside/new"
+    elif choice == "absolute":
+        output = str(outside / "new")
+    elif choice == "prefix-sibling":
+        output = str(root.with_name(root.name + "-other") / "new")
+    elif choice == "directory-symlink":
+        outside.mkdir()
+        (root / "link").symlink_to(outside, target_is_directory=True)
+        output = "link/new"
+    else:
+        (root / "loop").symlink_to("loop", target_is_directory=True)
+        output = "loop/new"
+    with pytest.raises(SystemExit) as caught:
+        invoke("--out", output, "--synthetic")
+    assert caught.value.code == 2
+    assert calls == []
+    assert not (outside / "new").exists()
+    assert not root.with_name(root.name + "-other").exists()
+    assert "output" in capsys.readouterr().err.lower()
+
+
+@pytest.mark.parametrize("source", ["synthetic", "sample"])
+@pytest.mark.parametrize("extension", ["onnx", "onnx.data"])
+def test_cli_refuses_existing_model_symlink_outside_workspace(
+    invocation, capsys, source, extension
+):
+    root, calls, invoke = invocation
+    outside = root.parent / "existing.onnx"
+    outside.write_bytes(b"preserve existing model")
+    output = root / "out"
+    output.mkdir()
+    (output / f"value-{source}.{extension}").symlink_to(outside)
+    args = ["--out", "out"]
+    if source == "synthetic":
+        args.append("--synthetic")
+    with pytest.raises(SystemExit) as caught:
+        invoke(*args)
+    assert caught.value.code == 2
+    assert calls == []
+    assert outside.read_bytes() == b"preserve existing model"
+    assert "output" in capsys.readouterr().err.lower()
+
+
+def test_cli_refuses_unresolvable_output_before_training(invocation, monkeypatch, capsys):
+    _, calls, invoke = invocation
+    original = Path.resolve
+
+    def resolve(path, *args, **kwargs):
+        if path.name == "broken-output":
+            raise OSError("authored resolution failure")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    with pytest.raises(SystemExit) as caught:
+        invoke("--out", "broken-output")
+    assert caught.value.code == 2
+    assert calls == []
+    assert "output" in capsys.readouterr().err.lower()
