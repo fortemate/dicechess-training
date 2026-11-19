@@ -195,6 +195,8 @@ def test_actual_all_arm_recovery_in_fresh_processes(tmp_path, processes):
 
 
 def _assert_ranking_close(scores, reference):
+    assert torch.isfinite(scores).all()
+    assert torch.isfinite(reference).all()
     # Compare the quantity used by the listwise objective. Only this normalization is FP64;
     # the original FP32 forward, checkpoint and parameter comparisons remain unchanged.
     # Softmax's Jacobian row absolute sum is 2*p*(1-p) <= 1/2, so half the former
@@ -227,6 +229,8 @@ def test_ranking_oracle_accepts_identical_order_and_group_shifts(scores, referen
         ([float("nan"), 0.0], [0.0, 0.0]),
         ([float("inf"), 0.0], [0.0, 0.0]),
         ([float("-inf"), 0.0], [0.0, 0.0]),
+        ([float("-inf"), 0.0], [-20.0, 0.0]),
+        ([-20.0, 0.0], [float("-inf"), 0.0]),
     ],
 )
 def test_ranking_oracle_rejects_distortion_order_changes_and_nonfinite(scores, reference):
