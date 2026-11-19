@@ -73,7 +73,8 @@ def train_value_model(
             return model
         finally:
             # Release the DDP reducer while Runtime still owns its process group.
-            del wrapped
+            if wrapped is not model:
+                del wrapped
 
 
 def no_information_log_loss(y: np.ndarray) -> float:

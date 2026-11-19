@@ -307,7 +307,8 @@ def _train(corpus: Corpus, hyper: Hyperparameters, runtime: Runtime):
         return report, model.cpu(), scores
     finally:
         # Release the DDP reducer while Runtime still owns its process group.
-        del wrapped
+        if wrapped is not model:
+            del wrapped
 
 
 def by_shortlist(corpus: Corpus, scores: np.ndarray, seed: int, split: str = "validation") -> dict:

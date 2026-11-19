@@ -251,7 +251,8 @@ def train(
             return report, model.cpu().eval()
         finally:
             # Release the DDP reducer while Runtime still owns its process group.
-            del wrapped
+            if wrapped is not model:
+                del wrapped
 
 
 def _epoch(model, optimizer, corpus, prepared, arm, hyper, rng, runtime):
