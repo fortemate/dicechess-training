@@ -207,9 +207,10 @@ class Runtime:
 
     def environment(self) -> dict:
         root = Path(__file__).parent
+        root_depth = len(root.parts)
         source = hashlib.sha256()
         for path in sorted(root.rglob("*.py")):
-            source.update(path.relative_to(root).as_posix().encode())
+            source.update(Path(*path.parts[root_depth:]).as_posix().encode())
             source.update(path.read_bytes())
         return {
             "source_sha256": source.hexdigest(),
