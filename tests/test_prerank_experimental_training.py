@@ -16,6 +16,7 @@ from torch import nn
 
 from dicechess_training.prerank import experimental_train as trainer
 from dicechess_training.prerank.experimental import digest, make_model
+from dicechess_training.prerank.model import listwise_loss
 from dicechess_training.runtime import RunOptions, TrainingPaused, TrainingRuntimeError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -176,8 +177,9 @@ def test_actual_all_arm_recovery_in_fresh_processes(tmp_path, processes):
                 assert torch.equal(value, other["model"][key])
                 if not key.endswith("bias"):
                     torch.testing.assert_close(value, reference["model"][key], rtol=3e-5, atol=3e-6)
-            # FP32 Adam can amplify roundoff in shift-invariant biases. Compare the ranking
-            # quantity, while same-topology recovery above remains exact for EVERY parameter.
+            # Cross-topology FP32 training need not be bitwise identical. Compare the learned
+            # conditional probabilities and exact order; same-topology recovery above remains
+            # exact for EVERY parameter.
             data = oracle.fixture()
             model, serial_model = make_model(data, arm), make_model(data, arm)
             model.load_state_dict(first["model"])
@@ -189,12 +191,83 @@ def test_actual_all_arm_recovery_in_fresh_processes(tmp_path, processes):
             for lo, hi in zip(data.offsets[:-1], data.offsets[1:], strict=True):
                 rows = np.arange(lo, hi)[~data.terminal[lo:hi]]
                 if len(rows):
-                    centered = scores[rows] - scores[rows].mean()
-                    reference_centered = expected[rows] - expected[rows].mean()
-                    torch.testing.assert_close(centered, reference_centered, rtol=3e-5, atol=6e-6)
-                    assert torch.equal(
-                        scores[rows].argsort(stable=True), expected[rows].argsort(stable=True)
-                    )
+                    _assert_ranking_close(scores[rows], expected[rows])
+
+
+def _assert_ranking_close(scores, reference):
+    # Compare the quantity used by the listwise objective. Only this normalization is FP64;
+    # the original FP32 forward, checkpoint and parameter comparisons remain unchanged.
+    # Softmax's Jacobian row absolute sum is 2*p*(1-p) <= 1/2, so half the former
+    # 6e-6 centered-logit absolute floor gives a 3e-6 probability budget, with no rtol.
+    probabilities = scores.to(torch.float64).softmax(dim=0)
+    reference_probabilities = reference.to(torch.float64).softmax(dim=0)
+    torch.testing.assert_close(probabilities, reference_probabilities, rtol=0, atol=3e-6)
+    assert torch.equal(scores.argsort(stable=True), reference.argsort(stable=True))
+
+
+@pytest.mark.parametrize(
+    ("scores", "reference"),
+    [
+        ([0.0, 0.25, 0.5], [0.0, 0.25, 0.5]),
+        ([8.0, 8.25, 8.5], [0.0, 0.25, 0.5]),
+        ([0.0, 0.0, 0.25], [1.0, 1.0, 1.25]),
+        ([100.0], [-100.0]),
+    ],
+)
+def test_ranking_oracle_accepts_identical_order_and_group_shifts(scores, reference):
+    _assert_ranking_close(torch.tensor(scores), torch.tensor(reference))
+
+
+@pytest.mark.parametrize(
+    ("scores", "reference"),
+    [
+        ([0.0, 0.25, 0.6], [0.0, 0.25, 0.5]),
+        ([0.0, 0.5, 1.0], [0.0, 0.25, 0.5]),
+        ([1e-8, 0.0], [0.0, 1e-8]),
+        ([float("nan"), 0.0], [0.0, 0.0]),
+        ([float("inf"), 0.0], [0.0, 0.0]),
+        ([float("-inf"), 0.0], [0.0, 0.0]),
+    ],
+)
+def test_ranking_oracle_rejects_distortion_order_changes_and_nonfinite(scores, reference):
+    actual = torch.tensor(scores)
+    expected = torch.tensor(reference)
+    with pytest.raises(AssertionError):
+        _assert_ranking_close(actual, expected)
+
+
+@pytest.mark.parametrize(
+    ("amplitude", "candidates", "accepted"),
+    [(5e-6, 2, True), (7e-6, 2, False), (7e-6, 3, True)],
+)
+def test_listwise_parity_uses_probability_error_with_exact_order(amplitude, candidates, accepted):
+    # For two candidates, probabilities differ from 1/2 by tanh(amplitude)/2.
+    # With three near-uniform candidates the maximum change is about amplitude/3.
+    # These are authored logits, independent of any trained checkpoint.
+    actual = torch.linspace(-amplitude, amplitude, candidates, dtype=torch.float64)
+    expected = torch.zeros(candidates, dtype=torch.float64)
+    if accepted:
+        _assert_ranking_close(actual, expected)
+    else:
+        with pytest.raises(AssertionError):
+            _assert_ranking_close(actual, expected)
+
+
+@pytest.mark.parametrize("shifts", [[0.0, 0.0], [8.0, -16.0]])
+def test_listwise_objective_has_analytic_probabilities_and_independent_group_shifts(shifts):
+    # Conditional probabilities are [1/4, 3/4] and [4/5, 1/5]. Each target
+    # assigns all mass to one candidate; the two groups have equal weight.
+    scores = torch.tensor([0.0, np.log(3.0), np.log(4.0), 0.0], dtype=torch.float64)
+    group_index = torch.tensor([0, 0, 1, 1])
+    scores = (scores + torch.tensor(shifts, dtype=torch.float64)[group_index]).requires_grad_()
+    gains = torch.tensor([1.0, 0.0, 0.0, 1.0], dtype=torch.float64)
+    loss = listwise_loss(scores, gains, group_index, 2)
+    assert float(loss.detach()) == pytest.approx((np.log(4.0) + np.log(5.0)) / 2)
+    loss.backward()
+    torch.testing.assert_close(
+        scores.grad,
+        torch.tensor([-3 / 8, 3 / 8, 2 / 5, -2 / 5], dtype=torch.float64),
+    )
 
 
 def test_real_process_termination_after_checkpoint_recovers(tmp_path):
