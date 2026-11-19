@@ -21,6 +21,15 @@ class ReplayAuditSuite extends munit.FunSuite:
   private val StatesFile = "states.jsonl"
   private val SparseRootFen = "7k/8/8/8/8/8/P7/K7 w - -"
   private val CollisionRootFen = "7k/8/8/8/r3p1K1/8/3P4/5Q2 w - -"
+  private def auditCounts(prefix: String, raw: String): com.google.gson.JsonObject =
+    val dir = Files.createTempDirectory(prefix)
+    val input = dir.resolve(InputFile)
+    val output = dir.resolve(ReportFile)
+    val states = dir.resolve(StatesFile)
+    Files.writeString(input,raw)
+    ReplayAudit.main(Array(input.toString,output.toString,states.toString))
+    JsonParser.parseString(Files.readString(output)).getAsJsonObject.getAsJsonObject(CountsField)
+
   test("completed replay retains delayed en-passant lost by normalization") {
     val root = ReplayAudit.parseRoot("7k/8/8/1p6/8/8/PK6/8 w - -", "BBP")
     val e = ReplayAudit.entries(root).find(_.moves == "a2a4").get
@@ -50,26 +59,14 @@ class ReplayAuditSuite extends munit.FunSuite:
       if moves == "h7h8" then assert((after.kings & after.blackPieces).isEmpty)
   }
   test("audit counts incomplete paths and missing alternatives") {
-    val dir = Files.createTempDirectory("replay-synthetic-")
-    val input = dir.resolve(InputFile)
-    val output = dir.resolve(ReportFile)
-    val states = dir.resolve(StatesFile)
-    Files.writeString(input,"""[{"group_id":"synthetic","game_id":"synthetic","root_fen":"7k/8/8/8/8/8/P7/K7 w - -","dice":"PPP","side":"w","candidates":[{"moves":["a2a3"],"result_fen":"bad","features":[0],"target":0}]}]""")
-    ReplayAudit.main(Array(input.toString,output.toString,states.toString))
-    val counts = JsonParser.parseString(Files.readString(output)).getAsJsonObject.getAsJsonObject(CountsField)
+    val counts = auditCounts("replay-synthetic-", """[{"group_id":"synthetic","game_id":"synthetic","root_fen":"7k/8/8/8/8/8/P7/K7 w - -","dice":"PPP","side":"w","candidates":[{"moves":["a2a3"],"result_fen":"bad","features":[0],"target":0}]}]""")
     assertEquals(counts.get(IllegalPathsField).getAsLong,1L)
     assert(counts.get(MissingCandidatesField).getAsLong > 0)
     assertEquals(counts.get(ExtraCandidatesField).getAsLong,1L)
   }
 
   test("audit detects corrupted feature values and terminal sentinel on a legal path") {
-    val dir = Files.createTempDirectory("replay-synthetic-corrupt-")
-    val input = dir.resolve(InputFile)
-    val output = dir.resolve(ReportFile)
-    val states = dir.resolve(StatesFile)
-    Files.writeString(input,"""[{"group_id":"synthetic","game_id":"synthetic","root_fen":"7k/8/8/8/8/8/P7/K7 w - -","dice":"BBP","side":"w","candidates":[{"moves":["a2a4"],"result_fen":"bad","features":[0],"target":2147483647}]}]""")
-    ReplayAudit.main(Array(input.toString,output.toString,states.toString))
-    val counts = JsonParser.parseString(Files.readString(output)).getAsJsonObject.getAsJsonObject(CountsField)
+    val counts = auditCounts("replay-synthetic-corrupt-", """[{"group_id":"synthetic","game_id":"synthetic","root_fen":"7k/8/8/8/8/8/P7/K7 w - -","dice":"BBP","side":"w","candidates":[{"moves":["a2a4"],"result_fen":"bad","features":[0],"target":2147483647}]}]""")
     assertEquals(counts.get(IllegalPathsField).getAsLong,0L)
     assertEquals(counts.get(FeatureMismatchesField).getAsLong,1L)
     assertEquals(counts.get("result_mismatches").getAsLong,1L)
