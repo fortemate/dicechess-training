@@ -210,7 +210,7 @@ class Runtime:
         root_depth = len(root.parts)
         source = hashlib.sha256()
         for path in sorted(root.rglob("*.py")):
-            source.update(Path(*path.parts[root_depth:]).as_posix().encode())
+            source.update("/".join(path.parts[root_depth:]).encode())
             source.update(path.read_bytes())
         return {
             "source_sha256": source.hexdigest(),
