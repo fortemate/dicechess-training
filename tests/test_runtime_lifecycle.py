@@ -149,3 +149,119 @@ def test_existing_process_group_remains_owned_by_its_caller(backend, monkeypatch
     with pytest.raises(execution.TrainingRuntimeError, match="own process group"):
         context.__enter__()
     assert backend.active
+
+
+@pytest.mark.parametrize("error_type", [None, execution.TrainingPaused])
+def test_cpu_context_finishes_pending_work_while_wrapper_survives(backend, monkeypatch, error_type):
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    finished = []
+    wrapper = None
+    error = error_type("authored pause") if error_type else None
+    try:
+        with execution.Runtime(execution.RunOptions(device="cpu")) as context:
+            wrapper = context.wrap(Model())
+            backend.pending.append(lambda: finished.append("completed"))
+            if error is not None:
+                raise error
+    except execution.TrainingPaused as caught:
+        assert caught is error
+    assert wrapper is backend.wrapped
+    assert finished == ["completed"]
+    assert not backend.active
+
+
+@pytest.mark.parametrize("stage", ["foreign-group", "rendezvous", "initialization", "cuda"])
+@pytest.mark.parametrize("policy", [(False, False), (False, True), (True, False), (True, True)])
+def test_failed_context_entry_restores_callers_policy(backend, monkeypatch, stage, policy):
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    torch.use_deterministic_algorithms(policy[0], warn_only=policy[1])
+    failure = RuntimeError("authored setup failure")
+
+    def fail(*args, **kwargs):
+        raise failure
+
+    requested = "cpu"
+    if stage == "foreign-group":
+        backend.active = True
+    elif stage == "rendezvous":
+        monkeypatch.setattr(execution.dist, "rendezvous", fail)
+    elif stage == "initialization":
+        monkeypatch.setattr(execution.dist, "init_process_group", fail)
+    else:
+        requested = "cuda"
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+        monkeypatch.setattr(torch.cuda, "set_device", fail)
+    context = execution.Runtime(execution.RunOptions(device=requested))
+    expected = execution.TrainingRuntimeError if stage == "foreign-group" else RuntimeError
+    with pytest.raises(expected) as caught:
+        context.__enter__()
+    if stage != "foreign-group":
+        assert caught.value is failure
+    assert backend.active is (stage == "foreign-group")
+    assert torch.are_deterministic_algorithms_enabled() is policy[0]
+    assert torch.is_deterministic_algorithms_warn_only_enabled() is policy[1]
+
+
+@pytest.mark.parametrize("stage", ["pending-work", "destruction"])
+@pytest.mark.parametrize("policy", [(False, False), (False, True), (True, False), (True, True)])
+def test_failed_context_cleanup_restores_callers_policy(backend, monkeypatch, stage, policy):
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    torch.use_deterministic_algorithms(policy[0], warn_only=policy[1])
+    failure = RuntimeError("authored cleanup failure")
+
+    def fail(*args, **kwargs):
+        raise failure
+
+    if stage == "pending-work":
+        backend.pending.append(fail)
+    else:
+        monkeypatch.setattr(execution.dist, "destroy_process_group", fail)
+    with (
+        pytest.raises(RuntimeError) as caught,
+        execution.Runtime(execution.RunOptions(device="cpu")),
+    ):
+        assert backend.active
+    assert caught.value is failure
+    assert backend.active is (stage == "destruction")
+    assert torch.are_deterministic_algorithms_enabled() is policy[0]
+    assert torch.is_deterministic_algorithms_warn_only_enabled() is policy[1]
+
+
+def test_next_cpu_group_waits_for_peer_to_finish_previous_trainer(backend, monkeypatch):
+    import threading
+
+    monkeypatch.setenv("WORLD_SIZE", "2")
+    awaiting_peer = threading.Event()
+    peer_finished = threading.Event()
+    entered = threading.Event()
+    failures = []
+
+    class PeerStore(Store):
+        def wait(self, keys, timeout=None):
+            awaiting_peer.set()
+            if not peer_finished.wait(2):
+                raise RuntimeError("authored peer did not finish")
+            super().wait(keys, timeout)
+
+    monkeypatch.setattr(execution.dist, "rendezvous", lambda *a, **kw: iter([(PeerStore(), 0, 2)]))
+
+    def train_next():
+        try:
+            with execution.Runtime(execution.RunOptions(device="cpu")):
+                entered.set()
+        except BaseException as error:
+            failures.append(error)
+
+    worker = threading.Thread(target=train_next)
+    worker.start()
+    try:
+        assert awaiting_peer.wait(1)
+        assert not entered.is_set()
+        assert not backend.active
+    finally:
+        peer_finished.set()
+        worker.join(3)
+    assert not worker.is_alive()
+    assert not failures
+    assert entered.is_set()
+    assert not backend.active

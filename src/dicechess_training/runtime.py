@@ -130,33 +130,52 @@ class Runtime:
         self.previous_deterministic = torch.are_deterministic_algorithms_enabled()
         self.previous_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
-        torch.use_deterministic_algorithms(True)
-        if self.device.type == "cuda":
-            torch.cuda.set_device(self.device)
-        if self.world_size > 1:
-            if dist.is_initialized():
-                raise TrainingRuntimeError("training requires its own process group")
-            timeout = timedelta(minutes=5)
-            store, rank, world_size = next(dist.rendezvous("env://", timeout=timeout))
-            # The torchrun agent's store outlives a trainer. Isolate repeated runs/seeds so a
-            # fresh group cannot consume stale rendezvous keys from the preceding trainer.
-            store = dist.PrefixStore(f"training-{next(_GROUP_SEQUENCE)}", store)
-            dist.init_process_group(
-                backend="nccl" if self.device.type == "cuda" else "gloo",
-                store=store,
-                rank=rank,
-                world_size=world_size,
-                timeout=timeout,
+        try:
+            torch.use_deterministic_algorithms(True)
+            if self.device.type == "cuda":
+                torch.cuda.set_device(self.device)
+            if self.world_size > 1:
+                if dist.is_initialized():
+                    raise TrainingRuntimeError("training requires its own process group")
+                timeout = timedelta(minutes=5)
+                store, rank, world_size = next(dist.rendezvous("env://", timeout=timeout))
+                # The torchrun agent's store outlives a trainer. Isolate repeated runs/seeds so a
+                # fresh group cannot consume stale rendezvous keys from the preceding trainer.
+                store = dist.PrefixStore(f"training-{next(_GROUP_SEQUENCE)}", store)
+                if self.device.type == "cpu":
+                    # Coordinate reinitialization outside the group being replaced. A peer
+                    # must finish its preceding trainer before either creates the next Gloo group.
+                    store.set(f"ready-{rank}", "ready")
+                    store.wait([f"ready-{peer}" for peer in range(world_size)], timeout)
+                dist.init_process_group(
+                    backend="nccl" if self.device.type == "cuda" else "gloo",
+                    store=store,
+                    rank=rank,
+                    world_size=world_size,
+                    timeout=timeout,
+                )
+                self.owns_group = True
+        except BaseException:
+            torch.use_deterministic_algorithms(
+                self.previous_deterministic, warn_only=self.previous_warn_only
             )
-            self.owns_group = True
+            raise
         return self
 
     def __exit__(self, *_):
-        if self.owns_group:
-            dist.destroy_process_group()
-        torch.use_deterministic_algorithms(
-            self.previous_deterministic, warn_only=self.previous_warn_only
-        )
+        try:
+            if self.owns_group:
+                try:
+                    if self.device.type == "cpu":
+                        # Complete pending Gloo work while model and exception frames live.
+                        dist.barrier()
+                finally:
+                    dist.destroy_process_group()
+                    self.owns_group = False
+        finally:
+            torch.use_deterministic_algorithms(
+                self.previous_deterministic, warn_only=self.previous_warn_only
+            )
 
     def seed(self, seed: int) -> None:
         torch.manual_seed(seed)
