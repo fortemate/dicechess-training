@@ -17,13 +17,17 @@ object ExperimentalFeatures:
   def parse(fen: String): GameState =
     require(fen.split("\\s+").length == 6, "six-field FEN required")
     FenParser.parse(fen).fold(e => throw IllegalArgumentException(e), identity)
+  private def isOwnKing(piece: Piece, mover: Color): Boolean =
+    piece.pieceType == PieceType.King && piece.color == mover
+  private def isOpponentKing(piece: Piece, mover: Color): Boolean =
+    piece.pieceType == PieceType.King && piece.color == mover.opponent
   def extract(s: GameState, mover: Color): Features =
     val pieces = (0 until 64).flatMap { i =>
       val p = s.mailbox(Square.fromIndex(i))
       if p.isEmpty then None else Some((i,p))
     }
-    val ownKings = pieces.filter((_,p) => p.pieceType == PieceType.King && p.color == mover)
-    val enemyKings = pieces.filter((_,p) => p.pieceType == PieceType.King && p.color == mover.opponent)
+    val ownKings = pieces.filter((_,p) => isOwnKing(p, mover))
+    val enemyKings = pieces.filter((_,p) => isOpponentKing(p, mover))
     require(ownKings.size == 1 && enemyKings.size <= 1, "invalid king cardinality")
     val terminal = enemyKings.isEmpty
     val a = RichFeatures.extract(s,mover)
