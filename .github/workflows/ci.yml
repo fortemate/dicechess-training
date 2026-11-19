@@ -59,4 +59,4 @@ jobs:
 
       - name: Synthetic experimental pre-ranker features
         working-directory: tools/prerank-experimental
-        run: sbt -batch test
+        run: sbt -batch "testOnly *"
