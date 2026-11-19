@@ -517,6 +517,29 @@ def _prepare_dataset_splits(base_df: pd.DataFrame, protocol: dict):
     )
 
 
+def _summarize_unseen(seed_results, unseen_val_mask, has_unseen) -> dict[str, Any]:
+    """Aggregate unseen-position scores, preserving the absent-position record."""
+    if has_unseen:
+        u_lls = [s["unseen_scores"]["log_loss"] for s in seed_results if s["unseen_scores"]]
+        u_brs = [s["unseen_scores"]["brier"] for s in seed_results if s["unseen_scores"]]
+        u_eces = [s["unseen_scores"]["ece"] for s in seed_results if s["unseen_scores"]]
+        single_model_unseen = {
+            "count": int(unseen_val_mask.sum()),
+            "log_loss_mean": float(np.mean(u_lls)),
+            "log_loss_std": float(np.std(u_lls)),
+            "brier_mean": float(np.mean(u_brs)),
+            "brier_std": float(np.std(u_brs)),
+            "ece_mean": float(np.mean(u_eces)),
+            "ece_std": float(np.std(u_eces)),
+        }
+    else:
+        single_model_unseen = {
+            "count": 0,
+            "status": "no-unseen-positions",
+        }
+    return single_model_unseen
+
+
 def _train_single_schema(
     s_key: str,
     sid: str,
@@ -603,24 +626,7 @@ def _train_single_schema(
         "ece_std": float(np.std(eces)),
     }
 
-    if has_unseen:
-        u_lls = [s["unseen_scores"]["log_loss"] for s in seed_results if s["unseen_scores"]]
-        u_brs = [s["unseen_scores"]["brier"] for s in seed_results if s["unseen_scores"]]
-        u_eces = [s["unseen_scores"]["ece"] for s in seed_results if s["unseen_scores"]]
-        single_model_unseen = {
-            "count": int(unseen_val_mask.sum()),
-            "log_loss_mean": float(np.mean(u_lls)),
-            "log_loss_std": float(np.std(u_lls)),
-            "brier_mean": float(np.mean(u_brs)),
-            "brier_std": float(np.std(u_brs)),
-            "ece_mean": float(np.mean(u_eces)),
-            "ece_std": float(np.std(u_eces)),
-        }
-    else:
-        single_model_unseen = {
-            "count": 0,
-            "status": "no-unseen-positions",
-        }
+    single_model_unseen = _summarize_unseen(seed_results, unseen_val_mask, has_unseen)
 
     first_slices = seed_results[0]["slices"]
     single_model_slices = {}
@@ -1137,6 +1143,23 @@ def _load_extraction_cost(path: Path | None, protocol: dict) -> dict[str, Any] |
     return raw
 
 
+def _report_admissibility(results_by_schema: dict[str, dict], no_info: dict) -> None:
+    """Attach each schema's admissibility and emit its ordered reference summary."""
+    for res in results_by_schema.values():
+        res["admissibility"] = _admissibility_for_schema(res["single_model_summary"], no_info)
+    print(
+        f"\nNo-information reference ({no_info['reference']} = {no_info['prediction']:.4f}): "
+        f"{no_info['metric']} = {no_info['scores'][no_info['metric']]:.4f}"
+    )
+    for s_key, res in results_by_schema.items():
+        adm = res["admissibility"]
+        verdict = "admissible" if adm["admissible"] else "INADMISSIBLE"
+        print(
+            f"  {s_key} ({res['schema_id']}): {adm['metric']} = {adm['candidate']:.4f} "
+            f"({verdict}, margin {adm['margin']:+.4f})"
+        )
+
+
 def run_ablation(
     protocol_path: Path | None = None,
     enriched_base_dir: Path | None = None,
@@ -1214,19 +1237,7 @@ def run_ablation(
 
     no_info = no_information_reference(y_train, y_val, unseen_val_mask, protocol)
     if no_info is not None:
-        for res in results_by_schema.values():
-            res["admissibility"] = _admissibility_for_schema(res["single_model_summary"], no_info)
-        print(
-            f"\nNo-information reference ({no_info['reference']} = {no_info['prediction']:.4f}): "
-            f"{no_info['metric']} = {no_info['scores'][no_info['metric']]:.4f}"
-        )
-        for s_key, res in results_by_schema.items():
-            adm = res["admissibility"]
-            verdict = "admissible" if adm["admissible"] else "INADMISSIBLE"
-            print(
-                f"  {s_key} ({res['schema_id']}): {adm['metric']} = {adm['candidate']:.4f} "
-                f"({verdict}, margin {adm['margin']:+.4f})"
-            )
+        _report_admissibility(results_by_schema, no_info)
 
     gate_evaluations = {}
     for s_key in ["S1", "S2"]:
