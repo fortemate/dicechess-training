@@ -163,84 +163,95 @@ def train(
             all(p.dtype == torch.float32 for p in model.parameters()), "float32 parameters required"
         )
         wrapped = runtime.wrap(model)
-        optimizer = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate, weight_decay=0.0)
-        signature = identity(
-            {"protocol": PROTOCOL, "arm": arm, "hyper": asdict(hyper), "input": input_identity},
-            corpus.a,
-            corpus.b,
-            corpus.c,
-            corpus.targets,
-            corpus.terminal,
-            corpus.offsets,
-            corpus.splits,
-            corpus.tie_order,
-        )
-        progress = {
-            "epoch": 0,
-            "complete": False,
-            "history": [],
-            "best_loss": math.inf,
-            "best_epoch": 0,
-            "best_state": None,
-            "shuffle_rng": json.dumps(rng.bit_generator.state),
-        }
-        restored = runtime.restore(model, optimizer, signature)
-        if restored is not None:
-            progress = restored
-            rng.bit_generator.state = json.loads(progress["shuffle_rng"])
-        else:
-            runtime.checkpoint(model, optimizer, signature, progress)
-        start_epoch = progress["epoch"]
-        for epoch in range(start_epoch + 1, hyper.max_epochs + 1):
-            if progress["complete"]:
-                break
-            train_loss, order_hash, updates = _epoch(
-                wrapped, optimizer, corpus, prepared, arm, hyper, rng, runtime
+        try:
+            optimizer = torch.optim.Adam(
+                model.parameters(), lr=hyper.learning_rate, weight_decay=0.0
             )
-            valid = validation_loss(model, corpus, prepared, arm, hyper.batch_groups, runtime)
-            require(math.isfinite(train_loss) and math.isfinite(valid), "non-finite training loss")
-            progress["history"].append(
-                {
-                    "epoch": epoch,
-                    "train_loss": train_loss,
-                    "early_stop_loss": valid,
-                    "order_sha256": order_hash,
-                    "updates": updates,
-                }
+            signature = identity(
+                {"protocol": PROTOCOL, "arm": arm, "hyper": asdict(hyper), "input": input_identity},
+                corpus.a,
+                corpus.b,
+                corpus.c,
+                corpus.targets,
+                corpus.terminal,
+                corpus.offsets,
+                corpus.splits,
+                corpus.tie_order,
             )
-            if valid < progress["best_loss"]:
-                progress.update(
-                    best_loss=valid,
-                    best_epoch=epoch,
-                    best_state={k: v.detach().cpu().clone() for k, v in model.state_dict().items()},
+            progress = {
+                "epoch": 0,
+                "complete": False,
+                "history": [],
+                "best_loss": math.inf,
+                "best_epoch": 0,
+                "best_state": None,
+                "shuffle_rng": json.dumps(rng.bit_generator.state),
+            }
+            restored = runtime.restore(model, optimizer, signature)
+            if restored is not None:
+                progress = restored
+                rng.bit_generator.state = json.loads(progress["shuffle_rng"])
+            else:
+                runtime.checkpoint(model, optimizer, signature, progress)
+            start_epoch = progress["epoch"]
+            for epoch in range(start_epoch + 1, hyper.max_epochs + 1):
+                if progress["complete"]:
+                    break
+                train_loss, order_hash, updates = _epoch(
+                    wrapped, optimizer, corpus, prepared, arm, hyper, rng, runtime
                 )
-            progress.update(
-                epoch=epoch,
-                complete=(
-                    epoch == hyper.max_epochs or epoch - progress["best_epoch"] >= hyper.patience
-                ),
-                shuffle_rng=json.dumps(rng.bit_generator.state),
-            )
-            runtime.checkpoint(model, optimizer, signature, progress)
-            runtime.stop(epoch - start_epoch, progress["complete"])
-        model.load_state_dict(progress["best_state"])
-        report = {
-            "protocol": PROTOCOL,
-            "arm": arm,
-            "hyperparameters": asdict(hyper),
-            "identity": signature,
-            "input_identity": input_identity,
-            "complete": progress["complete"],
-            "history": progress["history"],
-            "best_epoch": progress["best_epoch"],
-            "best_loss": progress["best_loss"],
-            "train_groups": len(prepared.fitting),
-            "early_stop_groups": len(prepared.measuring),
-            "parameters": sum(p.numel() for p in model.parameters()),
-            "environment": runtime.environment(),
-            "role": "development fit; no qualification",
-        }
-        return report, model.cpu().eval()
+                valid = validation_loss(model, corpus, prepared, arm, hyper.batch_groups, runtime)
+                require(
+                    math.isfinite(train_loss) and math.isfinite(valid), "non-finite training loss"
+                )
+                progress["history"].append(
+                    {
+                        "epoch": epoch,
+                        "train_loss": train_loss,
+                        "early_stop_loss": valid,
+                        "order_sha256": order_hash,
+                        "updates": updates,
+                    }
+                )
+                if valid < progress["best_loss"]:
+                    progress.update(
+                        best_loss=valid,
+                        best_epoch=epoch,
+                        best_state={
+                            k: v.detach().cpu().clone() for k, v in model.state_dict().items()
+                        },
+                    )
+                progress.update(
+                    epoch=epoch,
+                    complete=(
+                        epoch == hyper.max_epochs
+                        or epoch - progress["best_epoch"] >= hyper.patience
+                    ),
+                    shuffle_rng=json.dumps(rng.bit_generator.state),
+                )
+                runtime.checkpoint(model, optimizer, signature, progress)
+                runtime.stop(epoch - start_epoch, progress["complete"])
+            model.load_state_dict(progress["best_state"])
+            report = {
+                "protocol": PROTOCOL,
+                "arm": arm,
+                "hyperparameters": asdict(hyper),
+                "identity": signature,
+                "input_identity": input_identity,
+                "complete": progress["complete"],
+                "history": progress["history"],
+                "best_epoch": progress["best_epoch"],
+                "best_loss": progress["best_loss"],
+                "train_groups": len(prepared.fitting),
+                "early_stop_groups": len(prepared.measuring),
+                "parameters": sum(p.numel() for p in model.parameters()),
+                "environment": runtime.environment(),
+                "role": "development fit; no qualification",
+            }
+            return report, model.cpu().eval()
+        finally:
+            # Release the DDP reducer while Runtime still owns its process group.
+            del wrapped
 
 
 def _epoch(model, optimizer, corpus, prepared, arm, hyper, rng, runtime):
