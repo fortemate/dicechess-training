@@ -121,7 +121,7 @@ def _provenance_pairs(entries: list[str]):
 
 def _run_export(args: argparse.Namespace) -> int:
     model = exporter.load_ranker(args.weights)
-    provenance = {key: value for key, value in _provenance_pairs(args.provenance)}
+    provenance = dict(_provenance_pairs(args.provenance))
     manifest = exporter.write_package(
         model,
         args.destination,
