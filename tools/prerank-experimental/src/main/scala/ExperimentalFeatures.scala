@@ -17,9 +17,9 @@ object ExperimentalFeatures:
   def parse(fen: String): GameState =
     require(fen.split("\\s+").length == 6, "six-field FEN required")
     FenParser.parse(fen).fold(e => throw IllegalArgumentException(e), identity)
-  private def isOwnKing(piece: Piece, mover: Color): Boolean =
+  private inline def isOwnKing(piece: Piece, mover: Color): Boolean =
     piece.pieceType == PieceType.King && piece.color == mover
-  private def isOpponentKing(piece: Piece, mover: Color): Boolean =
+  private inline def isOpponentKing(piece: Piece, mover: Color): Boolean =
     piece.pieceType == PieceType.King && piece.color == mover.opponent
   def extract(s: GameState, mover: Color): Features =
     val pieces = (0 until 64).flatMap { i =>
