@@ -108,9 +108,20 @@ def _run_pack(args: argparse.Namespace) -> int:
     return 0
 
 
+def _provenance_pairs(entries: list[str]):
+    """Split at the first equals sign, preserving indexed CLI diagnostics."""
+    for index, entry in enumerate(entries):
+        pair = entry.split("=", 1)
+        if len(pair) != 2:
+            raise ValueError(
+                f"dictionary update sequence element #{index} has length 1; 2 is required"
+            )
+        yield pair
+
+
 def _run_export(args: argparse.Namespace) -> int:
     model = exporter.load_ranker(args.weights)
-    provenance = dict(entry.split("=", 1) for entry in args.provenance)
+    provenance = {key: value for key, value in _provenance_pairs(args.provenance)}
     manifest = exporter.write_package(
         model,
         args.destination,
