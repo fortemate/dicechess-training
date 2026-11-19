@@ -107,11 +107,32 @@ def run(
     return metrics
 
 
+def _cli_output(value: str, parser: argparse.ArgumentParser) -> str:
+    """Admit the complete CLI export under the invocation's working directory."""
+    try:
+        root = Path.cwd().resolve()
+        output = Path(value).resolve()
+        for name in (
+            "",
+            "value-sample.onnx",
+            "value-sample.onnx.data",
+            "value-synthetic.onnx",
+            "value-synthetic.onnx.data",
+        ):
+            if not (output / name).resolve().is_relative_to(root):
+                parser.error("output paths must stay inside the current working directory")
+    except (OSError, RuntimeError):
+        parser.error("output paths cannot be resolved")
+    return str(output)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--games", type=int, default=400, help="synthetic games (--synthetic only)")
     parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--out", default="out")
+    parser.add_argument(
+        "--out", default="out", help="output directory inside the current working directory"
+    )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
         "--synthetic", action="store_true", help="use toy data instead of the sample"
@@ -122,7 +143,7 @@ def main() -> None:
     run(
         n_games=args.games,
         epochs=args.epochs,
-        out_dir=args.out,
+        out_dir=_cli_output(args.out, parser),
         seed=args.seed,
         synthetic=args.synthetic,
         sample_dir=args.sample_dir,
