@@ -2,6 +2,8 @@ import dicechess.engine.domain.*
 import dicechess.engine.movegen.Dfen
 import dicechess.engine.search.RichFeatures
 import java.nio.file.Files
+import java.nio.charset.StandardCharsets.UTF_8
+import java.io.{ByteArrayOutputStream, PrintStream}
 import com.google.gson.JsonParser
 import scala.jdk.CollectionConverters.*
 
@@ -258,4 +260,25 @@ class ReplayAuditSuite extends munit.FunSuite:
     assert(examples.forall(!_.has("rich9_and_kcp")))
     assert(examples.forall(_.getAsJsonArray("full_states").size() > 1))
     assertEquals(Files.readString(input), raw)
+  }
+
+  test("progress is emitted exactly after the hundredth completed group") {
+    val dir = Files.createTempDirectory("replay-progress-")
+    val input = dir.resolve(InputFile)
+    val report = dir.resolve(ReportFile)
+    val states = dir.resolve(StatesFile)
+    val group = s"""{"group_id":"progress","game_id":"authored","root_fen":"$SparseRootFen","dice":"BBP","side":"w","candidates":[]}"""
+    Files.writeString(input, List.fill(100)(group).mkString("[", ",", "]"))
+    val captured = new ByteArrayOutputStream()
+    val stream = new PrintStream(captured, true, UTF_8)
+    val previous = System.err
+    System.setErr(stream)
+    try ReplayAudit.main(Array(input.toString, report.toString, states.toString))
+    finally
+      System.setErr(previous)
+      stream.close()
+    assertEquals(captured.toString(UTF_8), "audited 100 groups" + System.lineSeparator())
+    assertEquals(Files.readAllLines(states).size(), 100)
+    val counts = JsonParser.parseString(Files.readString(report)).getAsJsonObject.getAsJsonObject(CountsField)
+    assertEquals(counts.get(GroupsField).getAsLong, 100L)
   }
