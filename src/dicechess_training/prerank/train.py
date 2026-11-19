@@ -201,109 +201,114 @@ def _train(corpus: Corpus, hyper: Hyperparameters, runtime: Runtime):
         feature_scale=scale,
     ).double()
     wrapped = runtime.wrap(model)
-    optimiser = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate, weight_decay=0)
-    signature = identity(
-        {"trainer": "prerank-v1", "hyper": asdict(hyper), "manifest": corpus.manifest},
-        corpus.features,
-        corpus.targets,
-        corpus.offsets,
-        corpus.splits,
-    )
-
-    history: list[dict] = []
-    best = {"recall_at_k": -1.0}
-    best_state: dict | None = None
-    best_epoch = -1
-
-    start_epoch = 0
-    complete = False
-    restored = runtime.restore(model, optimiser, signature)
-    if restored is not None:
-        start_epoch = restored["epoch"]
-        complete = restored["complete"]
-        history = restored["history"]
-        best = restored["best"]
-        best_state = restored["best_state"]
-        best_epoch = restored["best_epoch"]
-        rng.bit_generator.state = json.loads(restored["shuffle_rng"])
-
-    for epoch in range(start_epoch + 1, hyper.max_epochs + 1):
-        if complete:
-            break
-        wrapped.train()
-        shuffled = rng.permutation(fitting)
-        total = 0.0
-        batches = 0
-        for start in range(0, len(shuffled), hyper.batch_groups):
-            chunk, weight = runtime.partition(shuffled[start : start + hyper.batch_groups])
-            features, batch_gains, index = (
-                tensor.to(runtime.device) for tensor in _batch(corpus, gains, chunk)
-            )
-            optimiser.zero_grad()
-            loss = listwise_loss(wrapped(features), batch_gains, index, len(chunk)) * weight
-            loss.backward()
-            optimiser.step()
-            total += runtime.mean(float(loss.detach()))
-            batches += 1
-
-        validation = ranking_metrics(corpus, score_all(model, corpus), measuring, hyper.k)
-        history.append({"epoch": epoch, "train_loss": total / max(batches, 1), **validation})
-        if validation["recall_at_k"] > best["recall_at_k"]:
-            best = validation
-            best_epoch = epoch
-            best_state = {
-                key: value.detach().cpu().clone() for key, value in model.state_dict().items()
-            }
-        complete = epoch == hyper.max_epochs or epoch - best_epoch >= hyper.patience
-        runtime.checkpoint(
-            model,
-            optimiser,
-            signature,
-            {
-                "epoch": epoch,
-                "complete": complete,
-                "history": history,
-                "best": best,
-                "best_epoch": best_epoch,
-                "best_state": best_state,
-                "shuffle_rng": json.dumps(rng.bit_generator.state),
-            },
+    try:
+        optimiser = torch.optim.Adam(model.parameters(), lr=hyper.learning_rate, weight_decay=0)
+        signature = identity(
+            {"trainer": "prerank-v1", "hyper": asdict(hyper), "manifest": corpus.manifest},
+            corpus.features,
+            corpus.targets,
+            corpus.offsets,
+            corpus.splits,
         )
-        runtime.stop(epoch - start_epoch, complete)
 
-    if best_state is not None:
-        model.load_state_dict(best_state)
+        history: list[dict] = []
+        best = {"recall_at_k": -1.0}
+        best_state: dict | None = None
+        best_epoch = -1
 
-    scores = score_all(model, corpus)
-    report = {
-        "protocol": PROTOCOL,
-        "seed": hyper.seed,
-        "k": hyper.k,
-        "hyperparameters": asdict(hyper),
-        "corpus": {
-            "groups": corpus.groups,
-            "candidates": int(len(corpus.targets)),
-            "trained_on": int(len(fitting)),
-            "engine_version": corpus.manifest["engine_version"],
-            "teacher": corpus.manifest["teacher"]["id"],
-            "source_sha256": corpus.manifest["source_sha256"],
-            "groups_sha256": corpus.manifest["groups_sha256"],
-        },
-        "best_epoch": best_epoch,
-        "history": history,
-        "validation": best,
-        "baselines": {
-            name: ranking_metrics(
-                corpus, baseline_scores(corpus, name, hyper.seed), measuring, hyper.k
+        start_epoch = 0
+        complete = False
+        restored = runtime.restore(model, optimiser, signature)
+        if restored is not None:
+            start_epoch = restored["epoch"]
+            complete = restored["complete"]
+            history = restored["history"]
+            best = restored["best"]
+            best_state = restored["best_state"]
+            best_epoch = restored["best_epoch"]
+            rng.bit_generator.state = json.loads(restored["shuffle_rng"])
+
+        for epoch in range(start_epoch + 1, hyper.max_epochs + 1):
+            if complete:
+                break
+            wrapped.train()
+            shuffled = rng.permutation(fitting)
+            total = 0.0
+            batches = 0
+            for start in range(0, len(shuffled), hyper.batch_groups):
+                chunk, weight = runtime.partition(shuffled[start : start + hyper.batch_groups])
+                features, batch_gains, index = (
+                    tensor.to(runtime.device) for tensor in _batch(corpus, gains, chunk)
+                )
+                optimiser.zero_grad()
+                loss = listwise_loss(wrapped(features), batch_gains, index, len(chunk)) * weight
+                loss.backward()
+                optimiser.step()
+                total += runtime.mean(float(loss.detach()))
+                batches += 1
+
+            validation = ranking_metrics(corpus, score_all(model, corpus), measuring, hyper.k)
+            history.append({"epoch": epoch, "train_loss": total / max(batches, 1), **validation})
+            if validation["recall_at_k"] > best["recall_at_k"]:
+                best = validation
+                best_epoch = epoch
+                best_state = {
+                    key: value.detach().cpu().clone() for key, value in model.state_dict().items()
+                }
+            complete = epoch == hyper.max_epochs or epoch - best_epoch >= hyper.patience
+            runtime.checkpoint(
+                model,
+                optimiser,
+                signature,
+                {
+                    "epoch": epoch,
+                    "complete": complete,
+                    "history": history,
+                    "best": best,
+                    "best_epoch": best_epoch,
+                    "best_state": best_state,
+                    "shuffle_rng": json.dumps(rng.bit_generator.state),
+                },
             )
-            for name in ("material_diff", "random")
-        },
-    }
-    report["admissible"] = bool(
-        best["recall_at_k"] > report["baselines"]["material_diff"]["recall_at_k"]
-    )
-    report["by_shortlist"] = by_shortlist(corpus, scores, hyper.seed)
-    return report, model.cpu(), scores
+            runtime.stop(epoch - start_epoch, complete)
+
+        if best_state is not None:
+            model.load_state_dict(best_state)
+
+        scores = score_all(model, corpus)
+        report = {
+            "protocol": PROTOCOL,
+            "seed": hyper.seed,
+            "k": hyper.k,
+            "hyperparameters": asdict(hyper),
+            "corpus": {
+                "groups": corpus.groups,
+                "candidates": int(len(corpus.targets)),
+                "trained_on": int(len(fitting)),
+                "engine_version": corpus.manifest["engine_version"],
+                "teacher": corpus.manifest["teacher"]["id"],
+                "source_sha256": corpus.manifest["source_sha256"],
+                "groups_sha256": corpus.manifest["groups_sha256"],
+            },
+            "best_epoch": best_epoch,
+            "history": history,
+            "validation": best,
+            "baselines": {
+                name: ranking_metrics(
+                    corpus, baseline_scores(corpus, name, hyper.seed), measuring, hyper.k
+                )
+                for name in ("material_diff", "random")
+            },
+        }
+        report["admissible"] = bool(
+            best["recall_at_k"] > report["baselines"]["material_diff"]["recall_at_k"]
+        )
+        report["by_shortlist"] = by_shortlist(corpus, scores, hyper.seed)
+        return report, model.cpu(), scores
+    finally:
+        # Release the DDP reducer while Runtime still owns its process group.
+        if wrapped is not model:
+            del wrapped
 
 
 def by_shortlist(corpus: Corpus, scores: np.ndarray, seed: int, split: str = "validation") -> dict:
