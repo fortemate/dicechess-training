@@ -18,7 +18,7 @@ def versionTriple(version: String): (Int, Int, Int) = {
 val hasMobilitySchemas = Ordering[(Int, Int, Int)].gteq(versionTriple(engineVersion), mobilityFloor)
 val schemaTier         = if (hasMobilitySchemas) "scala-mobility" else "scala-legacy"
 
-ThisBuild / scalaVersion := "3.9.0"
+ThisBuild / scalaVersion := "3.10.0"
 
 lazy val root = (project in file("."))
   .settings(
